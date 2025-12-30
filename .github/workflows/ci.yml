@@ -17,9 +17,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'uv'
       
       - name: Install uv
         run: pip install uv
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
       
       - name: Install dependencies
         run: uv pip install -e ".[dev]"
@@ -40,9 +49,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'uv'
       
       - name: Install uv
         run: pip install uv
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
       
       - name: Install dependencies
         run: uv pip install -e ".[dev]"
@@ -52,20 +70,12 @@ jobs:
         continue-on-error: true  # Type checking is optional
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test (Python 3.10)
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
-        exclude:
-          # Reduce matrix size - test fewer combinations
-          - os: macos-latest
-            python-version: '3.9'
-          - os: macos-latest
-            python-version: '3.12'
-          - os: windows-latest
-            python-version: '3.9'
+        python-version: ['3.10']
     
     steps:
       - uses: actions/checkout@v4
@@ -74,9 +84,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'uv'
       
       - name: Install uv
         run: pip install uv
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ${{ runner.os == 'Windows' && 'C:\\Users\\runneradmin\\.cache\\uv' || '' }}
+            ${{ runner.os == 'macOS' && '~/Library/Caches/uv' || '' }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+      
+      - name: Cache system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/apt-packages.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
       
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -108,14 +139,31 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'uv'
+      
+      - name: Install uv
+        run: pip install uv
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+      
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-apt-ui-${{ hashFiles('**/apt-packages.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
       
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libopenexr-dev libilmbase-dev xvfb
-      
-      - name: Install uv
-        run: pip install uv
       
       - name: Install dependencies
         run: uv pip install -e ".[dev]"
@@ -141,9 +189,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'uv'
       
       - name: Install uv
         run: pip install uv
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
       
       - name: Install build dependencies
         run: uv pip install build

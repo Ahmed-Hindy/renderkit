@@ -172,7 +172,8 @@ for input_pattern, output_path in sequences:
 
 The UI supports multiple Qt backends for compatibility with different DCCs:
 - **PySide6** (default, recommended)
-- **PySide2** (for Houdini 18.x and older)
+- **PySide2**
+
 - **PyQt6**
 - **PyQt5**
 

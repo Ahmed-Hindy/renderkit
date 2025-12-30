@@ -33,9 +33,11 @@ from image_video_processor.ui.qt_compat import (
     Signal,
 )
 
+from image_video_processor import __version__
 from image_video_processor.api.processor import ImageVideoProcessor
 from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
 from image_video_processor.processing.color_space import ColorSpacePreset
+from image_video_processor.ui.qt_compat import QT_BACKEND_NAME
 from image_video_processor.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,7 @@ class ModernMainWindow(QMainWindow):
         super().__init__()
         self.settings = QSettings("RenderKit", "ImageVideoProcessor")
         self.worker: Optional[ConversionWorker] = None
+        self._conversion_finished_flag = False  # Flag to prevent double popup
 
         self._setup_ui()
         self._load_settings()
@@ -96,8 +99,8 @@ class ModernMainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 5)  # Reduced bottom margin
+        main_layout.setSpacing(5)  # Reduced spacing
 
         # Create main splitter for resizable panels
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -125,6 +128,9 @@ class ModernMainWindow(QMainWindow):
         # Bottom panel - Action buttons
         action_panel = self._create_action_panel()
         main_layout.addWidget(action_panel)
+
+        # Menu bar
+        self._create_menu_bar()
 
         # Status bar
         self.statusBar().showMessage("Ready")
@@ -188,6 +194,7 @@ class ModernMainWindow(QMainWindow):
         # Sequence Info
         self.sequence_info_label = QLabel("No sequence detected")
         self.sequence_info_label.setWordWrap(True)
+        self.sequence_info_label.setMinimumHeight(60)  # Ensure enough space for multi-line text
         self.sequence_info_label.setStyleSheet("color: #666; font-style: italic;")
         input_layout.addRow("Info:", self.sequence_info_label)
 
@@ -279,13 +286,9 @@ class ModernMainWindow(QMainWindow):
         resolution_layout.addStretch()
         video_layout.addRow("Resolution:", resolution_layout)
 
-        # Codec
+        # Codec - detect available codecs
         self.codec_combo = QComboBox()
-        self.codec_combo.addItems([
-            "MPEG-4 (mp4v) - Default",
-            "H.264 (avc1) - Better compatibility",
-            "H.265 (hevc) - High efficiency"
-        ])
+        self._populate_codecs()
         video_layout.addRow("Codec:", self.codec_combo)
 
         # Bitrate
@@ -340,6 +343,7 @@ class ModernMainWindow(QMainWindow):
         options_layout = QVBoxLayout(options_group)
 
         self.overwrite_check = QCheckBox("Overwrite existing output file")
+        self.overwrite_check.setChecked(True)  # Default to checked
         options_layout.addWidget(self.overwrite_check)
 
         layout.addWidget(options_group)
@@ -411,7 +415,8 @@ class ModernMainWindow(QMainWindow):
         """Create action buttons panel."""
         panel = QWidget()
         layout = QHBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(10, 5, 10, 5)  # Reduced vertical margins
+        layout.setSpacing(10)
 
         # Detect sequence button
         self.detect_btn = QPushButton("Detect Sequence")
@@ -441,12 +446,125 @@ class ModernMainWindow(QMainWindow):
         layout.addWidget(self.convert_btn)
 
         # Cancel button
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setEnabled(False)
+        self.cancel_btn = QPushButton("Quit")
+        self.cancel_btn.setEnabled(True)  # Always enabled
         self.cancel_btn.setMinimumWidth(100)
         layout.addWidget(self.cancel_btn)
 
         return panel
+
+    def _create_menu_bar(self) -> None:
+        """Create menu bar with Help menu."""
+        menubar = self.menuBar()
+        
+        # Help menu
+        help_menu = menubar.addMenu("Help")
+        
+        # About action
+        about_action = help_menu.addAction("About")
+        about_action.triggered.connect(self._show_about)
+        about_action.setShortcut("F1")
+
+    def _show_about(self) -> None:
+        """Show about dialog."""
+        about_text = f"""
+        <h2>RenderKit - Image Video Processor</h2>
+        <p><b>Version:</b> {__version__}</p>
+        <p><b>Qt Backend:</b> {QT_BACKEND_NAME}</p>
+        <p>A high-performance Python package for image and video processing in VFX workflows.</p>
+        <p>Designed for converting image sequences (EXR, PNG, JPEG) to video formats (MP4) with proper color space handling.</p>
+        <hr>
+        <p><b>Author:</b> Ahmed Hindy</p>
+        <p><b>License:</b> MIT</p>
+        <p><b>Repository:</b> <a href="https://github.com/Ahmed-Hindy/renderkit">GitHub</a></p>
+        """
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("About RenderKit")
+        msg.setTextFormat(Qt.TextFormat.RichText)
+        msg.setText(about_text)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.exec()
+
+    def _populate_codecs(self) -> None:
+        """Populate codec combo box with available codecs."""
+        import cv2
+        import tempfile
+        from pathlib import Path
+        
+        available_codecs = []
+        codec_map = {}
+        
+        # Test codecs in order of preference
+        test_codecs = [
+            ("mp4v", "MPEG-4 (mp4v) - Default"),
+            ("avc1", "H.264 (avc1) - Better compatibility"),
+            ("hevc", "H.265 (hevc) - High efficiency"),
+        ]
+        
+        # Create a temporary file to test codec availability
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+            
+            for codec_id, codec_name in test_codecs:
+                try:
+                    fourcc = cv2.VideoWriter_fourcc(*codec_id)
+                    # Try to create a writer (this will fail if codec is not available)
+                    test_writer = cv2.VideoWriter(
+                        str(tmp_path),
+                        fourcc,
+                        24.0,
+                        (100, 100),
+                    )
+                    if test_writer.isOpened():
+                        available_codecs.append(codec_name)
+                        codec_map[len(available_codecs) - 1] = codec_id
+                        test_writer.release()
+                    else:
+                        # Try alternative for hevc
+                        if codec_id == "hevc":
+                            # Try hvc1 as alternative
+                            try:
+                                fourcc = cv2.VideoWriter_fourcc(*"hvc1")
+                                test_writer = cv2.VideoWriter(
+                                    str(tmp_path),
+                                    fourcc,
+                                    24.0,
+                                    (100, 100),
+                                )
+                                if test_writer.isOpened():
+                                    available_codecs.append(f"{codec_name} (hvc1)")
+                                    codec_map[len(available_codecs) - 1] = "hvc1"
+                                    test_writer.release()
+                            except Exception:
+                                pass
+                except Exception:
+                    # Codec not available, skip it
+                    continue
+        except Exception:
+            # If detection fails, use fallback
+            pass
+        finally:
+            # Clean up temp file
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+        
+        if not available_codecs:
+            # Fallback to basic codecs if detection fails
+            available_codecs = [
+                "MPEG-4 (mp4v) - Default",
+                "H.264 (avc1) - Better compatibility"
+            ]
+            codec_map = {0: "mp4v", 1: "avc1"}
+        
+        self.codec_combo.addItems(available_codecs)
+        self.codec_combo.setCurrentIndex(0)  # Set default selection
+        self._codec_map = codec_map
 
     def _setup_connections(self) -> None:
         """Set up signal connections."""
@@ -607,8 +725,26 @@ class ModernMainWindow(QMainWindow):
                 self.start_frame_spin.setValue(sequence.frame_numbers[0])
             if self.end_frame_spin.value() == 0:
                 self.end_frame_spin.setValue(sequence.frame_numbers[-1])
+            
+            # Auto-detect output path in same folder as input
+            pattern_path = Path(pattern)
+            output_dir = pattern_path.parent
+            # Generate output filename from input pattern
+            pattern_name = pattern_path.stem
+            # Replace pattern tokens with base name
+            import re
+            # Remove pattern tokens (%04d, $F4, ####, etc.)
+            base_name = re.sub(r'%0?\d+d', '', pattern_name)
+            base_name = re.sub(r'\$F\d+', '', base_name)
+            base_name = re.sub(r'#+', '', base_name)
+            base_name = base_name.strip('._-')  # Clean up separators
+            if not base_name:
+                base_name = "output"
+            output_path = output_dir / f"{base_name}.mp4"
+            self.output_path_edit.setText(str(output_path))
                 
             self.log_text.appendPlainText(f"Sequence detected: {frame_count} frames")
+            self.log_text.appendPlainText(f"Auto-detected output: {output_path.name}")
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
         except Exception as e:
             error_text = f"✗ Error: {str(e)}"
@@ -668,12 +804,13 @@ class ModernMainWindow(QMainWindow):
                 )
 
             # Codec
-            codec_map = {
-                0: "mp4v",
-                1: "avc1",
-                2: "hevc",
-            }
-            config_builder.with_codec(codec_map[self.codec_combo.currentIndex()])
+            codec_index = self.codec_combo.currentIndex()
+            if hasattr(self, '_codec_map') and codec_index in self._codec_map:
+                config_builder.with_codec(self._codec_map[codec_index])
+            else:
+                # Fallback
+                fallback_map = {0: "mp4v", 1: "avc1"}
+                config_builder.with_codec(fallback_map.get(codec_index, "mp4v"))
 
             # Bitrate
             if not self.auto_bitrate_check.isChecked():
@@ -709,6 +846,9 @@ class ModernMainWindow(QMainWindow):
         self.log_text.appendPlainText(f"Input: {config.input_pattern}")
         self.log_text.appendPlainText(f"Output: {config.output_path}")
 
+        # Reset flag
+        self._conversion_finished_flag = False
+        
         # Start worker thread
         self.worker = ConversionWorker(config)
         self.worker.finished.connect(self._on_conversion_finished)
@@ -719,8 +859,9 @@ class ModernMainWindow(QMainWindow):
         self._save_settings()
 
     def _cancel_conversion(self) -> None:
-        """Cancel the current conversion."""
+        """Cancel the current conversion or quit the application."""
         if self.worker and self.worker.isRunning():
+            # Cancel running conversion
             reply = QMessageBox.question(
                 self,
                 "Cancel Conversion",
@@ -729,21 +870,38 @@ class ModernMainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 # Disconnect signals to prevent double popup
-                self.worker.finished.disconnect()
-                self.worker.error.disconnect()
+                try:
+                    self.worker.finished.disconnect()
+                    self.worker.error.disconnect()
+                except TypeError:
+                    pass  # Already disconnected
                 self.worker.terminate()
                 self.worker.wait()
                 # Manually reset UI without showing success popup
                 self.convert_btn.setEnabled(True)
-                self.cancel_btn.setEnabled(False)
                 self.progress_bar.setRange(0, 100)
                 self.progress_bar.setValue(0)
                 self.progress_label.setText("Conversion cancelled")
                 self.statusBar().showMessage("Conversion cancelled", 3000)
                 self.log_text.appendPlainText("Conversion cancelled by user")
+        else:
+            # Quit application if no conversion running
+            reply = QMessageBox.question(
+                self,
+                "Quit Application",
+                "Are you sure you want to quit?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                QApplication.instance().quit()
 
     def _on_conversion_finished(self) -> None:
         """Handle conversion completion."""
+        # Prevent double popup with flag
+        if self._conversion_finished_flag:
+            return
+        self._conversion_finished_flag = True
+        
         # Disconnect signals to prevent multiple calls
         if self.worker:
             try:
@@ -753,11 +911,12 @@ class ModernMainWindow(QMainWindow):
                 pass  # Already disconnected
         
         self.convert_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
+        # Cancel button remains enabled (for quit)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         self.progress_label.setText("Conversion completed!")
         self.statusBar().showMessage("Conversion completed successfully!", 5000)
+        
         QMessageBox.information(
             self,
             "Success",
@@ -767,11 +926,12 @@ class ModernMainWindow(QMainWindow):
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
         self.convert_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
+        # Cancel button remains enabled (for quit)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_label.setText("Conversion failed")
         self.statusBar().showMessage("Conversion failed", 5000)
+        # Cancel button remains enabled (for quit)
         self.log_text.appendPlainText(f"ERROR: {error_msg}")
         QMessageBox.critical(self, "Conversion Error", f"Conversion failed:\n\n{error_msg}")
 
