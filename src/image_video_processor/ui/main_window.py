@@ -1,18 +1,31 @@
-"""Main window for PySide/Qt UI."""
+"""Modern PySide6 main window for image video processor."""
 
 import logging
 import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QSettings, QThread, Signal, Qt
+from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QComboBox,
     QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
+    QSpinBox,
+    QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -20,6 +33,7 @@ from PySide6.QtWidgets import (
 from image_video_processor.api.processor import ImageVideoProcessor
 from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
 from image_video_processor.processing.color_space import ColorSpacePreset
+from image_video_processor.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +44,7 @@ class ConversionWorker(QThread):
     finished = Signal()
     error = Signal(str)
     progress = Signal(int, int)  # current, total
+    log_message = Signal(str)  # log messages
 
     def __init__(self, config: ConversionConfig) -> None:
         """Initialize worker.
@@ -45,128 +60,751 @@ class ConversionWorker(QThread):
         try:
             from image_video_processor.core.converter import SequenceConverter
 
+            self.log_message.emit("Starting conversion...")
             converter = SequenceConverter(self.config)
             converter.convert()
+            self.log_message.emit("Conversion completed successfully!")
             self.finished.emit()
         except Exception as e:
             logger.exception("Conversion failed")
             self.error.emit(str(e))
 
 
-class MainWindow(QMainWindow):
-    """Main application window."""
+class ModernMainWindow(QMainWindow):
+    """Modern main application window with comprehensive features."""
 
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
-        self.setWindowTitle("Image Video Processor")
-        self.setGeometry(100, 100, 800, 600)
-
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Layout
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
-
-        # Input pattern button
-        self.input_button = QPushButton("Select Input Pattern")
-        self.input_button.clicked.connect(self.select_input_pattern)
-        layout.addWidget(self.input_button)
-
-        # Output path button
-        self.output_button = QPushButton("Select Output Path")
-        self.output_button.clicked.connect(self.select_output_path)
-        layout.addWidget(self.output_button)
-
-        # Convert button
-        self.convert_button = QPushButton("Convert")
-        self.convert_button.clicked.connect(self.start_conversion)
-        layout.addWidget(self.convert_button)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
-
-        # State
-        self.input_pattern: Optional[str] = None
-        self.output_path: Optional[str] = None
+        self.settings = QSettings("RenderKit", "ImageVideoProcessor")
         self.worker: Optional[ConversionWorker] = None
 
-    def select_input_pattern(self) -> None:
-        """Select input file pattern."""
-        # For now, select a single file and extract pattern
-        # In a full implementation, would have better pattern selection
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Input File (representative frame)", "", "EXR Files (*.exr)"
-        )
-        if file_path:
-            # Extract pattern (simplified - would need better pattern detection)
-            self.input_pattern = file_path
-            self.input_button.setText(f"Input: {Path(file_path).name}")
+        self._setup_ui()
+        self._load_settings()
+        self._setup_connections()
 
-    def select_output_path(self) -> None:
-        """Select output video path."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Video As", "", "MP4 Files (*.mp4)"
-        )
-        if file_path:
-            self.output_path = file_path
-            self.output_button.setText(f"Output: {Path(file_path).name}")
+    def _setup_ui(self) -> None:
+        """Set up the user interface."""
+        self.setWindowTitle("RenderKit - Image Video Processor")
+        self.setMinimumSize(1000, 700)
+        self._last_preview_path: Optional[Path] = None
 
-    def start_conversion(self) -> None:
-        """Start the conversion process."""
-        if not self.input_pattern or not self.output_path:
-            QMessageBox.warning(self, "Error", "Please select input pattern and output path")
+        # Central widget with splitter
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+
+        # Create main splitter for resizable panels
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(main_splitter)
+
+        # Left panel - Settings and Preview
+        left_splitter = QSplitter(Qt.Orientation.Vertical)
+        settings_panel = self._create_settings_panel()
+        left_splitter.addWidget(settings_panel)
+        
+        # Preview panel
+        preview_panel = self._create_preview_panel()
+        left_splitter.addWidget(preview_panel)
+        left_splitter.setSizes([400, 300])
+        
+        main_splitter.addWidget(left_splitter)
+
+        # Right panel - Log and Progress
+        right_panel = self._create_log_panel()
+        main_splitter.addWidget(right_panel)
+
+        # Set splitter proportions (70% left, 30% right)
+        main_splitter.setSizes([700, 300])
+
+        # Bottom panel - Action buttons
+        action_panel = self._create_action_panel()
+        main_layout.addWidget(action_panel)
+
+        # Status bar
+        self.statusBar().showMessage("Ready")
+
+    def _create_settings_panel(self) -> QWidget:
+        """Create the settings panel with tabs."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create tab widget
+        tabs = QTabWidget()
+        tabs.addTab(self._create_input_tab(), "Input")
+        tabs.addTab(self._create_output_tab(), "Output")
+        tabs.addTab(self._create_advanced_tab(), "Advanced")
+
+        layout.addWidget(tabs)
+        return panel
+
+    def _create_input_tab(self) -> QWidget:
+        """Create input settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+
+        # Input Pattern Group
+        input_group = QGroupBox("Input Sequence")
+        input_layout = QFormLayout(input_group)
+        input_layout.setSpacing(10)
+
+        # Input pattern
+        input_pattern_layout = QHBoxLayout()
+        self.input_pattern_edit = QLineEdit()
+        self.input_pattern_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
+        input_pattern_layout.addWidget(self.input_pattern_edit)
+        self.browse_input_btn = QPushButton("Browse...")
+        self.browse_input_btn.setMaximumWidth(100)
+        input_pattern_layout.addWidget(self.browse_input_btn)
+        input_layout.addRow("Pattern:", input_pattern_layout)
+
+        # Frame Range
+        frame_range_layout = QHBoxLayout()
+        self.start_frame_spin = QSpinBox()
+        self.start_frame_spin.setMinimum(0)
+        self.start_frame_spin.setMaximum(999999)
+        self.start_frame_spin.setSpecialValueText("Auto")
+        self.start_frame_spin.setValue(0)
+        frame_range_layout.addWidget(QLabel("Start:"))
+        frame_range_layout.addWidget(self.start_frame_spin)
+
+        self.end_frame_spin = QSpinBox()
+        self.end_frame_spin.setMinimum(0)
+        self.end_frame_spin.setMaximum(999999)
+        self.end_frame_spin.setSpecialValueText("Auto")
+        self.end_frame_spin.setValue(0)
+        frame_range_layout.addWidget(QLabel("End:"))
+        frame_range_layout.addWidget(self.end_frame_spin)
+        frame_range_layout.addStretch()
+        input_layout.addRow("Frame Range:", frame_range_layout)
+
+        # Sequence Info
+        self.sequence_info_label = QLabel("No sequence detected")
+        self.sequence_info_label.setWordWrap(True)
+        self.sequence_info_label.setStyleSheet("color: #666; font-style: italic;")
+        input_layout.addRow("Info:", self.sequence_info_label)
+
+        layout.addWidget(input_group)
+
+        # Color Space Group
+        color_group = QGroupBox("Color Space")
+        color_layout = QFormLayout(color_group)
+        color_layout.setSpacing(10)
+
+        self.color_space_combo = QComboBox()
+        self.color_space_combo.addItems([
+            "Linear to sRGB (Default)",
+            "Linear to Rec.709",
+            "sRGB to Linear",
+            "No Conversion"
+        ])
+        color_layout.addRow("Preset:", self.color_space_combo)
+
+        layout.addWidget(color_group)
+        
+        # Preview button
+        preview_btn = QPushButton("Load Preview")
+        preview_btn.clicked.connect(self._load_preview)
+        layout.addWidget(preview_btn)
+        
+        layout.addStretch()
+
+        return widget
+
+    def _create_output_tab(self) -> QWidget:
+        """Create output settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+
+        # Output File Group
+        output_group = QGroupBox("Output File")
+        output_layout = QFormLayout(output_group)
+        output_layout.setSpacing(10)
+
+        # Output path
+        output_path_layout = QHBoxLayout()
+        self.output_path_edit = QLineEdit()
+        self.output_path_edit.setPlaceholderText("Select output video file...")
+        output_path_layout.addWidget(self.output_path_edit)
+        self.browse_output_btn = QPushButton("Browse...")
+        self.browse_output_btn.setMaximumWidth(100)
+        output_path_layout.addWidget(self.browse_output_btn)
+        output_layout.addRow("Output Path:", output_path_layout)
+
+        layout.addWidget(output_group)
+
+        # Video Settings Group
+        video_group = QGroupBox("Video Settings")
+        video_layout = QFormLayout(video_group)
+        video_layout.setSpacing(10)
+
+        # FPS
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setMinimum(1)
+        self.fps_spin.setMaximum(120)
+        self.fps_spin.setValue(24)
+        self.fps_spin.setSuffix(" fps")
+        video_layout.addRow("Frame Rate:", self.fps_spin)
+
+        # Resolution
+        resolution_layout = QHBoxLayout()
+        self.width_spin = QSpinBox()
+        self.width_spin.setMinimum(1)
+        self.width_spin.setMaximum(7680)
+        self.width_spin.setValue(1920)
+        self.width_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Width:"))
+        resolution_layout.addWidget(self.width_spin)
+
+        self.height_spin = QSpinBox()
+        self.height_spin.setMinimum(1)
+        self.height_spin.setMaximum(4320)
+        self.height_spin.setValue(1080)
+        self.height_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Height:"))
+        resolution_layout.addWidget(self.height_spin)
+
+        self.keep_resolution_check = QCheckBox("Keep source resolution")
+        self.keep_resolution_check.setChecked(True)
+        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
+        resolution_layout.addWidget(self.keep_resolution_check)
+        resolution_layout.addStretch()
+        video_layout.addRow("Resolution:", resolution_layout)
+
+        # Codec
+        self.codec_combo = QComboBox()
+        self.codec_combo.addItems([
+            "MPEG-4 (mp4v) - Default",
+            "H.264 (avc1) - Better compatibility",
+            "H.265 (hevc) - High efficiency"
+        ])
+        video_layout.addRow("Codec:", self.codec_combo)
+
+        # Bitrate
+        bitrate_layout = QHBoxLayout()
+        self.bitrate_spin = QSpinBox()
+        self.bitrate_spin.setMinimum(100)
+        self.bitrate_spin.setMaximum(100000)
+        self.bitrate_spin.setValue(5000)
+        self.bitrate_spin.setSuffix(" kbps")
+        self.bitrate_spin.setSingleStep(1000)
+        bitrate_layout.addWidget(self.bitrate_spin)
+        self.auto_bitrate_check = QCheckBox("Auto")
+        self.auto_bitrate_check.setChecked(True)
+        self.auto_bitrate_check.toggled.connect(self._on_auto_bitrate_toggled)
+        bitrate_layout.addWidget(self.auto_bitrate_check)
+        bitrate_layout.addStretch()
+        video_layout.addRow("Bitrate:", bitrate_layout)
+
+        layout.addWidget(video_group)
+        layout.addStretch()
+
+        return widget
+
+    def _create_advanced_tab(self) -> QWidget:
+        """Create advanced settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+
+        # Performance Group
+        perf_group = QGroupBox("Performance")
+        perf_layout = QFormLayout(perf_group)
+        perf_layout.setSpacing(10)
+
+        self.multiprocessing_check = QCheckBox("Enable multiprocessing")
+        self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
+        perf_layout.addRow("Multiprocessing:", self.multiprocessing_check)
+
+        self.num_workers_spin = QSpinBox()
+        self.num_workers_spin.setMinimum(1)
+        self.num_workers_spin.setMaximum(32)
+        self.num_workers_spin.setValue(4)
+        self.num_workers_spin.setSuffix(" workers")
+        self.num_workers_spin.setEnabled(False)
+        self.multiprocessing_check.toggled.connect(self.num_workers_spin.setEnabled)
+        perf_layout.addRow("Workers:", self.num_workers_spin)
+
+        layout.addWidget(perf_group)
+
+        # Options Group
+        options_group = QGroupBox("Options")
+        options_layout = QVBoxLayout(options_group)
+
+        self.overwrite_check = QCheckBox("Overwrite existing output file")
+        options_layout.addWidget(self.overwrite_check)
+
+        layout.addWidget(options_group)
+        layout.addStretch()
+
+        return widget
+
+    def _create_log_panel(self) -> QWidget:
+        """Create log and progress panel."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        # Progress Group
+        progress_group = QGroupBox("Progress")
+        progress_layout = QVBoxLayout(progress_group)
+        progress_layout.setSpacing(10)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setTextVisible(True)
+        progress_layout.addWidget(self.progress_bar)
+
+        self.progress_label = QLabel("Ready")
+        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        progress_layout.addWidget(self.progress_label)
+
+        layout.addWidget(progress_group)
+
+        # Log Group
+        log_group = QGroupBox("Log")
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(5, 5, 5, 5)
+
+        self.log_text = QPlainTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setFont(QFont("Consolas", 9))
+        self.log_text.setMaximumBlockCount(1000)  # Limit log lines
+        log_layout.addWidget(self.log_text)
+
+        # Clear log button
+        clear_log_btn = QPushButton("Clear Log")
+        clear_log_btn.clicked.connect(self.log_text.clear)
+        log_layout.addWidget(clear_log_btn)
+
+        layout.addWidget(log_group)
+
+        return panel
+
+    def _create_preview_panel(self) -> QWidget:
+        """Create preview panel."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(preview_group)
+        preview_layout.setContentsMargins(5, 5, 5, 5)
+
+        self.preview_widget = PreviewWidget()
+        preview_layout.addWidget(self.preview_widget)
+
+        layout.addWidget(preview_group)
+        return panel
+
+    def _create_action_panel(self) -> QWidget:
+        """Create action buttons panel."""
+        panel = QWidget()
+        layout = QHBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Detect sequence button
+        self.detect_btn = QPushButton("Detect Sequence")
+        self.detect_btn.setToolTip("Detect frame sequence from pattern")
+        layout.addWidget(self.detect_btn)
+
+        layout.addStretch()
+
+        # Convert button
+        self.convert_btn = QPushButton("Convert")
+        self.convert_btn.setMinimumWidth(150)
+        self.convert_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        layout.addWidget(self.convert_btn)
+
+        # Cancel button
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setMinimumWidth(100)
+        layout.addWidget(self.cancel_btn)
+
+        return panel
+
+    def _setup_connections(self) -> None:
+        """Set up signal connections."""
+        self.browse_input_btn.clicked.connect(self._browse_input_pattern)
+        self.browse_output_btn.clicked.connect(self._browse_output_path)
+        self.detect_btn.clicked.connect(self._detect_sequence)
+        self.convert_btn.clicked.connect(self._start_conversion)
+        self.cancel_btn.clicked.connect(self._cancel_conversion)
+        self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
+        self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
+        
+        # Keyboard shortcuts
+        self.convert_btn.setShortcut("Ctrl+Return")
+        self.detect_btn.setShortcut("Ctrl+D")
+
+    def _on_keep_resolution_toggled(self, checked: bool) -> None:
+        """Handle keep resolution checkbox toggle."""
+        self.width_spin.setEnabled(not checked)
+        self.height_spin.setEnabled(not checked)
+
+    def _on_auto_bitrate_toggled(self, checked: bool) -> None:
+        """Handle auto bitrate checkbox toggle."""
+        self.bitrate_spin.setEnabled(not checked)
+
+    def _on_pattern_changed(self) -> None:
+        """Handle input pattern text change."""
+        # Clear preview when pattern changes
+        self.preview_widget.clear_preview()
+
+    def _on_color_space_changed(self) -> None:
+        """Handle color space change."""
+        # Reload preview with new color space if available
+        if hasattr(self, '_last_preview_path') and self._last_preview_path:
+            self._load_preview()
+
+    def _load_preview(self) -> None:
+        """Load preview of first frame."""
+        pattern = self.input_pattern_edit.text().strip()
+        if not pattern:
+            QMessageBox.warning(self, "No Pattern", "Please specify an input pattern first.")
             return
+
+        try:
+            from image_video_processor.core.sequence import SequenceDetector
+
+            sequence = SequenceDetector.detect_sequence(pattern)
+            first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
+            
+            if not first_frame_path.exists():
+                QMessageBox.warning(self, "File Not Found", f"Frame file not found:\n{first_frame_path}")
+                return
+
+            # Get color space
+            color_space_map = {
+                0: ColorSpacePreset.LINEAR_TO_SRGB,
+                1: ColorSpacePreset.LINEAR_TO_REC709,
+                2: ColorSpacePreset.SRGB_TO_LINEAR,
+                3: ColorSpacePreset.NO_CONVERSION,
+            }
+            color_space = color_space_map[self.color_space_combo.currentIndex()]
+
+            self._last_preview_path = first_frame_path
+            self.preview_widget.load_preview(first_frame_path, color_space)
+            self.log_text.appendPlainText(f"Loading preview: {first_frame_path.name}")
+        except Exception as e:
+            QMessageBox.warning(self, "Preview Error", f"Could not load preview:\n{e}")
+            self.log_text.appendPlainText(f"Preview error: {str(e)}")
+
+    def _browse_input_pattern(self) -> None:
+        """Browse for input file pattern."""
+        # Try to open a file to help user construct pattern
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select a Frame File (to detect pattern)",
+            self.settings.value("last_input_dir", ""),
+            "Image Files (*.exr *.png *.jpg *.jpeg);;All Files (*.*)"
+        )
+        if file_path:
+            path_obj = Path(file_path)
+            self.settings.setValue("last_input_dir", str(path_obj.parent))
+            
+            # Try to detect pattern from filename
+            # Find the last sequence of digits before the extension
+            import re
+            
+            filename = path_obj.name
+            name_part, ext = path_obj.stem, path_obj.suffix
+            
+            # Find all sequences of digits in the name part
+            digit_matches = list(re.finditer(r'\d+', name_part))
+            
+            if digit_matches:
+                # Get the last (rightmost) sequence of digits
+                last_match = digit_matches[-1]
+                frame_number = last_match.group(0)
+                padding = len(frame_number)
+                
+                # Replace only the last sequence with pattern
+                pattern_name = (
+                    name_part[:last_match.start()] + 
+                    f"%0{padding}d" + 
+                    name_part[last_match.end():]
+                )
+                pattern_filename = pattern_name + ext
+                full_pattern = str(path_obj.parent / pattern_filename)
+                
+                self.input_pattern_edit.setText(full_pattern)
+                self._detect_sequence()
+            else:
+                # No digits found, just use the filename as-is
+                self.input_pattern_edit.setText(str(file_path))
+                QMessageBox.information(
+                    self,
+                    "No Frame Number",
+                    "Could not detect frame number in filename.\n"
+                    "Please manually enter the pattern (e.g., render.%04d.exr)"
+                )
+
+    def _browse_output_path(self) -> None:
+        """Browse for output video path."""
+        default_path = self.settings.value("last_output_dir", "")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Video As",
+            default_path,
+            "MP4 Files (*.mp4);;All Files (*.*)"
+        )
+        if file_path:
+            if not file_path.endswith(".mp4"):
+                file_path += ".mp4"
+            self.output_path_edit.setText(file_path)
+            self.settings.setValue("last_output_dir", str(Path(file_path).parent))
+
+    def _detect_sequence(self) -> None:
+        """Detect and display sequence information."""
+        pattern = self.input_pattern_edit.text().strip()
+        if not pattern:
+            self.sequence_info_label.setText("No pattern specified")
+            return
+
+        try:
+            from image_video_processor.core.sequence import SequenceDetector
+
+            sequence = SequenceDetector.detect_sequence(pattern)
+            frame_count = len(sequence)
+            frame_range = f"{sequence.frame_numbers[0]}-{sequence.frame_numbers[-1]}"
+            
+            info_text = (
+                f"✓ Detected {frame_count} frames\n"
+                f"Frame range: {frame_range}\n"
+                f"Pattern: {Path(pattern).name}"
+            )
+            self.sequence_info_label.setText(info_text)
+            self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
+            
+            # Auto-set frame range if not set
+            if self.start_frame_spin.value() == 0:
+                self.start_frame_spin.setValue(sequence.frame_numbers[0])
+            if self.end_frame_spin.value() == 0:
+                self.end_frame_spin.setValue(sequence.frame_numbers[-1])
+                
+            self.log_text.appendPlainText(f"Sequence detected: {frame_count} frames")
+            self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
+        except Exception as e:
+            error_text = f"✗ Error: {str(e)}"
+            self.sequence_info_label.setText(error_text)
+            self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
+            self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
+            self.statusBar().showMessage("Sequence detection failed", 3000)
+
+    def _start_conversion(self) -> None:
+        """Start the conversion process."""
+        # Validate inputs
+        if not self.input_pattern_edit.text().strip():
+            QMessageBox.warning(self, "Validation Error", "Please specify an input pattern.")
+            return
+
+        if not self.output_path_edit.text().strip():
+            QMessageBox.warning(self, "Validation Error", "Please specify an output path.")
+            return
+
+        # Check if output exists and overwrite not enabled
+        output_path = Path(self.output_path_edit.text().strip())
+        if output_path.exists() and not self.overwrite_check.isChecked():
+            reply = QMessageBox.question(
+                self,
+                "File Exists",
+                f"Output file already exists:\n{output_path}\n\nOverwrite?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
 
         # Build configuration
         try:
-            config = (
+            config_builder = (
                 ConversionConfigBuilder()
-                .with_input_pattern(self.input_pattern)
-                .with_output_path(self.output_path)
-                .with_color_space_preset(ColorSpacePreset.LINEAR_TO_SRGB)
-                .build()
+                .with_input_pattern(self.input_pattern_edit.text().strip())
+                .with_output_path(self.output_path_edit.text().strip())
+                .with_fps(float(self.fps_spin.value()))
             )
+
+            # Color space
+            color_space_map = {
+                0: ColorSpacePreset.LINEAR_TO_SRGB,
+                1: ColorSpacePreset.LINEAR_TO_REC709,
+                2: ColorSpacePreset.SRGB_TO_LINEAR,
+                3: ColorSpacePreset.NO_CONVERSION,
+            }
+            config_builder.with_color_space_preset(
+                color_space_map[self.color_space_combo.currentIndex()]
+            )
+
+            # Resolution
+            if not self.keep_resolution_check.isChecked():
+                config_builder.with_resolution(
+                    self.width_spin.value(),
+                    self.height_spin.value()
+                )
+
+            # Codec
+            codec_map = {
+                0: "mp4v",
+                1: "avc1",
+                2: "hevc",
+            }
+            config_builder.with_codec(codec_map[self.codec_combo.currentIndex()])
+
+            # Bitrate
+            if not self.auto_bitrate_check.isChecked():
+                config_builder.with_bitrate(self.bitrate_spin.value() * 1000)  # Convert kbps to bps
+
+            # Frame range
+            start_frame = self.start_frame_spin.value()
+            end_frame = self.end_frame_spin.value()
+            if start_frame > 0 and end_frame > 0 and end_frame >= start_frame:
+                config_builder.with_frame_range(start_frame, end_frame)
+
+            # Multiprocessing
+            if self.multiprocessing_check.isChecked():
+                num_workers = self.num_workers_spin.value()
+                config_builder.with_multiprocessing(True, num_workers)
+
+            config = config_builder.build()
+
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Configuration error: {e}")
+            QMessageBox.critical(self, "Configuration Error", f"Error building configuration:\n{e}")
+            self.log_text.appendPlainText(f"Configuration error: {str(e)}")
             return
 
-        # Disable convert button
-        self.convert_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
+        # Update UI
+        self.convert_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)  # Indeterminate
+        self.progress_label.setText("Starting conversion...")
+        self.statusBar().showMessage("Starting conversion...")
+        self.log_text.appendPlainText("=" * 50)
+        self.log_text.appendPlainText("Starting conversion...")
+        self.log_text.appendPlainText(f"Input: {config.input_pattern}")
+        self.log_text.appendPlainText(f"Output: {config.output_path}")
 
         # Start worker thread
         self.worker = ConversionWorker(config)
-        self.worker.finished.connect(self.on_conversion_finished)
-        self.worker.error.connect(self.on_conversion_error)
+        self.worker.finished.connect(self._on_conversion_finished)
+        self.worker.error.connect(self._on_conversion_error)
+        self.worker.log_message.connect(self._on_log_message)
         self.worker.start()
 
-    def on_conversion_finished(self) -> None:
-        """Handle conversion completion."""
-        self.convert_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        QMessageBox.information(self, "Success", "Conversion completed successfully!")
+        self._save_settings()
 
-    def on_conversion_error(self, error_msg: str) -> None:
+    def _cancel_conversion(self) -> None:
+        """Cancel the current conversion."""
+        if self.worker and self.worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "Cancel Conversion",
+                "Are you sure you want to cancel the conversion?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.worker.terminate()
+                self.worker.wait()
+                self._on_conversion_finished()
+                self.log_text.appendPlainText("Conversion cancelled by user")
+
+    def _on_conversion_finished(self) -> None:
+        """Handle conversion completion."""
+        self.convert_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.progress_label.setText("Conversion completed!")
+        self.statusBar().showMessage("Conversion completed successfully!", 5000)
+        QMessageBox.information(
+            self,
+            "Success",
+            f"Conversion completed successfully!\n\nOutput: {self.output_path_edit.text()}"
+        )
+
+    def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
-        self.convert_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        QMessageBox.critical(self, "Error", f"Conversion failed: {error_msg}")
+        self.convert_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("Conversion failed")
+        self.statusBar().showMessage("Conversion failed", 5000)
+        self.log_text.appendPlainText(f"ERROR: {error_msg}")
+        QMessageBox.critical(self, "Conversion Error", f"Conversion failed:\n\n{error_msg}")
+
+    def _on_log_message(self, message: str) -> None:
+        """Handle log message from worker."""
+        self.log_text.appendPlainText(message)
+
+    def _save_settings(self) -> None:
+        """Save current settings."""
+        self.settings.setValue("fps", self.fps_spin.value())
+        self.settings.setValue("width", self.width_spin.value())
+        self.settings.setValue("height", self.height_spin.value())
+        self.settings.setValue("color_space", self.color_space_combo.currentIndex())
+        self.settings.setValue("codec", self.codec_combo.currentIndex())
+        self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
+        self.settings.setValue("auto_bitrate", self.auto_bitrate_check.isChecked())
+        self.settings.setValue("bitrate", self.bitrate_spin.value())
+        self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
+        self.settings.setValue("num_workers", self.num_workers_spin.value())
+
+    def _load_settings(self) -> None:
+        """Load saved settings."""
+        self.fps_spin.setValue(self.settings.value("fps", 24, type=int))
+        self.width_spin.setValue(self.settings.value("width", 1920, type=int))
+        self.height_spin.setValue(self.settings.value("height", 1080, type=int))
+        self.color_space_combo.setCurrentIndex(self.settings.value("color_space", 0, type=int))
+        self.codec_combo.setCurrentIndex(self.settings.value("codec", 0, type=int))
+        self.keep_resolution_check.setChecked(
+            self.settings.value("keep_resolution", True, type=bool)
+        )
+        self.auto_bitrate_check.setChecked(
+            self.settings.value("auto_bitrate", True, type=bool)
+        )
+        self.bitrate_spin.setValue(self.settings.value("bitrate", 5000, type=int))
+        self.multiprocessing_check.setChecked(
+            self.settings.value("multiprocessing", False, type=bool)
+        )
+        self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
 
 
 def run_ui() -> None:
     """Run the UI application."""
     app = QApplication(sys.argv)
-    window = MainWindow()
+    app.setApplicationName("RenderKit")
+    app.setOrganizationName("RenderKit")
+    
+    # Set modern style
+    app.setStyle("Fusion")
+    
+    window = ModernMainWindow()
     window.show()
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
     run_ui()
-
