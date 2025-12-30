@@ -1,5 +1,9 @@
 # Image Video Processor
 
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 A high-performance Python package for image and video processing in VFX workflows. Designed for converting image sequences (EXR, PNG, JPEG) to video formats (MP4) with proper color space handling and performance optimization.
 
 ## Features
@@ -19,24 +23,40 @@ A high-performance Python package for image and video processing in VFX workflow
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.9 or higher
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
+
 ### Using uv (Recommended)
 
 ```bash
 # Install uv if you haven't already
 pip install uv
 
-# Install the package
-cd image_video_processor
+# Clone the repository
+git clone https://github.com/Ahmed-Hindy/renderkit.git
+cd renderkit
+
+# Install the package in editable mode
 uv pip install -e .
 
-# Or install with dev dependencies
+# Or install with dev dependencies for development
 uv pip install -e ".[dev]"
 ```
 
 ### Using pip
 
 ```bash
+# Clone the repository
+git clone https://github.com/Ahmed-Hindy/renderkit.git
+cd renderkit
+
+# Install the package
 pip install -e .
+
+# Or install with dev dependencies
+pip install -e ".[dev]"
 ```
 
 ### Dependencies
@@ -216,18 +236,33 @@ The codebase uses several design patterns for maintainability and extensibility:
 
 ## Testing
 
-Run tests with pytest:
+Run tests with pytest using `uv`:
 
 ```bash
 # Run all tests
-pytest
+uv run python -m pytest tests/ -v
 
 # Run with coverage
-pytest --cov=image_video_processor --cov-report=html
+uv run python -m pytest tests/ --cov=image_video_processor --cov-report=html
+
+# Run only unit tests (excluding integration tests)
+uv run python -m pytest tests/ -v -k "not test_integration_real_files"
+
+# Run only integration tests
+uv run python -m pytest tests/test_integration_real_files.py -v
 
 # Run with benchmarks
-pytest --benchmark-only
+uv run python -m pytest tests/ --benchmark-only
 ```
+
+### Test Coverage
+
+The project includes comprehensive tests:
+- **Unit tests**: Test individual components in isolation
+- **Integration tests**: Test the full pipeline with real EXR sequences
+- **Coverage**: Currently at ~60% code coverage
+
+All tests pass successfully with the test suite.
 
 ## Code Style
 
@@ -249,16 +284,26 @@ ruff check .
 
 ```bash
 # Clone the repository
-cd image_video_processor
+git clone https://github.com/Ahmed-Hindy/renderkit.git
+cd renderkit
 
-# Install with dev dependencies
+# Install with dev dependencies using uv
 uv pip install -e ".[dev]"
 
+# Or using pip
+pip install -e ".[dev]"
+
 # Run tests
-pytest
+uv run python -m pytest tests/ -v
 
 # Format code
-ruff format .
+uv run ruff format .
+
+# Lint code
+uv run ruff check .
+
+# Type checking (optional)
+uv run mypy src/
 ```
 
 ## Examples
@@ -283,13 +328,59 @@ MIT License
 
 ## Contributing
 
-Contributions are welcome! Please ensure:
-- Code follows PEP 8 style guidelines
-- All tests pass
-- Type hints are included
-- Documentation is updated
+Contributions are welcome! Please follow these guidelines:
+
+1. **Fork the repository** and create a feature branch
+2. **Follow code style**: The project uses Ruff for formatting and linting
+3. **Write tests**: Add tests for new features and ensure all tests pass
+4. **Type hints**: Include type hints for all functions and methods
+5. **Update documentation**: Keep README and docstrings up to date
+6. **Commit messages**: Use clear, descriptive commit messages
+
+### Development Workflow
+
+```bash
+# 1. Fork and clone the repository
+git clone https://github.com/yourusername/image-video-processor.git
+cd image-video-processor
+
+# 2. Install dev dependencies
+uv pip install -e ".[dev]"
+
+# 3. Make your changes
+
+# 4. Run tests
+uv run python -m pytest tests/ -v
+
+# 5. Format and lint
+uv run ruff format .
+uv run ruff check .
+
+# 6. Commit and push
+git commit -m "Your descriptive commit message"
+git push origin your-feature-branch
+
+# 7. Create a Pull Request
+```
+
+### Code Style
+
+- Follow PEP 8 style guidelines
+- Use Ruff for formatting (configured in `pyproject.toml`)
+- Include type hints for better code documentation
+- Write docstrings for all public functions and classes
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Ahmed Hindy
+**Ahmed Hindy**
+
+## Acknowledgments
+
+- Built for VFX workflows and image sequence processing
+- Uses OpenEXR for high dynamic range image support
+- Powered by OpenCV for video encoding
 

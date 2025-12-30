@@ -61,4 +61,44 @@ Thumbs.db
 *.exr
 test_output/
 temp/
+test_output_temp.mp4
+output.mp4
+
+# uv
+.uv/
+# Note: uv.lock should be committed for reproducibility
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+
+# pytest
+.pytest_cache/
+.tox/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - PyCharm
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
 

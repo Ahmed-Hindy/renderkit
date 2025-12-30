@@ -13,6 +13,7 @@ authors = [
     {name = "Ahmed Hindy"}
 ]
 keywords = ["vfx", "exr", "video", "image-processing", "conversion"]
+urls = {Homepage = "https://github.com/Ahmed-Hindy/renderkit", Repository = "https://github.com/Ahmed-Hindy/renderkit"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -81,7 +82,6 @@ addopts = [
     "--cov=image_video_processor",
     "--cov-report=term-missing",
     "--cov-report=html",
-    "--benchmark-only",
 ]
 
 [tool.coverage.run]
