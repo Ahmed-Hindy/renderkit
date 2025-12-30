@@ -4,9 +4,16 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from image_video_processor.ui.qt_compat import (
+    QImage,
+    QLabel,
+    QPixmap,
+    Qt,
+    QThread,
+    QVBoxLayout,
+    QWidget,
+    Signal,
+)
 
 from image_video_processor.io.image_reader import ImageReaderFactory
 from image_video_processor.processing.color_space import ColorSpaceConverter, ColorSpacePreset
@@ -45,6 +52,31 @@ class PreviewWorker(QThread):
 
             # Convert to QImage
             height, width = image.shape[:2]
+            # Handle different Qt versions - format access differs
+            # PySide6/PyQt6: QImage.Format.Format_RGB888
+            # PySide2/PyQt5: QImage.Format_RGB888
+            try:
+                # Try PySide6/PyQt6 style
+                rgb_format = getattr(QImage.Format, "Format_RGB888", None)
+                rgba_format = getattr(QImage.Format, "Format_RGBA8888", None)
+            except (AttributeError, TypeError):
+                # Try PySide2/PyQt5 style
+                rgb_format = getattr(QImage, "Format_RGB888", None)
+                rgba_format = getattr(QImage, "Format_RGBA8888", None)
+            
+            # Fallback to direct attribute access if getattr failed
+            if rgb_format is None:
+                try:
+                    rgb_format = QImage.Format.Format_RGB888
+                except AttributeError:
+                    rgb_format = QImage.Format_RGB888
+            
+            if rgba_format is None:
+                try:
+                    rgba_format = QImage.Format.Format_RGBA8888
+                except AttributeError:
+                    rgba_format = QImage.Format_RGBA8888
+            
             if image.shape[2] == 3:
                 # RGB
                 q_image = QImage(
@@ -52,7 +84,7 @@ class PreviewWorker(QThread):
                     width,
                     height,
                     width * 3,
-                    QImage.Format.Format_RGB888
+                    rgb_format
                 )
             elif image.shape[2] == 4:
                 # RGBA
@@ -61,7 +93,7 @@ class PreviewWorker(QThread):
                     width,
                     height,
                     width * 4,
-                    QImage.Format.Format_RGBA8888
+                    rgba_format
                 )
             else:
                 raise ValueError(f"Unsupported image channels: {image.shape[2]}")

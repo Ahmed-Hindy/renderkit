@@ -5,14 +5,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QSettings, QThread, Signal, Qt
-from PySide6.QtGui import QFont, QIcon, QPixmap
-from PySide6.QtWidgets import (
+from image_video_processor.ui.qt_compat import (
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFont,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -22,12 +21,16 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSettings,
     QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
+    Qt,
+    QThread,
     QVBoxLayout,
     QWidget,
+    Signal,
 )
 
 from image_video_processor.api.processor import ImageVideoProcessor
@@ -725,13 +728,30 @@ class ModernMainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
+                # Disconnect signals to prevent double popup
+                self.worker.finished.disconnect()
+                self.worker.error.disconnect()
                 self.worker.terminate()
                 self.worker.wait()
-                self._on_conversion_finished()
+                # Manually reset UI without showing success popup
+                self.convert_btn.setEnabled(True)
+                self.cancel_btn.setEnabled(False)
+                self.progress_bar.setRange(0, 100)
+                self.progress_bar.setValue(0)
+                self.progress_label.setText("Conversion cancelled")
+                self.statusBar().showMessage("Conversion cancelled", 3000)
                 self.log_text.appendPlainText("Conversion cancelled by user")
 
     def _on_conversion_finished(self) -> None:
         """Handle conversion completion."""
+        # Disconnect signals to prevent multiple calls
+        if self.worker:
+            try:
+                self.worker.finished.disconnect()
+                self.worker.error.disconnect()
+            except TypeError:
+                pass  # Already disconnected
+        
         self.convert_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setRange(0, 100)

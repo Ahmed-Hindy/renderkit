@@ -170,6 +170,12 @@ for input_pattern, output_path in sequences:
 
 ### PySide/Qt UI
 
+The UI supports multiple Qt backends for compatibility with different DCCs:
+- **PySide6** (default, recommended)
+- **PySide2** (for Houdini 18.x and older)
+- **PyQt6**
+- **PyQt5**
+
 Launch the graphical interface:
 
 ```python
@@ -178,11 +184,27 @@ from image_video_processor.ui.main_window import run_ui
 run_ui()
 ```
 
-Or from command line (if entry point is configured):
+Or from command line:
 
 ```bash
 python -m image_video_processor.ui.main_window
 ```
+
+#### Specifying Qt Backend
+
+You can specify which Qt backend to use via environment variable:
+
+```bash
+# Use PySide2 (for Houdini)
+export QT_BACKEND=pyside2
+python -m image_video_processor.ui.main_window
+
+# Use PyQt5
+export QT_BACKEND=pyqt5
+python -m image_video_processor.ui.main_window
+```
+
+The UI will auto-detect available backends if not specified, preferring PySide6 > PySide2 > PyQt6 > PyQt5.
 
 ## Architecture
 
@@ -251,6 +273,9 @@ uv run python -m pytest tests/ -v -k "not test_integration_real_files"
 # Run only integration tests
 uv run python -m pytest tests/test_integration_real_files.py -v
 
+# Run UI tests (requires pytest-qt)
+uv run python -m pytest tests/test_ui.py -v
+
 # Run with benchmarks
 uv run python -m pytest tests/ --benchmark-only
 ```
@@ -260,9 +285,21 @@ uv run python -m pytest tests/ --benchmark-only
 The project includes comprehensive tests:
 - **Unit tests**: Test individual components in isolation
 - **Integration tests**: Test the full pipeline with real EXR sequences
+- **UI tests**: Test PySide6/PyQt UI components using pytest-qt
 - **Coverage**: Currently at ~60% code coverage
 
 All tests pass successfully with the test suite.
+
+### CI/CD
+
+The project uses GitHub Actions for continuous integration:
+- **Linting**: Ruff format and lint checks
+- **Type Checking**: mypy type checking
+- **Tests**: Automated testing across Python 3.9-3.12 on Linux, Windows, and macOS
+- **UI Tests**: Automated UI testing with xvfb
+- **Build**: Package build verification
+
+All checks must pass before merging pull requests.
 
 ## Code Style
 
@@ -383,4 +420,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built for VFX workflows and image sequence processing
 - Uses OpenEXR for high dynamic range image support
 - Powered by OpenCV for video encoding
+
 
