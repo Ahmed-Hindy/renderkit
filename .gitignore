@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.uv/
 
 # Virtual environments
 venv/
@@ -32,6 +33,7 @@ ENV/
 *.swp
 *.swo
 *~
+*.code-workspace
 
 # Testing
 .pytest_cache/
@@ -54,6 +56,7 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Project specific
 *.mp4
@@ -63,10 +66,6 @@ test_output/
 temp/
 test_output_temp.mp4
 output.mp4
-
-# uv
-.uv/
-# Note: uv.lock should be committed for reproducibility
 
 # Coverage reports
 .coverage
@@ -79,26 +78,11 @@ htmlcov/
 .pytest_cache/
 .tox/
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# IDE - VSCode
-.vscode/
-*.code-workspace
-
-# IDE - PyCharm
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
 # Temporary files
 *.tmp
 *.bak
 *.swp
 *~
 
+# mkdocs
+/site
