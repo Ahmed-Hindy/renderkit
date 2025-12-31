@@ -4,7 +4,6 @@ Note: UI tests require pytest-qt and a display server (Xvfb on Linux).
 Run with: pytest tests/test_ui.py -v
 """
 
-
 import pytest
 
 # Skip UI tests if pytest-qt is not available
