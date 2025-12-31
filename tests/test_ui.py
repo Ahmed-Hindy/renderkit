@@ -8,10 +8,8 @@ import pytest
 from pathlib import Path
 
 # Skip UI tests if pytest-qt is not available
-try:
-    import pytest_qt
-except ImportError:
-    pytest.skip("pytest-qt not installed", allow_module_level=True)
+# Skip UI tests if pytest-qt is not available
+import pytest_qt
 
 from image_video_processor.ui.qt_compat import (
     QApplication,
@@ -190,4 +188,3 @@ def test_settings_persistence(qtbot, qapp):
 
     # Settings should be loaded (but may vary based on QSettings implementation)
     # This is a basic test - full persistence testing would require more setup
-

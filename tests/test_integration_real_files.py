@@ -16,8 +16,8 @@ class TestRealEXRSequence:
 
     # Real file path pattern
     REAL_SEQUENCE_PATTERN = (
-        r"G:\Projects\AYON_PROJECTS\Canyon_Run\sq001\sh001\publish\render\renderCompositingMain\v001"
-        r"\CanRun_sh001_renderCompositingMain_v001.%04d.exr"
+        r"G:/Projects/AYON_PROJECTS/Canyon_Run/sq001/sh001/publish/render/renderCompositingMain/v001"
+        r"/CanRun_sh001_renderCompositingMain_v001.%04d.exr"
     )
 
     def test_sequence_detection_real_files(self) -> None:
