@@ -4,4 +4,3 @@ from image_video_processor.core.config import ConversionConfig, ConversionConfig
 from image_video_processor.core.sequence import FrameSequence, SequenceDetector
 
 __all__ = ["FrameSequence", "SequenceDetector", "ConversionConfig", "ConversionConfigBuilder"]
-

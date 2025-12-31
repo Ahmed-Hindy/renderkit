@@ -56,4 +56,3 @@ class TestFileUtils:
         output_file.write_text("test")
         assert FileUtils.validate_output_path(output_file, overwrite=True) is True
         assert FileUtils.validate_output_path(output_file, overwrite=False) is False
-

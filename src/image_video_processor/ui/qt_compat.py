@@ -14,8 +14,7 @@ if QT_BACKEND:
         _backend = QT_BACKEND
     else:
         raise ValueError(
-            f"Invalid QT_BACKEND: {QT_BACKEND}. "
-            f"Must be one of: pyside6, pyside2, pyqt6, pyqt5"
+            f"Invalid QT_BACKEND: {QT_BACKEND}. Must be one of: pyside6, pyside2, pyqt6, pyqt5"
         )
 else:
     # Auto-detect: try in order of preference
@@ -24,18 +23,22 @@ else:
         try:
             if backend == "pyside6":
                 import PySide6  # noqa: F401
+
                 _backend = "pyside6"
                 break
             elif backend == "pyside2":
                 import PySide2  # noqa: F401
+
                 _backend = "pyside2"
                 break
             elif backend == "pyqt6":
                 import PyQt6  # noqa: F401
+
                 _backend = "pyqt6"
                 break
             elif backend == "pyqt5":
                 import PyQt5  # noqa: F401
+
                 _backend = "pyqt5"
                 break
         except ImportError:
@@ -43,8 +46,7 @@ else:
 
 if _backend is None:
     raise ImportError(
-        "No Qt backend found. Please install one of: "
-        "PySide6, PySide2, PyQt6, or PyQt5"
+        "No Qt backend found. Please install one of: PySide6, PySide2, PyQt6, or PyQt5"
     )
 
 # Import based on detected backend
@@ -196,4 +198,3 @@ def get_qt_backend() -> str:
         Backend name: 'pyside6', 'pyside2', 'pyqt6', or 'pyqt5'
     """
     return QT_BACKEND_NAME
-

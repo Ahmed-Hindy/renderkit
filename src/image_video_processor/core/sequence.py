@@ -143,9 +143,7 @@ class SequenceDetector:
                     detected_pattern = filename
 
         if not frame_numbers:
-            raise SequenceDetectionError(
-                f"Could not detect frame sequence from pattern: {pattern}"
-            )
+            raise SequenceDetectionError(f"Could not detect frame sequence from pattern: {pattern}")
 
         return FrameSequence(base_path, detected_pattern or filename, frame_numbers, padding)
 
@@ -212,9 +210,7 @@ class SequenceDetector:
 
         # Try to find files with same prefix/suffix but different numbers
         if base_path.exists():
-            pattern_regex = re.compile(
-                re.escape(prefix) + r"(\d+)" + re.escape(suffix)
-            )
+            pattern_regex = re.compile(re.escape(prefix) + r"(\d+)" + re.escape(suffix))
             for file_path in base_path.iterdir():
                 if file_path.is_file():
                     match = pattern_regex.match(file_path.name)
@@ -247,4 +243,3 @@ class SequenceDetector:
         # file metadata or timestamps
         # For now, return default or None
         return default_fps
-

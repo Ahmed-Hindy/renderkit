@@ -91,8 +91,7 @@ class VideoEncoder:
                 )
 
         logger.info(
-            f"Initialized video encoder: {width}x{height} @ {self.fps}fps, "
-            f"codec={self.codec}"
+            f"Initialized video encoder: {width}x{height} @ {self.fps}fps, codec={self.codec}"
         )
 
     def write_frame(self, frame: np.ndarray) -> None:
@@ -144,4 +143,3 @@ class VideoEncoder:
             True if encoder is initialized
         """
         return self._writer is not None and self._writer.isOpened()
-

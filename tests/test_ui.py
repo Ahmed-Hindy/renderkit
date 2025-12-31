@@ -8,8 +8,7 @@ import pytest
 from pathlib import Path
 
 # Skip UI tests if pytest-qt is not available
-# Skip UI tests if pytest-qt is not available
-import pytest_qt
+import pytestqt
 
 from image_video_processor.ui.qt_compat import (
     QApplication,

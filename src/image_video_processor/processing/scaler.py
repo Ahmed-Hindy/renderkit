@@ -94,4 +94,3 @@ class ImageScaler:
         target_h = int(h * scale)
 
         return ImageScaler.scale_image(image, target_w, target_h, interpolation)
-

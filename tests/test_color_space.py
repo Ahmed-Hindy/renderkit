@@ -87,4 +87,3 @@ class TestNoConversionStrategy:
         result = strategy.convert(test_image)
 
         np.testing.assert_array_equal(test_image, result)
-

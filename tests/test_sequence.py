@@ -108,4 +108,3 @@ class TestFrameSequence:
         assert "FrameSequence" in repr_str
         assert "render.%04d.exr" in repr_str
         assert "frames=3" in repr_str
-

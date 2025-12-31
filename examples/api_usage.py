@@ -43,4 +43,3 @@ for input_pattern, output_path in sequences:
         output_path=output_path,
         fps=24.0,
     )
-

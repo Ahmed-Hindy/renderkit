@@ -63,38 +63,26 @@ class PreviewWorker(QThread):
                 # Try PySide2/PyQt5 style
                 rgb_format = getattr(QImage, "Format_RGB888", None)
                 rgba_format = getattr(QImage, "Format_RGBA8888", None)
-            
+
             # Fallback to direct attribute access if getattr failed
             if rgb_format is None:
                 try:
                     rgb_format = QImage.Format.Format_RGB888
                 except AttributeError:
                     rgb_format = QImage.Format_RGB888
-            
+
             if rgba_format is None:
                 try:
                     rgba_format = QImage.Format.Format_RGBA8888
                 except AttributeError:
                     rgba_format = QImage.Format_RGBA8888
-            
+
             if image.shape[2] == 3:
                 # RGB
-                q_image = QImage(
-                    image.data,
-                    width,
-                    height,
-                    width * 3,
-                    rgb_format
-                )
+                q_image = QImage(image.data, width, height, width * 3, rgb_format)
             elif image.shape[2] == 4:
                 # RGBA
-                q_image = QImage(
-                    image.data,
-                    width,
-                    height,
-                    width * 4,
-                    rgba_format
-                )
+                q_image = QImage(image.data, width, height, width * 4, rgba_format)
             else:
                 raise ValueError(f"Unsupported image channels: {image.shape[2]}")
 
@@ -102,9 +90,10 @@ class PreviewWorker(QThread):
             pixmap = QPixmap.fromImage(q_image)
             if pixmap.width() > 400 or pixmap.height() > 300:
                 pixmap = pixmap.scaled(
-                    400, 300,
+                    400,
+                    300,
                     Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
+                    Qt.TransformationMode.SmoothTransformation,
                 )
 
             self.preview_ready.emit(pixmap)

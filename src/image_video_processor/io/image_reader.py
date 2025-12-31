@@ -103,7 +103,12 @@ class EXRReader(ImageReader):
                 if "A" in channels:
                     # RGBA
                     image = np.stack(
-                        [channel_data["R"], channel_data["G"], channel_data["B"], channel_data["A"]],
+                        [
+                            channel_data["R"],
+                            channel_data["G"],
+                            channel_data["B"],
+                            channel_data["A"],
+                        ],
                         axis=-1,
                     )
                 else:
@@ -291,4 +296,3 @@ class ImageReaderFactory:
             reader_class: Reader class to register
         """
         cls._readers[extension.lower()] = reader_class
-

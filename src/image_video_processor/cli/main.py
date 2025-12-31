@@ -144,4 +144,3 @@ def convert_exr_sequence(
 
 if __name__ == "__main__":
     main()
-

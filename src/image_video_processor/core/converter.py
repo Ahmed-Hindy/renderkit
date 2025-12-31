@@ -46,7 +46,9 @@ class SequenceConverter:
             ImageReadError: If images cannot be read
             VideoEncodingError: If video encoding fails
         """
-        logger.info(f"Starting conversion: {self.config.input_pattern} -> {self.config.output_path}")
+        logger.info(
+            f"Starting conversion: {self.config.input_pattern} -> {self.config.output_path}"
+        )
 
         # Step 1: Detect sequence
         try:
@@ -137,4 +139,3 @@ class SequenceConverter:
             # Clean up
             if self.encoder:
                 self.encoder.close()
-

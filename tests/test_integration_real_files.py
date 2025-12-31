@@ -200,4 +200,3 @@ class TestRealEXRSequence:
 
                 assert output_path.exists(), f"Output should be created for {color_space.name}"
                 assert output_path.stat().st_size > 0
-

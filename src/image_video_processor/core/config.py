@@ -72,9 +72,7 @@ class ConversionConfigBuilder:
         self._fps = fps
         return self
 
-    def with_color_space_preset(
-        self, preset: ColorSpacePreset
-    ) -> "ConversionConfigBuilder":
+    def with_color_space_preset(self, preset: ColorSpacePreset) -> "ConversionConfigBuilder":
         """Set the color space preset."""
         self._color_space_preset = preset
         return self
@@ -95,9 +93,7 @@ class ConversionConfigBuilder:
         self._bitrate = bitrate
         return self
 
-    def with_frame_range(
-        self, start: int, end: int
-    ) -> "ConversionConfigBuilder":
+    def with_frame_range(self, start: int, end: int) -> "ConversionConfigBuilder":
         """Set the frame range."""
         self._start_frame = start
         self._end_frame = end
@@ -132,4 +128,3 @@ class ConversionConfigBuilder:
             use_multiprocessing=self._use_multiprocessing,
             num_workers=self._num_workers,
         )
-

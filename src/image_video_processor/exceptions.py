@@ -35,4 +35,3 @@ class ConfigurationError(ImageVideoProcessorError):
     """Raised when configuration is invalid."""
 
     pass
-

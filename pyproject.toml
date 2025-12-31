@@ -52,6 +52,7 @@ ivp = "image_video_processor.cli.main:main"
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings

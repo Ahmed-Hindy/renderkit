@@ -44,4 +44,3 @@ config = (
 )
 
 processor.convert_with_config(config)
-

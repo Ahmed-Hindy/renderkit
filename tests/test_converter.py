@@ -91,4 +91,3 @@ class TestConversionConfigBuilder:
 
         assert config.start_frame == 100
         assert config.end_frame == 200
-

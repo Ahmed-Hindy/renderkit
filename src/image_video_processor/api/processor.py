@@ -92,4 +92,3 @@ class ImageVideoProcessor:
         """
         converter = SequenceConverter(config)
         converter.convert()
-

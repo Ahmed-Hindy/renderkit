@@ -110,12 +110,12 @@ class ModernMainWindow(QMainWindow):
         left_splitter = QSplitter(Qt.Orientation.Vertical)
         settings_panel = self._create_settings_panel()
         left_splitter.addWidget(settings_panel)
-        
+
         # Preview panel
         preview_panel = self._create_preview_panel()
         left_splitter.addWidget(preview_panel)
         left_splitter.setSizes([400, 300])
-        
+
         main_splitter.addWidget(left_splitter)
 
         # Right panel - Log and Progress
@@ -206,21 +206,18 @@ class ModernMainWindow(QMainWindow):
         color_layout.setSpacing(10)
 
         self.color_space_combo = QComboBox()
-        self.color_space_combo.addItems([
-            "Linear to sRGB (Default)",
-            "Linear to Rec.709",
-            "sRGB to Linear",
-            "No Conversion"
-        ])
+        self.color_space_combo.addItems(
+            ["Linear to sRGB (Default)", "Linear to Rec.709", "sRGB to Linear", "No Conversion"]
+        )
         color_layout.addRow("Preset:", self.color_space_combo)
 
         layout.addWidget(color_group)
-        
+
         # Preview button
         preview_btn = QPushButton("Load Preview")
         preview_btn.clicked.connect(self._load_preview)
         layout.addWidget(preview_btn)
-        
+
         layout.addStretch()
 
         return widget
@@ -456,10 +453,10 @@ class ModernMainWindow(QMainWindow):
     def _create_menu_bar(self) -> None:
         """Create menu bar with Help menu."""
         menubar = self.menuBar()
-        
+
         # Help menu
         help_menu = menubar.addMenu("Help")
-        
+
         # About action
         about_action = help_menu.addAction("About")
         about_action.triggered.connect(self._show_about)
@@ -478,7 +475,7 @@ class ModernMainWindow(QMainWindow):
         <p><b>License:</b> MIT</p>
         <p><b>Repository:</b> <a href="https://github.com/Ahmed-Hindy/renderkit">GitHub</a></p>
         """
-        
+
         msg = QMessageBox(self)
         msg.setWindowTitle("About RenderKit")
         msg.setTextFormat(Qt.TextFormat.RichText)
@@ -491,23 +488,23 @@ class ModernMainWindow(QMainWindow):
         import cv2
         import tempfile
         from pathlib import Path
-        
+
         available_codecs = []
         codec_map = {}
-        
+
         # Test codecs in order of preference
         test_codecs = [
             ("mp4v", "MPEG-4 (mp4v) - Default"),
             ("avc1", "H.264 (avc1) - Better compatibility"),
             ("hevc", "H.265 (hevc) - High efficiency"),
         ]
-        
+
         # Create a temporary file to test codec availability
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
                 tmp_path = Path(tmp_file.name)
-            
+
             for codec_id, codec_name in test_codecs:
                 try:
                     fourcc = cv2.VideoWriter_fourcc(*codec_id)
@@ -553,15 +550,12 @@ class ModernMainWindow(QMainWindow):
                     tmp_path.unlink()
                 except Exception:
                     pass
-        
+
         if not available_codecs:
             # Fallback to basic codecs if detection fails
-            available_codecs = [
-                "MPEG-4 (mp4v) - Default",
-                "H.264 (avc1) - Better compatibility"
-            ]
+            available_codecs = ["MPEG-4 (mp4v) - Default", "H.264 (avc1) - Better compatibility"]
             codec_map = {0: "mp4v", 1: "avc1"}
-        
+
         self.codec_combo.addItems(available_codecs)
         self.codec_combo.setCurrentIndex(0)  # Set default selection
         self._codec_map = codec_map
@@ -575,7 +569,7 @@ class ModernMainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
-        
+
         # Keyboard shortcuts
         self.convert_btn.setShortcut("Ctrl+Return")
         self.detect_btn.setShortcut("Ctrl+D")
@@ -597,7 +591,7 @@ class ModernMainWindow(QMainWindow):
     def _on_color_space_changed(self) -> None:
         """Handle color space change."""
         # Reload preview with new color space if available
-        if hasattr(self, '_last_preview_path') and self._last_preview_path:
+        if hasattr(self, "_last_preview_path") and self._last_preview_path:
             self._load_preview()
 
     def _load_preview(self) -> None:
@@ -612,9 +606,11 @@ class ModernMainWindow(QMainWindow):
 
             sequence = SequenceDetector.detect_sequence(pattern)
             first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
-            
+
             if not first_frame_path.exists():
-                QMessageBox.warning(self, "File Not Found", f"Frame file not found:\n{first_frame_path}")
+                QMessageBox.warning(
+                    self, "File Not Found", f"Frame file not found:\n{first_frame_path}"
+                )
                 return
 
             # Get color space
@@ -640,37 +636,37 @@ class ModernMainWindow(QMainWindow):
             self,
             "Select a Frame File (to detect pattern)",
             self.settings.value("last_input_dir", ""),
-            "Image Files (*.exr *.png *.jpg *.jpeg);;All Files (*.*)"
+            "Image Files (*.exr *.png *.jpg *.jpeg);;All Files (*.*)",
         )
         if file_path:
             path_obj = Path(file_path)
             self.settings.setValue("last_input_dir", str(path_obj.parent))
-            
+
             # Try to detect pattern from filename
             # Find the last sequence of digits before the extension
             import re
-            
+
             filename = path_obj.name
             name_part, ext = path_obj.stem, path_obj.suffix
-            
+
             # Find all sequences of digits in the name part
-            digit_matches = list(re.finditer(r'\d+', name_part))
-            
+            digit_matches = list(re.finditer(r"\d+", name_part))
+
             if digit_matches:
                 # Get the last (rightmost) sequence of digits
                 last_match = digit_matches[-1]
                 frame_number = last_match.group(0)
                 padding = len(frame_number)
-                
+
                 # Replace only the last sequence with pattern
                 pattern_name = (
-                    name_part[:last_match.start()] + 
-                    f"%0{padding}d" + 
-                    name_part[last_match.end():]
+                    name_part[: last_match.start()]
+                    + f"%0{padding}d"
+                    + name_part[last_match.end() :]
                 )
                 pattern_filename = pattern_name + ext
                 full_pattern = str(path_obj.parent / pattern_filename)
-                
+
                 self.input_pattern_edit.setText(full_pattern)
                 self._detect_sequence()
             else:
@@ -680,17 +676,14 @@ class ModernMainWindow(QMainWindow):
                     self,
                     "No Frame Number",
                     "Could not detect frame number in filename.\n"
-                    "Please manually enter the pattern (e.g., render.%04d.exr)"
+                    "Please manually enter the pattern (e.g., render.%04d.exr)",
                 )
 
     def _browse_output_path(self) -> None:
         """Browse for output video path."""
         default_path = self.settings.value("last_output_dir", "")
         file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Video As",
-            default_path,
-            "MP4 Files (*.mp4);;All Files (*.*)"
+            self, "Save Video As", default_path, "MP4 Files (*.mp4);;All Files (*.*)"
         )
         if file_path:
             if not file_path.endswith(".mp4"):
@@ -711,7 +704,7 @@ class ModernMainWindow(QMainWindow):
             sequence = SequenceDetector.detect_sequence(pattern)
             frame_count = len(sequence)
             frame_range = f"{sequence.frame_numbers[0]}-{sequence.frame_numbers[-1]}"
-            
+
             info_text = (
                 f"✓ Detected {frame_count} frames\n"
                 f"Frame range: {frame_range}\n"
@@ -719,13 +712,13 @@ class ModernMainWindow(QMainWindow):
             )
             self.sequence_info_label.setText(info_text)
             self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
-            
+
             # Auto-set frame range if not set
             if self.start_frame_spin.value() == 0:
                 self.start_frame_spin.setValue(sequence.frame_numbers[0])
             if self.end_frame_spin.value() == 0:
                 self.end_frame_spin.setValue(sequence.frame_numbers[-1])
-            
+
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
             output_dir = pattern_path.parent
@@ -733,16 +726,17 @@ class ModernMainWindow(QMainWindow):
             pattern_name = pattern_path.stem
             # Replace pattern tokens with base name
             import re
+
             # Remove pattern tokens (%04d, $F4, ####, etc.)
-            base_name = re.sub(r'%0?\d+d', '', pattern_name)
-            base_name = re.sub(r'\$F\d+', '', base_name)
-            base_name = re.sub(r'#+', '', base_name)
-            base_name = base_name.strip('._-')  # Clean up separators
+            base_name = re.sub(r"%0?\d+d", "", pattern_name)
+            base_name = re.sub(r"\$F\d+", "", base_name)
+            base_name = re.sub(r"#+", "", base_name)
+            base_name = base_name.strip("._-")  # Clean up separators
             if not base_name:
                 base_name = "output"
             output_path = output_dir / f"{base_name}.mp4"
             self.output_path_edit.setText(str(output_path))
-                
+
             self.log_text.appendPlainText(f"Sequence detected: {frame_count} frames")
             self.log_text.appendPlainText(f"Auto-detected output: {output_path.name}")
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
@@ -771,7 +765,7 @@ class ModernMainWindow(QMainWindow):
                 self,
                 "File Exists",
                 f"Output file already exists:\n{output_path}\n\nOverwrite?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
                 return
@@ -798,14 +792,11 @@ class ModernMainWindow(QMainWindow):
 
             # Resolution
             if not self.keep_resolution_check.isChecked():
-                config_builder.with_resolution(
-                    self.width_spin.value(),
-                    self.height_spin.value()
-                )
+                config_builder.with_resolution(self.width_spin.value(), self.height_spin.value())
 
             # Codec
             codec_index = self.codec_combo.currentIndex()
-            if hasattr(self, '_codec_map') and codec_index in self._codec_map:
+            if hasattr(self, "_codec_map") and codec_index in self._codec_map:
                 config_builder.with_codec(self._codec_map[codec_index])
             else:
                 # Fallback
@@ -848,7 +839,7 @@ class ModernMainWindow(QMainWindow):
 
         # Reset flag
         self._conversion_finished_flag = False
-        
+
         # Start worker thread
         self.worker = ConversionWorker(config)
         self.worker.finished.connect(self._on_conversion_finished)
@@ -866,7 +857,7 @@ class ModernMainWindow(QMainWindow):
                 self,
                 "Cancel Conversion",
                 "Are you sure you want to cancel the conversion?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
                 # Disconnect signals to prevent double popup
@@ -890,7 +881,7 @@ class ModernMainWindow(QMainWindow):
                 self,
                 "Quit Application",
                 "Are you sure you want to quit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
                 QApplication.instance().quit()
@@ -901,7 +892,7 @@ class ModernMainWindow(QMainWindow):
         if self._conversion_finished_flag:
             return
         self._conversion_finished_flag = True
-        
+
         # Disconnect signals to prevent multiple calls
         if self.worker:
             try:
@@ -909,18 +900,18 @@ class ModernMainWindow(QMainWindow):
                 self.worker.error.disconnect()
             except TypeError:
                 pass  # Already disconnected
-        
+
         self.convert_btn.setEnabled(True)
         # Cancel button remains enabled (for quit)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         self.progress_label.setText("Conversion completed!")
         self.statusBar().showMessage("Conversion completed successfully!", 5000)
-        
+
         QMessageBox.information(
             self,
             "Success",
-            f"Conversion completed successfully!\n\nOutput: {self.output_path_edit.text()}"
+            f"Conversion completed successfully!\n\nOutput: {self.output_path_edit.text()}",
         )
 
     def _on_conversion_error(self, error_msg: str) -> None:
@@ -962,9 +953,7 @@ class ModernMainWindow(QMainWindow):
         self.keep_resolution_check.setChecked(
             self.settings.value("keep_resolution", True, type=bool)
         )
-        self.auto_bitrate_check.setChecked(
-            self.settings.value("auto_bitrate", True, type=bool)
-        )
+        self.auto_bitrate_check.setChecked(self.settings.value("auto_bitrate", True, type=bool))
         self.bitrate_spin.setValue(self.settings.value("bitrate", 5000, type=int))
         self.multiprocessing_check.setChecked(
             self.settings.value("multiprocessing", False, type=bool)
@@ -977,10 +966,10 @@ def run_ui() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("RenderKit")
     app.setOrganizationName("RenderKit")
-    
+
     # Set modern style
     app.setStyle("Fusion")
-    
+
     window = ModernMainWindow()
     window.show()
     sys.exit(app.exec())

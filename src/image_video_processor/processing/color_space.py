@@ -229,4 +229,3 @@ class ColorSpaceConverter:
             strategy_class: Strategy class to register
         """
         cls._strategies[preset] = strategy_class
-
