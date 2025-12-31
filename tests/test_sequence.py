@@ -1,6 +1,5 @@
 """Tests for sequence detection and parsing."""
 
-import tempfile
 from pathlib import Path
 
 import pytest

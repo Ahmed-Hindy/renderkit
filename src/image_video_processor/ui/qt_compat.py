@@ -1,7 +1,7 @@
 """Qt compatibility layer for PyQt5, PyQt6, PySide2, and PySide6."""
 
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 # Try to detect which Qt backend to use
 # Priority: Environment variable > PySide6 > PySide2 > PyQt6 > PyQt5
@@ -51,8 +51,8 @@ if _backend is None:
 
 # Import based on detected backend
 if _backend == "pyside6":
-    from PySide6.QtCore import QSettings, QThread, Signal, Qt
-    from PySide6.QtGui import QFont, QIcon, QPixmap, QImage
+    from PySide6.QtCore import QSettings, Qt, QThread, Signal
+    from PySide6.QtGui import QFont, QIcon, QImage, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -76,8 +76,8 @@ if _backend == "pyside6":
         QWidget,
     )
 elif _backend == "pyside2":
-    from PySide2.QtCore import QSettings, QThread, Signal, Qt
-    from PySide2.QtGui import QFont, QIcon, QPixmap, QImage
+    from PySide2.QtCore import QSettings, Qt, QThread, Signal
+    from PySide2.QtGui import QFont, QIcon, QImage, QPixmap
     from PySide2.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -101,8 +101,9 @@ elif _backend == "pyside2":
         QWidget,
     )
 elif _backend == "pyqt6":
-    from PyQt6.QtCore import QSettings, QThread, pyqtSignal as Signal, Qt
-    from PyQt6.QtGui import QFont, QIcon, QPixmap, QImage
+    from PyQt6.QtCore import QSettings, Qt, QThread
+    from PyQt6.QtCore import pyqtSignal as Signal
+    from PyQt6.QtGui import QFont, QIcon, QImage, QPixmap
     from PyQt6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -126,8 +127,9 @@ elif _backend == "pyqt6":
         QWidget,
     )
 elif _backend == "pyqt5":
-    from PyQt5.QtCore import QSettings, QThread, pyqtSignal as Signal, Qt
-    from PyQt5.QtGui import QFont, QIcon, QPixmap, QImage
+    from PyQt5.QtCore import QSettings, Qt, QThread
+    from PyQt5.QtCore import pyqtSignal as Signal
+    from PyQt5.QtGui import QFont, QIcon, QImage, QPixmap
     from PyQt5.QtWidgets import (
         QApplication,
         QCheckBox,

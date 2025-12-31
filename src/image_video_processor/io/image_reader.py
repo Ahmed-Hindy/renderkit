@@ -3,7 +3,6 @@
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -69,8 +68,8 @@ class EXRReader(ImageReader):
             Image as numpy array (H, W, C) in float32 format, HDR range
         """
         try:
-            import OpenEXR
             import Imath
+            import OpenEXR
         except ImportError as e:
             raise ImageReadError(
                 "OpenEXR library not available. Install with: pip install OpenEXR Imath"

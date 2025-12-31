@@ -1,6 +1,7 @@
 """Example: Convert EXR sequence to MP4 using the API."""
 
 from image_video_processor import ImageVideoProcessor
+from image_video_processor.core.config import ConversionConfigBuilder
 from image_video_processor.processing.color_space import ColorSpacePreset
 
 # Example 1: Simple conversion
@@ -30,7 +31,7 @@ processor.convert_exr_sequence_to_mp4(
 )
 
 # Example 4: Using ConversionConfigBuilder
-from image_video_processor.core.config import ConversionConfigBuilder
+
 
 config = (
     ConversionConfigBuilder()

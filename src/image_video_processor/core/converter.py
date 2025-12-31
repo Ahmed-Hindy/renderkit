@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 from tqdm import tqdm
 
 from image_video_processor.core.config import ConversionConfig
@@ -16,7 +15,7 @@ from image_video_processor.exceptions import (
     VideoEncodingError,
 )
 from image_video_processor.io.image_reader import ImageReaderFactory
-from image_video_processor.processing.color_space import ColorSpaceConverter, ColorSpacePreset
+from image_video_processor.processing.color_space import ColorSpaceConverter
 from image_video_processor.processing.scaler import ImageScaler
 from image_video_processor.processing.video_encoder import VideoEncoder
 

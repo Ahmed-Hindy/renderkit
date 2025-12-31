@@ -4,17 +4,13 @@ Note: UI tests require pytest-qt and a display server (Xvfb on Linux).
 Run with: pytest tests/test_ui.py -v
 """
 
+
 import pytest
-from pathlib import Path
 
 # Skip UI tests if pytest-qt is not available
-import pytestqt
-
 from image_video_processor.ui.qt_compat import (
     QApplication,
-    QLineEdit,
-    QPushButton,
-    QWidget,
+    Qt,
     get_qt_backend,
 )
 
@@ -128,7 +124,7 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
     window.input_pattern_edit.setText(pattern)
 
     # Click detect button
-    qtbot.mouseClick(window.detect_btn, qtbot.Qt.LeftButton)
+    qtbot.mouseClick(window.detect_btn, Qt.LeftButton)
 
     # Wait for detection
     qtbot.waitUntil(lambda: "Detected" in window.sequence_info_label.text(), timeout=2000)
@@ -141,14 +137,13 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
 def test_convert_button_validation(qtbot, qapp):
     """Test that convert button validates inputs."""
     from image_video_processor.ui.main_window import ModernMainWindow
-    from image_video_processor.ui.qt_compat import QMessageBox
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
 
     # Try to convert without inputs - should show warning
     with qtbot.waitSignal(window.convert_btn.clicked, timeout=1000):
-        qtbot.mouseClick(window.convert_btn, qtbot.Qt.LeftButton)
+        qtbot.mouseClick(window.convert_btn, Qt.LeftButton)
 
     # Should show warning message box
     # Note: This is hard to test without mocking, but we can check button state

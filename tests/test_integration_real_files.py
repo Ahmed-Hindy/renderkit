@@ -144,7 +144,7 @@ class TestRealEXRSequence:
 
     def test_full_conversion_all_frames(self) -> None:
         """Test full conversion with all frames (may take longer)."""
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_output_all_frames.mp4"

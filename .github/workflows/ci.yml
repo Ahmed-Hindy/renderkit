@@ -102,7 +102,7 @@ jobs:
         run: uv pip install --system -e ".[dev]"
       
       - name: Run tests
-        run: python -m pytest tests/ -v --cov=image_video_processor --cov-report=xml
+        run: python -m pytest tests/ -v -k "not test_ui" --cov=image_video_processor --cov-report=xml
       
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'

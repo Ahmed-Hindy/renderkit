@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from image_video_processor.io.file_utils import FileUtils
 
 

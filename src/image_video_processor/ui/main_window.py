@@ -5,13 +5,17 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from image_video_processor import __version__
+from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
+from image_video_processor.processing.color_space import ColorSpacePreset
 from image_video_processor.ui.qt_compat import (
+    QT_BACKEND_NAME,
     QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFormLayout,
     QFont,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -22,22 +26,15 @@ from image_video_processor.ui.qt_compat import (
     QProgressBar,
     QPushButton,
     QSettings,
-    QSizePolicy,
     QSpinBox,
     QSplitter,
-    QTabWidget,
     Qt,
+    QTabWidget,
     QThread,
     QVBoxLayout,
     QWidget,
     Signal,
 )
-
-from image_video_processor import __version__
-from image_video_processor.api.processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
-from image_video_processor.ui.qt_compat import QT_BACKEND_NAME
 from image_video_processor.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
@@ -485,9 +482,10 @@ class ModernMainWindow(QMainWindow):
 
     def _populate_codecs(self) -> None:
         """Populate codec combo box with available codecs."""
-        import cv2
         import tempfile
         from pathlib import Path
+
+        import cv2
 
         available_codecs = []
         codec_map = {}
@@ -646,7 +644,7 @@ class ModernMainWindow(QMainWindow):
             # Find the last sequence of digits before the extension
             import re
 
-            filename = path_obj.name
+            # filename = path_obj.name
             name_part, ext = path_obj.stem, path_obj.suffix
 
             # Find all sequences of digits in the name part

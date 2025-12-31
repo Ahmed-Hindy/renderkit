@@ -1,7 +1,6 @@
 """Tests for color space conversion."""
 
 import numpy as np
-import pytest
 
 from image_video_processor.processing.color_space import (
     ColorSpaceConverter,

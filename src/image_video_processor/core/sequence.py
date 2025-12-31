@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from image_video_processor.exceptions import SequenceDetectionError
 
@@ -14,7 +14,7 @@ class FrameSequence:
         self,
         base_path: Path,
         pattern: str,
-        frame_numbers: List[int],
+        frame_numbers: list[int],
         padding: int,
     ) -> None:
         """Initialize frame sequence.
@@ -97,7 +97,7 @@ class SequenceDetector:
         # Try to detect which pattern is being used
         detected_pattern = None
         padding = 4
-        frame_numbers: List[int] = []
+        frame_numbers: list[int] = []
 
         # Check for %04d pattern
         if "%" in filename and "d" in filename:
@@ -150,7 +150,7 @@ class SequenceDetector:
     @staticmethod
     def _find_frames_by_pattern(
         base_path: Path, pattern: str, padding: int, placeholder: str
-    ) -> List[int]:
+    ) -> list[int]:
         """Find frame numbers matching a pattern.
 
         Args:
@@ -162,7 +162,7 @@ class SequenceDetector:
         Returns:
             List of frame numbers found
         """
-        frame_numbers: List[int] = []
+        frame_numbers: list[int] = []
         pattern_regex = pattern
 
         # Convert pattern to regex
@@ -192,7 +192,7 @@ class SequenceDetector:
     @staticmethod
     def _find_frames_by_numeric_pattern(
         base_path: Path, filename: str, numeric_match: re.Match[str]
-    ) -> List[int]:
+    ) -> list[int]:
         """Find frame numbers by replacing numeric part of filename.
 
         Args:
@@ -203,7 +203,7 @@ class SequenceDetector:
         Returns:
             List of frame numbers found
         """
-        frame_numbers: List[int] = []
+        frame_numbers: list[int] = []
         start_pos, end_pos = numeric_match.span()
         prefix = filename[:start_pos]
         suffix = filename[end_pos:]
@@ -225,7 +225,7 @@ class SequenceDetector:
 
     @staticmethod
     def auto_detect_fps(
-        frame_numbers: List[int], default_fps: Optional[float] = None
+        frame_numbers: list[int], default_fps: Optional[float] = None
     ) -> Optional[float]:
         """Auto-detect frame rate from frame numbers (if possible).
 

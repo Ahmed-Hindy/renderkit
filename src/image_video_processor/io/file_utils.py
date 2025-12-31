@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class FileUtils:
         return FileUtils.get_file_extension(path) in supported_extensions
 
     @staticmethod
-    def find_files_by_pattern(directory: Path, pattern: str, recursive: bool = False) -> List[Path]:
+    def find_files_by_pattern(directory: Path, pattern: str, recursive: bool = False) -> list[Path]:
         """Find files matching a pattern.
 
         Args:

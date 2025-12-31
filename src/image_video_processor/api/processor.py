@@ -1,7 +1,6 @@
 """Public Python API for the image video processor."""
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
