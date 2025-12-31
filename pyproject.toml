@@ -46,6 +46,11 @@ dev = [
     "mypy>=1.7.0",
 ]
 
+docs = [
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+
 [project.scripts]
 ivp = "image_video_processor.cli.main:main"
 

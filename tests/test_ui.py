@@ -133,19 +133,27 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
     assert "frames" in window.sequence_info_label.text()
 
 
-def test_convert_button_validation(qtbot, qapp):
+def test_convert_button_validation(qtbot, qapp, monkeypatch):
     """Test that convert button validates inputs."""
     from image_video_processor.ui.main_window import ModernMainWindow
+    from image_video_processor.ui.qt_compat import QMessageBox
+
+    # Mock QMessageBox.warning
+    warning_called = False
+
+    def mock_warning(*args, **kwargs):
+        nonlocal warning_called
+        warning_called = True
+
+    monkeypatch.setattr(QMessageBox, "warning", mock_warning)
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
 
     # Try to convert without inputs - should show warning
-    with qtbot.waitSignal(window.convert_btn.clicked, timeout=1000):
-        qtbot.mouseClick(window.convert_btn, Qt.LeftButton)
+    qtbot.mouseClick(window.convert_btn, Qt.LeftButton)
 
-    # Should show warning message box
-    # Note: This is hard to test without mocking, but we can check button state
+    assert warning_called
     assert window.convert_btn.isEnabled() is True
 
 

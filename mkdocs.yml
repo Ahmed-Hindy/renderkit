@@ -1,0 +1,49 @@
+site_name: Image Video Processor
+site_description: A high-performance image and video processor for VFX workflows.
+site_author: Ahmed Hindy
+repo_url: https://github.com/Ahmed-Hindy/renderkit
+repo_name: Ahmed-Hindy/renderkit
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.expand
+    - navigation.indexes
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_root_heading: true
+            show_source: true
+
+nav:
+  - Home: index.md
+  - API Reference:
+      - Core:
+          - ImageVideoProcessor: api/image_video_processor.md
+          - Config: api/config.md
+          - Sequence: api/sequence.md
+      - IO:
+          - ImageReader: api/io/image_reader.md
+          - FileUtils: api/io/file_utils.md
+      - Processing:
+          - ColorSpace: api/processing/color_space.md
+          - Scaler: api/processing/scaler.md
+          - VideoEncoder: api/processing/video_encoder.md
