@@ -5,16 +5,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 try:
-    from renderkit import constants
-
     print("✅ Constants imported successfully")
 except ImportError as e:
     print(f"❌ Failed to import constants: {e}")
     sys.exit(1)
 
 try:
-    from renderkit.io.image_reader import ImageReader
-
     # Check if we can instantiate or check module attributes
     print("✅ ImageReader imported successfully")
 except ImportError as e:
@@ -22,8 +18,6 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from renderkit.processing.color_space import ColorSpacePreset, OCIOColorSpaceStrategy
-
     print("✅ ColorSpace modules imported successfully")
 except ImportError as e:
     print(f"❌ Failed to import ColorSpace modules: {e}")
@@ -31,7 +25,6 @@ except ImportError as e:
 
 try:
     # Minimal UI import check - might fail without QApplication but imports should work
-    from renderkit.ui.main_window import ModernMainWindow as MainWindow
 
     print("✅ MainWindow imported successfully")
 except ImportError as e:

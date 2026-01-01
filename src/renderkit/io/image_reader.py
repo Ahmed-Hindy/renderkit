@@ -1,4 +1,4 @@
-"""Image reading with Factory pattern for different image formats."""
+"""Image reading with OpenImageIO (OIIO)."""
 
 import logging
 from abc import ABC, abstractmethod
@@ -19,419 +19,180 @@ class ImageReader(ABC):
 
     @abstractmethod
     def read(self, path: Path) -> np.ndarray:
-        """Read an image file and return as numpy array.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Image as numpy array (H, W, C) in float32 format [0.0, 1.0] or HDR range
-
-        Raises:
-            ImageReadError: If image cannot be read
-        """
+        """Read an image file and return as numpy array."""
         pass
 
     @abstractmethod
     def get_channels(self, path: Path) -> int:
-        """Get the number of channels in the image.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Number of channels
-        """
+        """Get the number of channels."""
         pass
 
     @abstractmethod
     def get_resolution(self, path: Path) -> tuple[int, int]:
-        """Get the resolution of the image.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Tuple of (width, height)
-        """
+        """Get the resolution (width, height)."""
         pass
 
+    @abstractmethod
     def get_metadata_fps(self, path: Path) -> Optional[float]:
-        """Get the FPS from image metadata if available.
+        """Get FPS from metadata."""
+        pass
 
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Detected FPS or None
-        """
-        return None
-
+    @abstractmethod
     def get_metadata_color_space(self, path: Path) -> Optional[str]:
-        """Get the color space from image metadata if available.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Detected color space name or None
-        """
-        return None
+        """Get color space from metadata."""
+        pass
 
 
-class EXRReader(ImageReader):
-    """Reader for EXR files using OpenEXR."""
+class OIIOReader(ImageReader):
+    """Reader for all image formats supported by OpenImageIO."""
 
     def read(self, path: Path) -> np.ndarray:
-        """Read an EXR file.
-
-        Args:
-            path: Path to the EXR file
+        """Read an image using OIIO ImageBuf.
 
         Returns:
-            Image as numpy array (H, W, C) in float32 format, HDR range
+            Image as numpy array (H, W, C) in float32 format.
         """
         try:
-            import Imath
-            import OpenEXR
+            import OpenImageIO as oiio
         except ImportError as e:
-            raise ImageReadError(
-                "OpenEXR library not available. Install with: pip install OpenEXR Imath"
-            ) from e
+            raise ImageReadError("OpenImageIO library not available.") from e
 
         if not path.exists():
             raise ImageReadError(f"File does not exist: {path}")
 
         try:
-            exr_file = OpenEXR.InputFile(str(path))
-            header = exr_file.header()
+            buf = oiio.ImageBuf(str(path))
+            if buf.has_error:
+                raise ImageReadError(f"OIIO failed to read {path}: {buf.geterror()}")
 
-            # Get image dimensions
-            dw = header["dataWindow"]
-            width = dw.max.x - dw.min.x + 1
-            height = dw.max.y - dw.min.y + 1
+            # Read image as float32
+            data = buf.get_pixels(oiio.FLOAT)
 
-            # Read channels
-            channels = header["channels"].keys()
-            channel_data = {}
+            if data is None or data.size == 0:
+                raise ImageReadError(f"OIIO failed to extract pixel data: {path}")
 
-            for channel in channels:
-                channel_str = exr_file.channel(channel, Imath.PixelType(Imath.PixelType.FLOAT))
-                channel_array = np.frombuffer(channel_str, dtype=np.float32)
-                channel_array = channel_array.reshape((height, width))
-                channel_data[channel] = channel_array
+            spec = buf.spec()
+            width = spec.width
+            height = spec.height
+            channels = spec.nchannels
 
-            # Determine output channels (prefer RGB/RGBA)
-            if "R" in channels and "G" in channels and "B" in channels:
-                if "A" in channels:
-                    # RGBA
-                    image = np.stack(
-                        [
-                            channel_data["R"],
-                            channel_data["G"],
-                            channel_data["B"],
-                            channel_data["A"],
-                        ],
-                        axis=-1,
-                    )
-                else:
-                    # RGB
-                    image = np.stack(
-                        [channel_data["R"], channel_data["G"], channel_data["B"]],
-                        axis=-1,
-                    )
+            # OIIO's get_pixels often returns the correctly shaped array already,
+            # but let's be explicit and ensure (H, W, C)
+            if data.ndim == 1:
+                image = data.reshape((height, width, channels))
             else:
-                # Use first available channel or convert to grayscale
-                first_channel = list(channels)[0]
-                image = channel_data[first_channel][:, :, np.newaxis]
-
-            exr_file.close()
-            return image
-
-        except Exception as e:
-            raise ImageReadError(f"Failed to read EXR file: {path}") from e
-
-    def get_channels(self, path: Path) -> int:
-        """Get the number of channels in the EXR file."""
-        try:
-            import OpenEXR
-        except ImportError as e:
-            raise ImageReadError("OpenEXR library not available") from e
-
-        if not path.exists():
-            raise ImageReadError(f"File does not exist: {path}")
-
-        try:
-            exr_file = OpenEXR.InputFile(str(path))
-            header = exr_file.header()
-            channels = header["channels"].keys()
-            exr_file.close()
-
-            if "R" in channels and "G" in channels and "B" in channels:
-                return 4 if "A" in channels else 3
-            return 1
-
-        except Exception as e:
-            raise ImageReadError(f"Failed to read EXR header: {path}") from e
-
-    def get_resolution(self, path: Path) -> tuple[int, int]:
-        """Get the resolution of the EXR file."""
-        try:
-            import OpenEXR
-        except ImportError as e:
-            raise ImageReadError("OpenEXR library not available") from e
-
-        if not path.exists():
-            raise ImageReadError(f"File does not exist: {path}")
-
-        try:
-            exr_file = OpenEXR.InputFile(str(path))
-            header = exr_file.header()
-            dw = header["dataWindow"]
-            width = dw.max.x - dw.min.x + 1
-            height = dw.max.y - dw.min.y + 1
-            exr_file.close()
-            return (width, height)
-
-        except Exception as e:
-            raise ImageReadError(f"Failed to read EXR header: {path}") from e
-
-    def get_metadata_fps(self, path: Path) -> Optional[float]:
-        """Get the FPS from EXR metadata.
-
-        Supports standard 'framesPerSecond' and engine-specific keys
-        like 'arnold/fps', 'rs/fps', 'vray/fps', etc.
-        """
-        try:
-            import OpenEXR
-        except ImportError:
-            return None
-
-        if not path.exists():
-            return None
-
-        try:
-            exr_file = OpenEXR.InputFile(str(path))
-            header = exr_file.header()
-            exr_file.close()
-
-            # Priority list of metadata keys for FPS (base names)
-            # Priority list of metadata keys for FPS (base names)
-            target_keys = constants.FPS_METADATA_KEYS
-
-            # Create a lookup for case-insensitive matching
-            header_keys_lower = {k.lower(): k for k in header.keys()}
-
-            for target in target_keys:
-                target_lower = target.lower()
-                if target_lower in header_keys_lower:
-                    actual_key = header_keys_lower[target_lower]
-                    val = header[actual_key]
-                    logger.debug(
-                        f"Found FPS metadata key '{actual_key}': {val} (type: {type(val)})"
-                    )
-
-                    try:
-                        # Handle Rational/Rational2 types (often have .n and .d or come as tuples)
-                        if hasattr(val, "n") and hasattr(val, "d"):
-                            return float(val.n) / float(val.d)
-                        elif isinstance(val, (int, float)):
-                            return float(val)
-                        elif isinstance(val, tuple) and len(val) == 2:
-                            return float(val[0]) / float(val[1])
-                        elif isinstance(val, (str, bytes)):
-                            if isinstance(val, bytes):
-                                val = val.decode("utf-8")
-                            # Strip non-numeric chars but keep decimal and division sign
-                            # Handle "24/1" or "24000/1001" strings
-                            if "/" in val:
-                                parts = val.split("/")
-                                if len(parts) == 2:
-                                    return float(parts[0]) / float(parts[1])
-
-                            clean_val = "".join(c for c in val if c.isdigit() or c == ".")
-                            if clean_val:
-                                return float(clean_val)
-                    except (ValueError, ZeroDivisionError) as e:
-                        logger.warning(
-                            f"Failed to parse FPS value '{val}' for key '{actual_key}': {e}"
-                        )
-                        continue
-
-            return None
-        except Exception as e:
-            logger.debug(f"Metadata detection failed for {path}: {e}")
-            return None
-
-    def get_metadata_color_space(self, path: Path) -> Optional[str]:
-        """Get the color space from EXR metadata.
-
-        Supports standard keys like 'exr/oiio:ColorSpace' or 'colorSpace'.
-        """
-        try:
-            import OpenEXR
-        except ImportError:
-            return None
-
-        if not path.exists():
-            return None
-
-        try:
-            exr_file = OpenEXR.InputFile(str(path))
-            header = exr_file.header()
-            exr_file.close()
-
-            # Priority list of metadata keys for Color Space
-            # Priority list of metadata keys for Color Space
-            target_keys = constants.COLOR_SPACE_METADATA_KEYS
-
-            # Create a lookup for case-insensitive matching
-            header_keys = list(header.keys())
-            header_keys_lower = {k.lower(): k for k in header_keys}
-
-            for target in target_keys:
-                target_lower = target.lower()
-                if target_lower in header_keys_lower:
-                    actual_key = header_keys_lower[target_lower]
-                    val = header[actual_key]
-
-                    if isinstance(val, bytes):
-                        val = val.decode("utf-8")
-
-                    if isinstance(val, str):
-                        logger.info(f"Found ColorSpace metadata key '{actual_key}': {val}")
-                        return val.strip()
-
-            # If we reached here, we didn't find the key.
-            # Log available keys to help debugging
-            logger.info(
-                f"Color Space metadata not found. Available keys: {', '.join(sorted(header_keys))}"
-            )
-            return None
-        except Exception as e:
-            logger.debug(f"ColorSpace metadata detection failed for {path}: {e}")
-            return None
-
-
-class StandardImageReader(ImageReader):
-    """Reader for standard image formats (PNG, JPEG) using imageio."""
-
-    def read(self, path: Path) -> np.ndarray:
-        """Read a standard image file.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            Image as numpy array (H, W, C) in float32 format [0.0, 1.0]
-        """
-        try:
-            import imageio
-        except ImportError as e:
-            raise ImageReadError("imageio library not available") from e
-
-        if not path.exists():
-            raise ImageReadError(f"File does not exist: {path}")
-
-        try:
-            image = imageio.imread(str(path))
-            # Convert to float32 and normalize to [0, 1]
-            if image.dtype == np.uint8:
-                image = image.astype(np.float32) / 255.0
-            elif image.dtype == np.uint16:
-                image = image.astype(np.float32) / 65535.0
-            else:
-                image = image.astype(np.float32)
-
-            # Ensure 3D array (H, W, C)
-            if len(image.shape) == 2:
-                image = image[:, :, np.newaxis]
-            elif len(image.shape) == 3 and image.shape[2] > 4:
-                # Handle unusual channel counts
-                image = image[:, :, :3]
+                image = data
 
             return image
 
         except Exception as e:
-            raise ImageReadError(f"Failed to read image file: {path}") from e
+            raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
 
     def get_channels(self, path: Path) -> int:
-        """Get the number of channels in the image."""
+        """Get channel count using OIIO."""
         try:
-            import imageio
-        except ImportError as e:
-            raise ImageReadError("imageio library not available") from e
+            import OpenImageIO as oiio
+        except ImportError:
+            return 3
 
-        if not path.exists():
-            raise ImageReadError(f"File does not exist: {path}")
+        buf = oiio.ImageBuf(str(path))
+        if buf.has_error:
+            return 3
 
-        try:
-            image = imageio.imread(str(path))
-            if len(image.shape) == 2:
-                return 1
-            return image.shape[2]
-
-        except Exception as e:
-            raise ImageReadError(f"Failed to read image: {path}") from e
+        spec = buf.spec()
+        return spec.nchannels
 
     def get_resolution(self, path: Path) -> tuple[int, int]:
-        """Get the resolution of the image."""
+        """Get resolution using OIIO."""
         try:
-            import imageio
-        except ImportError as e:
-            raise ImageReadError("imageio library not available") from e
+            import OpenImageIO as oiio
+        except ImportError:
+            return (0, 0)
 
-        if not path.exists():
-            raise ImageReadError(f"File does not exist: {path}")
+        buf = oiio.ImageBuf(str(path))
+        if buf.has_error:
+            return (0, 0)
 
+        spec = buf.spec()
+        return (spec.width, spec.height)
+
+    def get_metadata_fps(self, path: Path) -> Optional[float]:
+        """Get FPS from OIIO metadata."""
         try:
-            image = imageio.imread(str(path))
-            return (image.shape[1], image.shape[0])
+            import OpenImageIO as oiio
+        except ImportError:
+            return None
 
-        except Exception as e:
-            raise ImageReadError(f"Failed to read image: {path}") from e
+        buf = oiio.ImageBuf(str(path))
+        if buf.has_error:
+            return None
+
+        spec = buf.spec()
+        fps = None
+
+        # Check standard and custom keys in constants
+        for key in constants.FPS_METADATA_KEYS:
+            val = spec.getattribute(key)
+            if val is not None:
+                try:
+                    # OIIO attributes can be tuples for rationals
+                    if isinstance(val, (list, tuple)) and len(val) == 2:
+                        fps = float(val[0]) / float(val[1])
+                    else:
+                        fps = float(val)
+                    break
+                except (ValueError, TypeError, ZeroDivisionError):
+                    continue
+
+        return fps
+
+    def get_metadata_color_space(self, path: Path) -> Optional[str]:
+        """Get color space from OIIO metadata."""
+        try:
+            import OpenImageIO as oiio
+        except ImportError:
+            return None
+
+        buf = oiio.ImageBuf(str(path))
+        if buf.has_error:
+            return None
+
+        spec = buf.spec()
+        color_space = None
+
+        # Check standard and custom keys in constants
+        for key in constants.COLOR_SPACE_METADATA_KEYS:
+            val = spec.getattribute(key)
+            if val is not None:
+                if isinstance(val, bytes):
+                    val = val.decode("utf-8")
+                color_space = str(val).strip()
+                break
+
+        return color_space
 
 
 class ImageReaderFactory:
-    """Factory for creating appropriate image readers."""
+    """Factory for creating appropriate image readers (Now standardized to OIIO)."""
 
     _readers: dict[str, type[ImageReader]] = {
-        "exr": EXRReader,
-        "png": StandardImageReader,
-        "jpg": StandardImageReader,
-        "jpeg": StandardImageReader,
+        "exr": OIIOReader,
+        "png": OIIOReader,
+        "jpg": OIIOReader,
+        "jpeg": OIIOReader,
+        "tiff": OIIOReader,
+        "tif": OIIOReader,
+        "dpx": OIIOReader,
     }
 
     @classmethod
     def create_reader(cls, path: Path) -> ImageReader:
-        """Create an appropriate image reader for the given file.
-
-        Args:
-            path: Path to the image file
-
-        Returns:
-            ImageReader instance
-
-        Raises:
-            ImageReadError: If no reader is available for the file type
-        """
+        """Create an OIIO reader for the given file."""
         extension = FileUtils.get_file_extension(path)
-        reader_class = cls._readers.get(extension)
-
-        if reader_class is None:
-            raise ImageReadError(
-                f"No reader available for file type: {extension}. "
-                f"Supported types: {list(cls._readers.keys())}"
-            )
-
+        reader_class = cls._readers.get(extension, OIIOReader)
         return reader_class()
 
     @classmethod
     def register_reader(cls, extension: str, reader_class: type[ImageReader]) -> None:
-        """Register a custom image reader.
-
-        Args:
-            extension: File extension (without dot)
-            reader_class: Reader class to register
-        """
+        """Register a custom image reader."""
         cls._readers[extension.lower()] = reader_class

@@ -1,10 +1,10 @@
-"""Video encoding using OpenCV/FFmpeg."""
+"""Video encoding using imageio/FFmpeg."""
 
 import logging
 from pathlib import Path
 from typing import Optional
 
-import cv2
+import imageio
 import numpy as np
 
 from renderkit.exceptions import VideoEncodingError
@@ -13,28 +13,31 @@ logger = logging.getLogger(__name__)
 
 
 class VideoEncoder:
-    """Video encoder for creating MP4 files from image sequences."""
+    """Video encoder for creating MP4 files using imageio (FFmpeg)."""
 
     def __init__(
         self,
         output_path: Path,
         fps: float,
-        codec: str = "mp4v",
+        codec: str = "libx264",
         bitrate: Optional[int] = None,
+        quality: Optional[int] = 10,
     ) -> None:
         """Initialize video encoder.
 
         Args:
             output_path: Path to output video file
             fps: Frame rate
-            codec: Video codec (default: 'mp4v', use 'avc1' for H.264)
-            bitrate: Video bitrate in bits per second (optional)
+            codec: Video codec (FFmpeg name like 'libx264', 'libx265')
+            bitrate: Video bitrate in kbps (optional)
+            quality: Video quality (0-10), 10 is best (optional, used if bitrate is None)
         """
-        self.output_path = output_path
+        self.output_path = output_path.absolute()
         self.fps = fps
         self.codec = codec
         self.bitrate = bitrate
-        self._writer: Optional[cv2.VideoWriter] = None
+        self.quality = quality
+        self._writer = None
         self._width: Optional[int] = None
         self._height: Optional[int] = None
 
@@ -62,108 +65,90 @@ class VideoEncoder:
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Get fourcc codec
-        fourcc = cv2.VideoWriter_fourcc(*self.codec)
+        # Map UI/OpenCV-style codecs to FFmpeg codecs
+        codec_map = {
+            "avc1": "libx264",
+            "hevc": "libx265",
+            "mp4v": "mpeg4",
+            "XVID": "mpeg4",
+        }
+        ffmpeg_codec = codec_map.get(self.codec, self.codec)
 
-        # Create video writer with FFMPEG preference if possible
-        # Some codecs fail on Windows Media Foundation (default)
-        self._writer = cv2.VideoWriter(
-            str(self.output_path),
-            cv2.CAP_FFMPEG,
-            fourcc,
-            self.fps,
-            (width, height),
-        )
+        # Prepare writer options
+        writer_kwargs = {
+            "fps": self.fps,
+            "codec": ffmpeg_codec,
+            "macro_block_size": 16,
+        }
 
-        if not self._writer.isOpened():
-            # Fallback to default backend if FFMPEG failed
-            self._writer = cv2.VideoWriter(
-                str(self.output_path),
-                fourcc,
-                self.fps,
-                (width, height),
+        # Encoder-specific tuning
+        if ffmpeg_codec == "libaom-av1":
+            # AV1 is extremely slow by default. Use -cpu-used 6-8 for better speed.
+            # Also needs bitrate=0 to enable CRF mode in libaom.
+            writer_kwargs["bitrate"] = 0
+            # Map 0-10 quality to CRF 60-15 (lower is better)
+            crf = 60 - (self.quality * 4) if self.quality is not None else 32
+            writer_kwargs["ffmpeg_params"] = ["-crf", str(crf), "-cpu-used", "6"]
+            logger.info(f"AV1 tuning: crf={crf}, cpu-used=6")
+        elif self.bitrate:
+            writer_kwargs["bitrate"] = f"{self.bitrate}k"
+        elif self.quality is not None:
+            writer_kwargs["quality"] = self.quality
+
+        try:
+            # Using str() on an absolute path is safest across platforms
+            output_str = str(self.output_path)
+
+            self._writer = imageio.get_writer(
+                output_str,
+                format="FFMPEG",
+                mode="I",
+                **writer_kwargs,
             )
-
-        if not self._writer.isOpened():
-            # Try alternative codec for better compatibility
-            if self.codec == "mp4v":
-                logger.warning("mp4v codec failed, trying XVID")
-                fourcc = cv2.VideoWriter_fourcc(*"XVID")
-                self._writer = cv2.VideoWriter(
-                    str(self.output_path),
-                    fourcc,
-                    self.fps,
-                    (width, height),
-                )
-            elif self.codec == "avc1":
-                logger.warning("avc1 codec failed, trying mp4v")
-                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                self._writer = cv2.VideoWriter(
-                    str(self.output_path),
-                    fourcc,
-                    self.fps,
-                    (width, height),
-                )
-
-            if not self._writer.isOpened():
-                raise VideoEncodingError(
-                    f"Failed to initialize video encoder for: {self.output_path}"
-                )
-
-        logger.info(
-            f"Initialized video encoder: {width}x{height} @ {self.fps}fps, codec={self.codec}"
-        )
+            logger.info(
+                f"Initialized imageio-ffmpeg writer: {width}x{height} @ {self.fps}fps, "
+                f"codec={ffmpeg_codec}, bitrate={self.bitrate or 'Auto'}k, quality={self.quality}"
+            )
+        except Exception as e:
+            raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 
     def write_frame(self, frame: np.ndarray) -> None:
         """Write a frame to the video.
 
         Args:
-            frame: Frame as numpy array (H, W, C) in uint8 format [0, 255]
-
-        Raises:
-            VideoEncodingError: If frame cannot be written
+            frame: Frame as numpy array (H, W, C) in uint8 or float32 format
         """
         if self._writer is None:
             raise VideoEncodingError("Video encoder not initialized. Call initialize() first.")
 
-        # Ensure frame is uint8
+        # Ensure frame is uint8 [0, 255] for imageio
         if frame.dtype != np.uint8:
-            # Clamp and convert
             frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
 
-        # Force 3 channels (OpenCV VideoWriter with standard codecs usually expects BGR)
-        if frame.shape[2] == 4:
-            # RGBA to RGB (drop alpha)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
-        elif frame.shape[2] == 1:
-            # Gray to RGB
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        # imageio expects RGB (standard)
+        # If RGBA, drop alpha channel
+        if len(frame.shape) == 3 and frame.shape[2] == 4:
+            frame = frame[:, :, :3]
+        # If Grayscale, ensure 3D
+        elif len(frame.shape) == 2:
+            frame = np.stack([frame] * 3, axis=-1)
 
-        # Convert RGB to BGR (OpenCV uses BGR)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-        # Resize frame if dimensions don't match encoder dimensions
-        h, w = frame.shape[:2]
-        if w != self._width or h != self._height:
-            logger.warning(
-                f"Frame dimensions ({w}x{h}) do not match encoder dimensions "
-                f"({self._width}x{self._height}). Resizing frame to match."
-            )
-            frame = cv2.resize(frame, (self._width, self._height), interpolation=cv2.INTER_LANCZOS4)
-
-        self._writer.write(frame)
+        try:
+            self._writer.append_data(frame)
+        except Exception as e:
+            raise VideoEncodingError(f"Failed to write frame to video: {e}") from e
 
     def close(self) -> None:
         """Close the video writer."""
         if self._writer is not None:
-            self._writer.release()
-            self._writer = None
-            logger.info(f"Video encoding completed: {self.output_path}")
+            try:
+                self._writer.close()
+                logger.info(f"Video encoding completed: {self.output_path}")
+            except Exception as e:
+                logger.error(f"Error closing video writer: {e}")
+            finally:
+                self._writer = None
 
     def is_initialized(self) -> bool:
-        """Check if encoder is initialized.
-
-        Returns:
-            True if encoder is initialized
-        """
-        return self._writer is not None and self._writer.isOpened()
+        """Check if encoder is initialized."""
+        return self._writer is not None

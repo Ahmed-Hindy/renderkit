@@ -3,6 +3,8 @@
 import logging
 from pathlib import Path
 
+from renderkit import constants
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,8 +42,7 @@ class FileUtils:
         Returns:
             True if file is a supported image format
         """
-        supported_extensions = {"exr", "png", "jpg", "jpeg"}
-        return FileUtils.get_file_extension(path) in supported_extensions
+        return FileUtils.get_file_extension(path) in constants.OIIO_SUPPORTED_EXTENSIONS
 
     @staticmethod
     def find_files_by_pattern(directory: Path, pattern: str, recursive: bool = False) -> list[Path]:
@@ -95,3 +96,33 @@ class FileUtils:
         # Ensure parent directory exists
         FileUtils.ensure_directory(path.parent)
         return True
+
+    @staticmethod
+    def validate_output_filename(path_str: str) -> tuple[bool, str]:
+        """Check if the output filename is valid for video encoding.
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not path_str.strip():
+            return False, "Output path is empty."
+
+        path = Path(path_str.strip())
+
+        # Check extension
+        ext = path.suffix.lower().lstrip(".")
+        if not ext:
+            return False, "Output path must have a file extension (e.g., .mp4)."
+
+        if ext not in constants.SUPPORTED_VIDEO_EXTENSIONS:
+            return (
+                False,
+                f"Unsupported video extension: .{ext}. Supported: {', '.join(constants.SUPPORTED_VIDEO_EXTENSIONS)}",
+            )
+
+        # Check for invalid characters in filename (basic check)
+        invalid_chars = '<>:"|?*'
+        if any(c in path.name for c in invalid_chars):
+            return False, f"Filename contains invalid characters: {invalid_chars}"
+
+        return True, ""

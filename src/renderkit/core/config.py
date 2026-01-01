@@ -17,8 +17,9 @@ class ConversionConfig:
     color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
     width: Optional[int] = None
     height: Optional[int] = None
-    codec: str = "mp4v"
+    codec: str = "libx264"
     bitrate: Optional[int] = None
+    quality: int = 10  # 0-10, 10 is best
     start_frame: Optional[int] = None
     end_frame: Optional[int] = None
     use_multiprocessing: bool = False
@@ -53,8 +54,9 @@ class ConversionConfigBuilder:
         self._color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
         self._width: Optional[int] = None
         self._height: Optional[int] = None
-        self._codec: str = "mp4v"
+        self._codec: str = "libx264"
         self._bitrate: Optional[int] = None
+        self._quality: int = 10
         self._start_frame: Optional[int] = None
         self._end_frame: Optional[int] = None
         self._use_multiprocessing: bool = False
@@ -102,6 +104,11 @@ class ConversionConfigBuilder:
         self._bitrate = bitrate
         return self
 
+    def with_quality(self, quality: int) -> "ConversionConfigBuilder":
+        """Set the video quality (0-10)."""
+        self._quality = quality
+        return self
+
     def with_frame_range(self, start: int, end: int) -> "ConversionConfigBuilder":
         """Set the frame range."""
         self._start_frame = start
@@ -132,6 +139,7 @@ class ConversionConfigBuilder:
             height=self._height,
             codec=self._codec,
             bitrate=self._bitrate,
+            quality=self._quality,
             start_frame=self._start_frame,
             end_frame=self._end_frame,
             use_multiprocessing=self._use_multiprocessing,

@@ -1,5 +1,3 @@
-import sys
-
 try:
     import PyOpenColorIO as OCIO
 

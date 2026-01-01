@@ -7,6 +7,7 @@ from typing import Optional
 
 from renderkit import __version__, constants
 from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.io.file_utils import FileUtils
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.qt_compat import (
     QT_BACKEND_NAME,
@@ -27,6 +28,7 @@ from renderkit.ui.qt_compat import (
     QProgressBar,
     QPushButton,
     QSettings,
+    QSlider,
     QSpinBox,
     QSplitter,
     Qt,
@@ -286,21 +288,21 @@ class ModernMainWindow(QMainWindow):
         self._populate_codecs()
         video_layout.addRow("Codec:", self.codec_combo)
 
-        # Bitrate
-        bitrate_layout = QHBoxLayout()
-        self.bitrate_spin = QSpinBox()
-        self.bitrate_spin.setMinimum(100)
-        self.bitrate_spin.setMaximum(100000)
-        self.bitrate_spin.setValue(5000)
-        self.bitrate_spin.setSuffix(" kbps")
-        self.bitrate_spin.setSingleStep(1000)
-        bitrate_layout.addWidget(self.bitrate_spin)
-        self.auto_bitrate_check = QCheckBox("Auto")
-        self.auto_bitrate_check.setChecked(True)
-        self.auto_bitrate_check.toggled.connect(self._on_auto_bitrate_toggled)
-        bitrate_layout.addWidget(self.auto_bitrate_check)
-        bitrate_layout.addStretch()
-        video_layout.addRow("Bitrate:", bitrate_layout)
+        # Quality Slider
+        quality_layout = QHBoxLayout()
+        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self.quality_slider.setRange(0, 10)
+        self.quality_slider.setValue(10)
+        self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.quality_slider.setTickInterval(1)
+        self.quality_slider.setToolTip("Quality (0-10), 10 is best (visually lossless).")
+
+        self.quality_label = QLabel("10 (Max)")
+        self.quality_label.setFixedWidth(60)
+
+        quality_layout.addWidget(self.quality_slider)
+        quality_layout.addWidget(self.quality_label)
+        video_layout.addRow("Visual Quality:", quality_layout)
 
         layout.addWidget(video_group)
         layout.addStretch()
@@ -482,82 +484,25 @@ class ModernMainWindow(QMainWindow):
         msg.exec()
 
     def _populate_codecs(self) -> None:
-        """Populate codec combo box with available codecs."""
-        import tempfile
-        from pathlib import Path
-
-        import cv2
-
-        available_codecs = []
-        codec_map = {}
-
-        # Test codecs in order of preference
-        test_codecs = [
-            ("mp4v", "MPEG-4 (mp4v) - Default"),
-            ("avc1", "H.264 (avc1) - Better compatibility"),
-            ("hevc", "H.265 (hevc) - High efficiency"),
+        """Populate codec combo box with standard FFmpeg codecs."""
+        # Standard robust codecs supported by imageio-ffmpeg
+        codecs = [
+            ("libx264", "H.264 (AVC) - Recommended"),
+            ("libx265", "H.265 (HEVC) - High Efficiency"),
+            ("libaom-av1", "AV1 - Maximum Compression"),
+            ("mpeg4", "MPEG-4 - Legacy compatibility"),
         ]
 
-        # Create a temporary file to test codec availability
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
-                tmp_path = Path(tmp_file.name)
+        available_codecs = []
+        self._codec_map = {}
 
-            for codec_id, codec_name in test_codecs:
-                try:
-                    fourcc = cv2.VideoWriter_fourcc(*codec_id)
-                    # Try to create a writer (this will fail if codec is not available)
-                    test_writer = cv2.VideoWriter(
-                        str(tmp_path),
-                        fourcc,
-                        24.0,
-                        (100, 100),
-                    )
-                    if test_writer.isOpened():
-                        available_codecs.append(codec_name)
-                        codec_map[len(available_codecs) - 1] = codec_id
-                        test_writer.release()
-                    else:
-                        # Try alternative for hevc
-                        if codec_id == "hevc":
-                            # Try hvc1 as alternative
-                            try:
-                                fourcc = cv2.VideoWriter_fourcc(*"hvc1")
-                                test_writer = cv2.VideoWriter(
-                                    str(tmp_path),
-                                    fourcc,
-                                    24.0,
-                                    (100, 100),
-                                )
-                                if test_writer.isOpened():
-                                    available_codecs.append(f"{codec_name} (hvc1)")
-                                    codec_map[len(available_codecs) - 1] = "hvc1"
-                                    test_writer.release()
-                            except Exception:
-                                pass
-                except Exception:
-                    # Codec not available, skip it
-                    continue
-        except Exception:
-            # If detection fails, use fallback
-            pass
-        finally:
-            # Clean up temp file
-            if tmp_path and tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except Exception:
-                    pass
+        for i, (codec_id, codec_label) in enumerate(codecs):
+            available_codecs.append(codec_label)
+            self._codec_map[i] = codec_id
 
-        if not available_codecs:
-            # Fallback to basic codecs if detection fails
-            available_codecs = ["MPEG-4 (mp4v) - Default", "H.264 (avc1) - Better compatibility"]
-            codec_map = {0: "mp4v", 1: "avc1"}
-
+        self.codec_combo.clear()
         self.codec_combo.addItems(available_codecs)
-        self.codec_combo.setCurrentIndex(0)  # Set default selection
-        self._codec_map = codec_map
+        self.codec_combo.setCurrentIndex(0)
 
     def _setup_connections(self) -> None:
         """Set up signal connections."""
@@ -568,6 +513,7 @@ class ModernMainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
+        self.quality_slider.valueChanged.connect(self._on_quality_changed)
 
         # Keyboard shortcuts
         self.convert_btn.setShortcut("Ctrl+Return")
@@ -578,9 +524,22 @@ class ModernMainWindow(QMainWindow):
         self.width_spin.setEnabled(not checked)
         self.height_spin.setEnabled(not checked)
 
-    def _on_auto_bitrate_toggled(self, checked: bool) -> None:
-        """Handle auto bitrate checkbox toggle."""
-        self.bitrate_spin.setEnabled(not checked)
+    def _on_quality_changed(self, value: int) -> None:
+        """Handle quality slider change."""
+        labels = {
+            0: "0 (Min)",
+            1: "1",
+            2: "2",
+            3: "3",
+            4: "4",
+            5: "5 (Med)",
+            6: "6",
+            7: "7",
+            8: "8 (VFX)",
+            9: "9",
+            10: "10 (Max)",
+        }
+        self.quality_label.setText(labels.get(value, str(value)))
 
     def _on_pattern_changed(self) -> None:
         """Handle input pattern text change."""
@@ -613,16 +572,10 @@ class ModernMainWindow(QMainWindow):
                 return
 
             # Get color space
-            color_space_map = {
-                0: ColorSpacePreset.LINEAR_TO_SRGB,
-                1: ColorSpacePreset.LINEAR_TO_REC709,
-                2: ColorSpacePreset.SRGB_TO_LINEAR,
-                3: ColorSpacePreset.NO_CONVERSION,
-            }
-            color_space = color_space_map[self.color_space_combo.currentIndex()]
+            preset, input_space = self._get_current_color_space_config()
 
             self._last_preview_path = first_frame_path
-            self.preview_widget.load_preview(first_frame_path, color_space)
+            self.preview_widget.load_preview(first_frame_path, preset, input_space=input_space)
             self.log_text.appendPlainText(f"Loading preview: {first_frame_path.name}")
         except Exception as e:
             QMessageBox.warning(self, "Preview Error", f"Could not load preview:\n{e}")
@@ -685,8 +638,11 @@ class ModernMainWindow(QMainWindow):
             self, "Save Video As", default_path, "MP4 Files (*.mp4);;All Files (*.*)"
         )
         if file_path:
-            if not file_path.endswith(".mp4"):
+            path_obj = Path(file_path)
+            # Add .mp4 if no supported extension is present
+            if path_obj.suffix.lower().lstrip(".") not in constants.SUPPORTED_VIDEO_EXTENSIONS:
                 file_path += ".mp4"
+
             self.output_path_edit.setText(file_path)
             self.settings.setValue("last_output_dir", str(Path(file_path).parent))
 
@@ -780,6 +736,31 @@ class ModernMainWindow(QMainWindow):
             self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
 
+    def _get_current_color_space_config(self) -> tuple[ColorSpacePreset, Optional[str]]:
+        """Determine color space preset and input space name from UI.
+
+        Returns:
+            Tuple of (ColorSpacePreset, input_space_str)
+        """
+        selected_text = self.color_space_combo.currentText()
+        preset = ColorSpacePreset.LINEAR_TO_SRGB
+        input_space = None
+
+        if selected_text == constants.COLOR_SPACE_UI_LINEAR:
+            preset = ColorSpacePreset.LINEAR_TO_SRGB
+        elif selected_text == constants.COLOR_SPACE_UI_SRGB:
+            preset = ColorSpacePreset.NO_CONVERSION
+        elif selected_text == constants.COLOR_SPACE_UI_REC709:
+            preset = ColorSpacePreset.LINEAR_TO_REC709
+        elif selected_text == constants.COLOR_SPACE_UI_RAW:
+            preset = ColorSpacePreset.NO_CONVERSION
+        else:
+            # Assume OCIO for ACES or custom strings
+            preset = ColorSpacePreset.OCIO_CONVERSION
+            input_space = selected_text
+
+        return preset, input_space
+
     def _start_conversion(self) -> None:
         """Start the conversion process."""
         # Validate inputs
@@ -787,12 +768,14 @@ class ModernMainWindow(QMainWindow):
             QMessageBox.warning(self, "Validation Error", "Please specify an input pattern.")
             return
 
-        if not self.output_path_edit.text().strip():
-            QMessageBox.warning(self, "Validation Error", "Please specify an output path.")
+        output_path_str = self.output_path_edit.text().strip()
+        is_valid, error_msg = FileUtils.validate_output_filename(output_path_str)
+        if not is_valid:
+            QMessageBox.warning(self, "Validation Error", f"Invalid output path: {error_msg}")
             return
 
         # Check if output exists and overwrite not enabled
-        output_path = Path(self.output_path_edit.text().strip())
+        output_path = Path(output_path_str).absolute()
         if output_path.exists() and not self.overwrite_check.isChecked():
             reply = QMessageBox.question(
                 self,
@@ -808,34 +791,13 @@ class ModernMainWindow(QMainWindow):
             config_builder = (
                 ConversionConfigBuilder()
                 .with_input_pattern(self.input_pattern_edit.text().strip())
-                .with_output_path(self.output_path_edit.text().strip())
+                .with_output_path(str(output_path))
                 .with_fps(float(self.fps_spin.value()))
+                .with_quality(self.quality_slider.value())
             )
 
             # Color space
-            # Map index to (Preset, Explicit Input Space)
-            selected_text = self.color_space_combo.currentText()
-            preset = ColorSpacePreset.LINEAR_TO_SRGB
-            input_space = None
-
-            if selected_text == constants.COLOR_SPACE_UI_LINEAR:
-                preset = ColorSpacePreset.LINEAR_TO_SRGB
-            elif selected_text == constants.COLOR_SPACE_UI_SRGB:
-                preset = ColorSpacePreset.NO_CONVERSION  # Assuming output sRGB
-            elif selected_text == constants.COLOR_SPACE_UI_REC709:
-                # For now map to Linear->Rec709 strategy which is weird naming but logic is "To Rec709"
-                preset = ColorSpacePreset.LINEAR_TO_REC709
-            elif selected_text == constants.COLOR_SPACE_UI_RAW:
-                preset = ColorSpacePreset.NO_CONVERSION
-            else:
-                # Assume OCIO for ACES or custom strings
-                preset = ColorSpacePreset.OCIO_CONVERSION
-                # Check strict known inputs or just pass text
-                if "ACES" in selected_text or " - " in selected_text:
-                    input_space = selected_text
-                else:
-                    # If user typed something custom, treat as OCIO input space
-                    input_space = selected_text
+            preset, input_space = self._get_current_color_space_config()
 
             config_builder.with_color_space_preset(preset)
             if input_space:
@@ -847,16 +809,8 @@ class ModernMainWindow(QMainWindow):
 
             # Codec
             codec_index = self.codec_combo.currentIndex()
-            if hasattr(self, "_codec_map") and codec_index in self._codec_map:
-                config_builder.with_codec(self._codec_map[codec_index])
-            else:
-                # Fallback
-                fallback_map = {0: "mp4v", 1: "avc1"}
-                config_builder.with_codec(fallback_map.get(codec_index, "mp4v"))
-
-            # Bitrate
-            if not self.auto_bitrate_check.isChecked():
-                config_builder.with_bitrate(self.bitrate_spin.value() * 1000)  # Convert kbps to bps
+            codec_id = self._codec_map.get(codec_index, "libx264")
+            config_builder.with_codec(codec_id)
 
             # Frame range
             start_frame = self.start_frame_spin.value()
@@ -986,11 +940,10 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("fps", self.fps_spin.value())
         self.settings.setValue("width", self.width_spin.value())
         self.settings.setValue("height", self.height_spin.value())
-        self.settings.setValue("color_space", self.color_space_combo.currentIndex())
-        self.settings.setValue("codec", self.codec_combo.currentIndex())
+        self.settings.setValue("color_space_text", self.color_space_combo.currentText())
+        self.settings.setValue("codec_text", self.codec_combo.currentText())
         self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
-        self.settings.setValue("auto_bitrate", self.auto_bitrate_check.isChecked())
-        self.settings.setValue("bitrate", self.bitrate_spin.value())
+        self.settings.setValue("quality", self.quality_slider.value())
         self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
         self.settings.setValue("num_workers", self.num_workers_spin.value())
 
@@ -999,16 +952,25 @@ class ModernMainWindow(QMainWindow):
         self.fps_spin.setValue(self.settings.value("fps", 24, type=int))
         self.width_spin.setValue(self.settings.value("width", 1920, type=int))
         self.height_spin.setValue(self.settings.value("height", 1080, type=int))
-        self.color_space_combo.setCurrentIndex(self.settings.value("color_space", 0, type=int))
-        self.codec_combo.setCurrentIndex(self.settings.value("codec", 0, type=int))
+
+        # Use string-based settings for better robustness across UI changes
+        self.color_space_combo.setCurrentText(
+            self.settings.value("color_space_text", constants.COLOR_SPACE_UI_LINEAR, type=str)
+        )
+        self.codec_combo.setCurrentText(self.settings.value("codec_text", "", type=str))
+
         self.keep_resolution_check.setChecked(
             self.settings.value("keep_resolution", True, type=bool)
         )
-        self.auto_bitrate_check.setChecked(self.settings.value("auto_bitrate", True, type=bool))
-        self.bitrate_spin.setValue(self.settings.value("bitrate", 5000, type=int))
+        self.quality_slider.setValue(self.settings.value("quality", 10, type=int))
+        # Trigger initial toggle states
+        self._on_keep_resolution_toggled(self.keep_resolution_check.isChecked())
+        self._on_quality_changed(self.quality_slider.value())
+
         self.multiprocessing_check.setChecked(
             self.settings.value("multiprocessing", False, type=bool)
         )
+
         self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
 
 

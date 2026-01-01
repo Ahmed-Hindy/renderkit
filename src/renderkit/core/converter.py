@@ -123,6 +123,7 @@ class SequenceConverter:
             self.config.fps,
             self.config.codec,
             self.config.bitrate,
+            self.config.quality,
         )
         self.encoder.initialize(output_width, output_height)
 
