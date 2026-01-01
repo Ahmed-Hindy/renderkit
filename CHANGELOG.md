@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-01
+
 ### Added
+- OpenColorIO (OCIO) integration for professional color space management
+- Automatic input color space detection from EXR metadata (e.g., `ACEScg`, `sRGB`)
+- Editable "Input Color Space" dropdown in UI with auto-selection capabilities
+- Centralized constants module (`renderkit.constants`) for metadata keys and UI strings
 - EXR metadata FPS detection (supports Arnold, Karma, Nuke, Redshift, V-Ray, etc.)
 - Case-insensitive metadata key matching and support for rational/string formats
 - `QDoubleSpinBox` for high-precision frame rate control in UI
@@ -18,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHANGELOG.md for tracking changes
 
 ### Fixed
+- OCIO 2.5.0 API incompatibility (`getNumColorSpaces` replaced with modern equivalent)
 - Empty video output (258B) caused by 4-channel (RGBA) input and backend conflicts
 - Inconsistent FPS display in UI (now detects on pattern change)
 - Regex replacement issue in sequence detection (fixed escape sequence error)
@@ -25,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pytest configuration (removed --benchmark-only from default options)
 
 ### Changed
+- Refactored core modules to use unified constants instead of hardcoded "magic numbers"
 - `VideoEncoder` now automatically drops Alpha channel and converts to BGR for compatibility
 - Forced `CAP_FFMPEG` backend preference on Windows for better stability
 - Improved codec fallback logic in `VideoEncoder` (avc1 -> mp4v -> XVID)

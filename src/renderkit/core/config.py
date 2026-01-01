@@ -23,6 +23,9 @@ class ConversionConfig:
     end_frame: Optional[int] = None
     use_multiprocessing: bool = False
     num_workers: Optional[int] = None
+    explicit_input_color_space: Optional[str] = (
+        None  # Force specific input space (e.g. "ACES - ACEScg")
+    )
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -56,6 +59,7 @@ class ConversionConfigBuilder:
         self._end_frame: Optional[int] = None
         self._use_multiprocessing: bool = False
         self._num_workers: Optional[int] = None
+        self._explicit_input_color_space: Optional[str] = None
 
     def with_input_pattern(self, pattern: str) -> "ConversionConfigBuilder":
         """Set the input file pattern."""
@@ -75,6 +79,11 @@ class ConversionConfigBuilder:
     def with_color_space_preset(self, preset: ColorSpacePreset) -> "ConversionConfigBuilder":
         """Set the color space preset."""
         self._color_space_preset = preset
+        return self
+
+    def with_explicit_input_color_space(self, space_name: str) -> "ConversionConfigBuilder":
+        """Set explicit input color space name (for OCIO)."""
+        self._explicit_input_color_space = space_name
         return self
 
     def with_resolution(self, width: int, height: int) -> "ConversionConfigBuilder":
@@ -127,4 +136,5 @@ class ConversionConfigBuilder:
             end_frame=self._end_frame,
             use_multiprocessing=self._use_multiprocessing,
             num_workers=self._num_workers,
+            explicit_input_color_space=self._explicit_input_color_space,
         )

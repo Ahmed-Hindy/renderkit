@@ -15,7 +15,7 @@ from renderkit.exceptions import (
     VideoEncodingError,
 )
 from renderkit.io.image_reader import ImageReaderFactory
-from renderkit.processing.color_space import ColorSpaceConverter
+from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
 
@@ -85,17 +85,37 @@ class SequenceConverter:
         if not frame_numbers:
             raise ValueError("No frames found in specified range")
 
-        # Step 4: Read first frame to get dimensions
+        # Step 4: Read first frame to get dimensions and metadata
         first_frame_path = self.sequence.get_file_path(frame_numbers[0])
         self.reader = ImageReaderFactory.create_reader(first_frame_path)
         width, height = self.reader.get_resolution(first_frame_path)
+
+        # Detect input color space
+        detected_color_space = self.reader.get_metadata_color_space(first_frame_path)
+        if detected_color_space:
+            logger.info(f"Detected input color space: {detected_color_space}")
 
         # Step 5: Determine output resolution
         output_width = self.config.width or width
         output_height = self.config.height or height
 
         # Step 6: Initialize color space converter
-        self.color_converter = ColorSpaceConverter(self.config.color_space_preset)
+        preset = self.config.color_space_preset
+        input_space = self.config.explicit_input_color_space
+
+        # If no explicit input space set, but we detected one, use it if we are in a flexible mode or OCIO mode
+        if not input_space and detected_color_space:
+            # Check if we should upgrade to OCIO
+            if (
+                preset == ColorSpacePreset.LINEAR_TO_SRGB
+                or preset == ColorSpacePreset.OCIO_CONVERSION
+            ):
+                # If we found metadata, prefer OCIO if available
+                if "ocio_conversion" in [p.value for p in ColorSpacePreset]:
+                    preset = ColorSpacePreset.OCIO_CONVERSION
+                    input_space = detected_color_space
+
+        self.color_converter = ColorSpaceConverter(preset)
 
         # Step 7: Initialize video encoder
         self.encoder = VideoEncoder(
@@ -124,7 +144,7 @@ class SequenceConverter:
 
                 # Convert color space
                 try:
-                    image = self.color_converter.convert(image)
+                    image = self.color_converter.convert(image, input_space=input_space)
                 except ColorSpaceError as e:
                     logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
                     continue

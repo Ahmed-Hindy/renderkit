@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from renderkit import __version__
+from renderkit import __version__, constants
 from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.qt_compat import (
@@ -198,16 +198,16 @@ class ModernMainWindow(QMainWindow):
 
         layout.addWidget(input_group)
 
-        # Color Space Group
-        color_group = QGroupBox("Color Space")
+        # Input Color Space Group
+        color_group = QGroupBox("Input Color Space")
         color_layout = QFormLayout(color_group)
         color_layout.setSpacing(10)
 
         self.color_space_combo = QComboBox()
-        self.color_space_combo.addItems(
-            ["Linear to sRGB (Default)", "Linear to Rec.709", "sRGB to Linear", "No Conversion"]
-        )
-        color_layout.addRow("Preset:", self.color_space_combo)
+        self.color_space_combo.setEditable(True)  # Allow custom input space names
+        self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
+        self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
+        color_layout.addRow("Input Space:", self.color_space_combo)
 
         layout.addWidget(color_group)
 
@@ -730,6 +730,28 @@ class ModernMainWindow(QMainWindow):
             else:
                 self.log_text.appendPlainText("No FPS metadata found in sequence.")
 
+            # Auto-detect color space
+            from renderkit.io.image_reader import ImageReaderFactory
+
+            reader = ImageReaderFactory.create_reader(sample_path)
+            detected_color_space = reader.get_metadata_color_space(sample_path)
+            if detected_color_space:
+                self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
+
+                # Attempt to find closest match in combo box or add it
+                from PySide6.QtCore import Qt
+
+                index = self.color_space_combo.findText(
+                    detected_color_space, Qt.MatchFlag.MatchContains
+                )
+                if index >= 0:
+                    self.color_space_combo.setCurrentIndex(index)
+                else:
+                    # If exact match not found (e.g. ACES - ACEScg vs ACEScg), try setting text directly since it's editable
+                    self.color_space_combo.setEditText(detected_color_space)
+            else:
+                self.log_text.appendPlainText("No specific Color Space metadata found.")
+
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
             output_dir = pattern_path.parent
@@ -791,15 +813,33 @@ class ModernMainWindow(QMainWindow):
             )
 
             # Color space
-            color_space_map = {
-                0: ColorSpacePreset.LINEAR_TO_SRGB,
-                1: ColorSpacePreset.LINEAR_TO_REC709,
-                2: ColorSpacePreset.SRGB_TO_LINEAR,
-                3: ColorSpacePreset.NO_CONVERSION,
-            }
-            config_builder.with_color_space_preset(
-                color_space_map[self.color_space_combo.currentIndex()]
-            )
+            # Map index to (Preset, Explicit Input Space)
+            selected_text = self.color_space_combo.currentText()
+            preset = ColorSpacePreset.LINEAR_TO_SRGB
+            input_space = None
+
+            if selected_text == constants.COLOR_SPACE_UI_LINEAR:
+                preset = ColorSpacePreset.LINEAR_TO_SRGB
+            elif selected_text == constants.COLOR_SPACE_UI_SRGB:
+                preset = ColorSpacePreset.NO_CONVERSION  # Assuming output sRGB
+            elif selected_text == constants.COLOR_SPACE_UI_REC709:
+                # For now map to Linear->Rec709 strategy which is weird naming but logic is "To Rec709"
+                preset = ColorSpacePreset.LINEAR_TO_REC709
+            elif selected_text == constants.COLOR_SPACE_UI_RAW:
+                preset = ColorSpacePreset.NO_CONVERSION
+            else:
+                # Assume OCIO for ACES or custom strings
+                preset = ColorSpacePreset.OCIO_CONVERSION
+                # Check strict known inputs or just pass text
+                if "ACES" in selected_text or " - " in selected_text:
+                    input_space = selected_text
+                else:
+                    # If user typed something custom, treat as OCIO input space
+                    input_space = selected_text
+
+            config_builder.with_color_space_preset(preset)
+            if input_space:
+                config_builder.with_explicit_input_color_space(input_space)
 
             # Resolution
             if not self.keep_resolution_check.isChecked():

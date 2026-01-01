@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "renderkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "A high-performance image and video processor for VFX workflows"
 
 readme = "README.md"
@@ -35,6 +35,7 @@ dependencies = [
     "click>=8.1.0",
     "tqdm>=4.66.0",
     "PySide6>=6.6.0",
+    "opencolorio>=2.3.0",
 ]
 
 [project.optional-dependencies]

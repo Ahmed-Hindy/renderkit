@@ -1294,6 +1294,44 @@ wheels = [
 ]
 
 [[package]]
+name = "opencolorio"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/79/d197a3a86ad16dcffac117a01866e35f160adad5ab25f8af097d90f74d59/opencolorio-2.5.0.tar.gz", hash = "sha256:f9efb2bccff83c0dc18b87a6947aa2f3e8fdec98a483c5433d24f09f56f1d8fd", size = 13884655, upload-time = "2025-10-01T07:01:05.282Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/e4/39b8af2d709ba14045c058a30d1c175f2e83b94891bf6f407729d4c85efd/opencolorio-2.5.0-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:379d674ea5609936326deaaeb6b65a256348f9911f8783b7d7a2fe49fc98fac3", size = 6443114, upload-time = "2025-10-01T07:00:20.581Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/9d/a7e07402c11dc14bc2b4446c93e2c1a682a4c10bf65617d07ce0ba90f19b/opencolorio-2.5.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:b0a723a9549e4df88393e99139eb653d5991fce6b0b086b6bac2e0ebdd8c7a9a", size = 5732774, upload-time = "2025-10-01T07:00:22.282Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/f5/fd671a30fad9d557fd8e35fc902ecb0c8e1387429d5bb312c533059d439b/opencolorio-2.5.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:19b5f2070cd634ecfe45931904de8829c40f76490a675939328dcec1bfbd3e17", size = 6312171, upload-time = "2025-10-01T07:00:23.831Z" },
+    { url = "https://files.pythonhosted.org/packages/41/1a/9db177d45d9e20e37542c7bd3f3e9ebf938ffa3eb57f714c9964fadb5039/opencolorio-2.5.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3ec48b3f98cb41edd73f843af7a70380d60c13c74cb9022d38e849f988015983", size = 6873191, upload-time = "2025-10-01T07:00:25.05Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/35/c5a17db67d5040f767e95624d94b385332edf76332b4b26a23a2d73eb0a6/opencolorio-2.5.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2e875c920b37c1dade075ba64fa29dd3774d5826a312536f7c3daf11f07ff804", size = 6923375, upload-time = "2025-10-01T07:00:26.453Z" },
+    { url = "https://files.pythonhosted.org/packages/20/74/123f0b1ade0d10a2d7be49e13e6be9c6418a9922b2c3127cb0f6e124cd55/opencolorio-2.5.0-cp310-cp310-win_amd64.whl", hash = "sha256:226a059c75fcfaf44ea75ff0c586e461006dec2ef90210e36b6e39fdb5275bb5", size = 3897839, upload-time = "2025-10-01T07:00:28.022Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/16/f4c07ff11c278c5bdaf97cb666bd7507387de3428fe1a7e0365cf9e2b3f8/opencolorio-2.5.0-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:644fdf47203498ad5056a3036c9eae47e17a40d07749727b2c71aebc1346f3d5", size = 6444468, upload-time = "2025-10-01T07:00:29.214Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/ab/55c02de8853b7350011a08e041b375a64a4ad516f6361f2616d01fbc4ff1/opencolorio-2.5.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:c171dae52630530c9d671ec59b43a932d33fd747800215a8a608ce558db525e1", size = 5735203, upload-time = "2025-10-01T07:00:30.417Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/f7/a380b2af088dd9be5280a92ef8c12eb32ef32608535088f744691d55fdf9/opencolorio-2.5.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:b7ec7efa0f84a4396a4ccef9b6c1f0349037b316b568822d5a914ba1083c2e61", size = 6313953, upload-time = "2025-10-01T07:00:31.987Z" },
+    { url = "https://files.pythonhosted.org/packages/23/9e/e9829682d9d158a4e84dc339a95bfa9a3e377149395120db7f3985a61964/opencolorio-2.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:11e0313c90b57b7e2cf8d409393e3e097e60ca94f8424a5ea79c0e66752886b1", size = 6880766, upload-time = "2025-10-01T07:00:34.041Z" },
+    { url = "https://files.pythonhosted.org/packages/00/72/9d9491df6f19bbd7f120bd0ed39f9095aedc1e95f1f65eed6bc9f397bfd1/opencolorio-2.5.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:278fb873659183f0829352ab5eda957efa31aa8e750e034e1b04cf6a2acbd535", size = 6928708, upload-time = "2025-10-01T07:00:35.748Z" },
+    { url = "https://files.pythonhosted.org/packages/08/3b/83ef1642c004aa710b8ce4ab9e60de9912419cb697ad494d7cc850ff237d/opencolorio-2.5.0-cp311-cp311-win_amd64.whl", hash = "sha256:04d8a985a1b4756d56e91abc827fa4b50150b7ecc2acf6556a68934a3a21efdc", size = 3899495, upload-time = "2025-10-01T07:00:37.023Z" },
+    { url = "https://files.pythonhosted.org/packages/35/a7/d456b15a0aa71c87eb25fa5bbc15ac6d9c2b8a2333a59079f24e7d020777/opencolorio-2.5.0-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:50daa74c54b2d32f2cc75b1e549b90287672c35322b16dca721f3e174d9eb550", size = 6477454, upload-time = "2025-10-01T07:00:38.216Z" },
+    { url = "https://files.pythonhosted.org/packages/16/8c/54508c802504cde2d39fe3371673a413afa83b641dfa3ac464a52fd41a09/opencolorio-2.5.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:aa2fcb06aed2179730d0fc8fcd886f3a8c7041e0ff314045da103a437aafae1b", size = 5756847, upload-time = "2025-10-01T07:00:39.4Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/df/e8f0c4d72876ae60c3c640b5dd9fa5bff8f73d90056d1b89b6e7edf76144/opencolorio-2.5.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:71ab3e60ba898079bb9d8921d95428f08fc070e302e68bc8e0f58392994f9eeb", size = 6289992, upload-time = "2025-10-01T07:00:40.944Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/61/f2100d82bcc4ef7caf92e5cc8f7fc7e4a9a192b10ed9a39163c7b3654aba/opencolorio-2.5.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:9796b5e0e485bec1b599af4dfaf286586102891032e0ca2384547436409cd698", size = 6867718, upload-time = "2025-10-01T07:00:42.196Z" },
+    { url = "https://files.pythonhosted.org/packages/89/2f/ac80d95bdec8149e9a664fc6332c6c076958742b99c13ca235a156c1c292/opencolorio-2.5.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:dd470a7cbc68de538b59f14f72ae8d10a67f167eda4d5f02b495410ee636fc9a", size = 6965932, upload-time = "2025-10-01T07:00:44.568Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/cc/dfd703d3e08ef8fdc5cb4c15c8a3a182603ac3d6a939dbae61c215250f28/opencolorio-2.5.0-cp312-cp312-win_amd64.whl", hash = "sha256:c45b7f4c3fc464f52b0986fd28e89ab121ce2abe3d181e9b2918cecc2e0b9277", size = 3903228, upload-time = "2025-10-01T07:00:46.294Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/f6/d8ad15ef09f8ceb80d3db666b2124ff1ca8534b0252af780021ff953de65/opencolorio-2.5.0-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:2659040ecf5ad6dc1ef2299d7bed5a2ac3778f138ad680a482ca6746d216127a", size = 6477550, upload-time = "2025-10-01T07:00:47.767Z" },
+    { url = "https://files.pythonhosted.org/packages/58/a8/06445d2c792a22a19861f5fb6729f2ba9b9ec957d8940e68d152793b4aeb/opencolorio-2.5.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ff161077cb547dd06c71b8829ef775ec064f12b4c9b4c61cfa80ba080e9352ff", size = 5756737, upload-time = "2025-10-01T07:00:49.003Z" },
+    { url = "https://files.pythonhosted.org/packages/99/53/65fb1fb12a841318dc8a57c52197dca3817e8513554a1009db0b24f8863c/opencolorio-2.5.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:8d7c2e0ba47ef0a427e0b22165e105a80f2907a4ac5b618bcb8239b1ce8d9f8f", size = 6291792, upload-time = "2025-10-01T07:00:50.76Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/ed/0b2b17225a3a60b202ab76b54a9951d71ef290004738e797e6e950ef02ac/opencolorio-2.5.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:669a08e2e352646a737f3e334d6e589ee8050ef68e7ca9d769ec73f291862280", size = 6863514, upload-time = "2025-10-01T07:00:52.267Z" },
+    { url = "https://files.pythonhosted.org/packages/54/9c/b09c1c07e5f8fa83afc6d81cd98b99cba789b26d97181b17236a34decfdb/opencolorio-2.5.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:42d86e6a737004ddaf7a9e995245643d87396ea13f2c41d4c65c30f7b29eb9d1", size = 6973325, upload-time = "2025-10-01T07:00:53.91Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/e5/e3e9accef887ab1c9f042fa7becb523a7d76a6b85c482aaf417ec9956020/opencolorio-2.5.0-cp313-cp313-win_amd64.whl", hash = "sha256:33a49de0860e113d675d115a5b0f4ac3d7f048ecd3492143fd290188a74f215e", size = 3903216, upload-time = "2025-10-01T07:00:55.119Z" },
+    { url = "https://files.pythonhosted.org/packages/32/52/48b99077cabdd3bc135ee5e1a427dc4ef696b4f855d7f57e1d25c28efe88/opencolorio-2.5.0-cp39-cp39-macosx_10_15_x86_64.whl", hash = "sha256:4564c2bb4b23fd2cc45567844fe12616300098cdf00825957fe0d7c22f7b2d07", size = 6442950, upload-time = "2025-10-01T07:00:56.666Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/dd/095100b0dc07a6f478d4b6e7c330432979e8b2a3feb51e1c7050110e5bdb/opencolorio-2.5.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:19c076d3cdb53a9bd610682ccec0da4a7549023139408f7fcc2a316f84924284", size = 5732817, upload-time = "2025-10-01T07:00:57.934Z" },
+    { url = "https://files.pythonhosted.org/packages/9b/99/70869b147932834bb961de8dd1157060309d3616580c517c7e538a06b989/opencolorio-2.5.0-cp39-cp39-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:17e00ce92b295f5daf4028879c860c1cb9f6e3027e3dc00cc9341377980a6201", size = 6314968, upload-time = "2025-10-01T07:00:59.194Z" },
+    { url = "https://files.pythonhosted.org/packages/42/ac/1fc77869485292424f1db464001c4e4ccf1ba653c72ea80e4e1f231e9df6/opencolorio-2.5.0-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d353390de8be8746bb05696e5cc755cbb8185f09ac1fc3fb986db9a24bda47d5", size = 6877723, upload-time = "2025-10-01T07:01:00.584Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/07/5b00f070b86c6b7fbe50f132c7b811a410d49ac39596de4cd19e20528992/opencolorio-2.5.0-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5b220a76ad7681e955e2a25ea19590ed854f6edc7346ae43e01f5d7867744612", size = 6911309, upload-time = "2025-10-01T07:01:02.188Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/06/6e847e061beda4ae9d669683ec0c754cefce763dcafbdec3178ebf5375c8/opencolorio-2.5.0-cp39-cp39-win_amd64.whl", hash = "sha256:cdd310004330b90c0a596825f8f0eaad67c63e79a4f7761ff4474ea44e31db2a", size = 4037821, upload-time = "2025-10-01T07:01:03.584Z" },
+]
+
+[[package]]
 name = "opencv-python"
 version = "4.11.0.86"
 source = { registry = "https://pypi.org/simple" }
@@ -1948,6 +1986,7 @@ dependencies = [
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "opencolorio" },
     { name = "opencv-python" },
     { name = "openexr" },
     { name = "pyside6" },
@@ -1979,6 +2018,7 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
+    { name = "opencolorio", specifier = ">=2.3.0" },
     { name = "opencv-python", specifier = ">=4.8.0" },
     { name = "openexr", specifier = ">=1.3.9" },
     { name = "pyside6", specifier = ">=6.6.0" },

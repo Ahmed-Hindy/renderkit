@@ -7,6 +7,7 @@ from typing import Optional
 
 import numpy as np
 
+from renderkit import constants
 from renderkit.exceptions import ImageReadError
 from renderkit.io.file_utils import FileUtils
 
@@ -63,6 +64,17 @@ class ImageReader(ABC):
 
         Returns:
             Detected FPS or None
+        """
+        return None
+
+    def get_metadata_color_space(self, path: Path) -> Optional[str]:
+        """Get the color space from image metadata if available.
+
+        Args:
+            path: Path to the image file
+
+        Returns:
+            Detected color space name or None
         """
         return None
 
@@ -204,15 +216,8 @@ class EXRReader(ImageReader):
             exr_file.close()
 
             # Priority list of metadata keys for FPS (base names)
-            target_keys = [
-                "framesPerSecond",
-                "fps",
-                "exr/FramesPerSecond",
-                "arnold/fps",
-                "rs/fps",
-                "vray/fps",
-                "cap_fps",
-            ]
+            # Priority list of metadata keys for FPS (base names)
+            target_keys = constants.FPS_METADATA_KEYS
 
             # Create a lookup for case-insensitive matching
             header_keys_lower = {k.lower(): k for k in header.keys()}
@@ -256,6 +261,55 @@ class EXRReader(ImageReader):
             return None
         except Exception as e:
             logger.debug(f"Metadata detection failed for {path}: {e}")
+            return None
+
+    def get_metadata_color_space(self, path: Path) -> Optional[str]:
+        """Get the color space from EXR metadata.
+
+        Supports standard keys like 'exr/oiio:ColorSpace' or 'colorSpace'.
+        """
+        try:
+            import OpenEXR
+        except ImportError:
+            return None
+
+        if not path.exists():
+            return None
+
+        try:
+            exr_file = OpenEXR.InputFile(str(path))
+            header = exr_file.header()
+            exr_file.close()
+
+            # Priority list of metadata keys for Color Space
+            # Priority list of metadata keys for Color Space
+            target_keys = constants.COLOR_SPACE_METADATA_KEYS
+
+            # Create a lookup for case-insensitive matching
+            header_keys = list(header.keys())
+            header_keys_lower = {k.lower(): k for k in header_keys}
+
+            for target in target_keys:
+                target_lower = target.lower()
+                if target_lower in header_keys_lower:
+                    actual_key = header_keys_lower[target_lower]
+                    val = header[actual_key]
+
+                    if isinstance(val, bytes):
+                        val = val.decode("utf-8")
+
+                    if isinstance(val, str):
+                        logger.info(f"Found ColorSpace metadata key '{actual_key}': {val}")
+                        return val.strip()
+
+            # If we reached here, we didn't find the key.
+            # Log available keys to help debugging
+            logger.info(
+                f"Color Space metadata not found. Available keys: {', '.join(sorted(header_keys))}"
+            )
+            return None
+        except Exception as e:
+            logger.debug(f"ColorSpace metadata detection failed for {path}: {e}")
             return None
 
 

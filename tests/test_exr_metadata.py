@@ -63,5 +63,38 @@ def test_exr_metadata_fps_detection():
             assert fps is None
 
 
+def test_exr_metadata_color_space_detection():
+    """Test that EXRReader correctly extracts Color Space from various metadata keys."""
+    reader = EXRReader()
+    mock_path = Path("test.exr")
+
+    with patch("pathlib.Path.exists", return_value=True):
+        with patch("OpenEXR.InputFile") as mock_exr:
+            # Case 1: Standard exr/oiio:ColorSpace
+            mock_exr.return_value.header.return_value = {"exr/oiio:ColorSpace": "ACES - ACEScg"}
+            cs = reader.get_metadata_color_space(mock_path)
+            assert cs == "ACES - ACEScg"
+
+            # Case 2: colorSpace
+            mock_exr.return_value.header.return_value = {"colorSpace": "Linear"}
+            cs = reader.get_metadata_color_space(mock_path)
+            assert cs == "Linear"
+
+            # Case 3: interchange/color_space
+            mock_exr.return_value.header.return_value = {"interchange/color_space": "Rec.709"}
+            cs = reader.get_metadata_color_space(mock_path)
+            assert cs == "Rec.709"
+
+            # Case 4: Case-insensitive
+            mock_exr.return_value.header.return_value = {"EXR/OIIO:COLORSPACE": "ACEScg"}
+            cs = reader.get_metadata_color_space(mock_path)
+            assert cs == "ACEScg"
+
+            # Case 5: Bytes
+            mock_exr.return_value.header.return_value = {"colorSpace": b"sRGB"}
+            cs = reader.get_metadata_color_space(mock_path)
+            assert cs == "sRGB"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
