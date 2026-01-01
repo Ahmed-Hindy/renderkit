@@ -35,6 +35,9 @@ plugins:
 
 nav:
   - Home: index.md
+  - Usage Guide: usage.md
+  - Development: development.md
+  - Contributing: contributing.md
   - API Reference:
       - Core:
           - ImageVideoProcessor: api/image_video_processor.md
