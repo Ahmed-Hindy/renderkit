@@ -194,9 +194,16 @@ class ModernMainWindow(QMainWindow):
         # Sequence Info
         self.sequence_info_label = QLabel("No sequence detected")
         self.sequence_info_label.setWordWrap(True)
-        self.sequence_info_label.setMinimumHeight(60)  # Ensure enough space for multi-line text
+        self.sequence_info_label.setMinimumHeight(60)
         self.sequence_info_label.setStyleSheet("color: #666; font-style: italic;")
         input_layout.addRow("Info:", self.sequence_info_label)
+
+        # Layer Selection
+        self.layer_combo = QComboBox()
+        self.layer_combo.addItems(["RGBA"])
+        self.layer_combo.setEnabled(False)
+        self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
+        input_layout.addRow("Layer:", self.layer_combo)
 
         layout.addWidget(input_group)
 
@@ -513,6 +520,7 @@ class ModernMainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
+        self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
 
         # Keyboard shortcuts
@@ -552,6 +560,11 @@ class ModernMainWindow(QMainWindow):
         if hasattr(self, "_last_preview_path") and self._last_preview_path:
             self._load_preview()
 
+    def _on_layer_changed(self) -> None:
+        """Handle layer selection change."""
+        if hasattr(self, "_last_preview_path") and self._last_preview_path:
+            self._load_preview()
+
     def _load_preview(self) -> None:
         """Load preview of first frame."""
         pattern = self.input_pattern_edit.text().strip()
@@ -573,10 +586,15 @@ class ModernMainWindow(QMainWindow):
 
             # Get color space
             preset, input_space = self._get_current_color_space_config()
+            layer = self.layer_combo.currentText()
 
             self._last_preview_path = first_frame_path
-            self.preview_widget.load_preview(first_frame_path, preset, input_space=input_space)
-            self.log_text.appendPlainText(f"Loading preview: {first_frame_path.name}")
+            self.preview_widget.load_preview(
+                first_frame_path, preset, input_space=input_space, layer=layer
+            )
+            self.log_text.appendPlainText(
+                f"Loading preview: {first_frame_path.name} (Layer: {layer})"
+            )
         except Exception as e:
             QMessageBox.warning(self, "Preview Error", f"Could not load preview:\n{e}")
             self.log_text.appendPlainText(f"Preview error: {str(e)}")
@@ -708,6 +726,17 @@ class ModernMainWindow(QMainWindow):
             else:
                 self.log_text.appendPlainText("No specific Color Space metadata found.")
 
+            # Detect Layers
+            layers = reader.get_layers(sample_path)
+            self.layer_combo.blockSignals(True)
+            self.layer_combo.clear()
+            self.layer_combo.addItems(layers)
+            self.layer_combo.setEnabled(len(layers) > 1 or layers[0] != "RGBA")
+            self.layer_combo.blockSignals(False)
+
+            if len(layers) > 1:
+                self.log_text.appendPlainText(f"Found {len(layers)} layers: {', '.join(layers)}")
+
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
             output_dir = pattern_path.parent
@@ -794,6 +823,7 @@ class ModernMainWindow(QMainWindow):
                 .with_output_path(str(output_path))
                 .with_fps(float(self.fps_spin.value()))
                 .with_quality(self.quality_slider.value())
+                .with_layer(self.layer_combo.currentText())
             )
 
             # Color space

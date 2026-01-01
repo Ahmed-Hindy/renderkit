@@ -65,13 +65,13 @@ The package is organized with clear separation of concerns:
 - **`core/config.py`**: Configuration classes using Builder pattern
 
 ### I/O Modules
-- **`io/image_reader.py`**: Image reading with Factory pattern
-- **`io/file_utils.py`**: File I/O utilities
+- **`io/image_reader.py`**: Unified image reading using **OpenImageIO** (OIIO).
+- **`io/file_utils.py`**: File I/O utilities and output path validation.
 
 ### Processing Modules
-- **`processing/color_space.py`**: Color space conversion using Strategy pattern
-- **`processing/scaler.py`**: Image scaling utilities
-- **`processing/video_encoder.py`**: Video encoding using OpenCV/FFmpeg
+- **`processing/color_space.py`**: Color space conversion using OCIO-inspired strategies.
+- **`processing/scaler.py`**: High-quality image scaling using **OpenImageIO** (Lanczos3).
+- **`processing/video_encoder.py`**: Quality-first video encoding (CRF) using FFmpeg.
 
 ### Interface Modules
 - **`api/processor.py`**: Public Python API

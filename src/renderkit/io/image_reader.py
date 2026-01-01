@@ -18,8 +18,18 @@ class ImageReader(ABC):
     """Abstract base class for image readers."""
 
     @abstractmethod
-    def read(self, path: Path) -> np.ndarray:
-        """Read an image file and return as numpy array."""
+    def read(self, path: Path, layer: Optional[str] = None) -> np.ndarray:
+        """Read an image file and return as numpy array.
+
+        Args:
+            path: Path to image file
+            layer: Optional layer name to extract (for multi-layer EXRs)
+        """
+        pass
+
+    @abstractmethod
+    def get_layers(self, path: Path) -> list[str]:
+        """Get available layers from the image file."""
         pass
 
     @abstractmethod
@@ -46,8 +56,12 @@ class ImageReader(ABC):
 class OIIOReader(ImageReader):
     """Reader for all image formats supported by OpenImageIO."""
 
-    def read(self, path: Path) -> np.ndarray:
+    def read(self, path: Path, layer: Optional[str] = None) -> np.ndarray:
         """Read an image using OIIO ImageBuf.
+
+        Args:
+            path: Path to image file
+            layer: Optional layer name to extract (e.g., "diffuse")
 
         Returns:
             Image as numpy array (H, W, C) in float32 format.
@@ -61,9 +75,70 @@ class OIIOReader(ImageReader):
             raise ImageReadError(f"File does not exist: {path}")
 
         try:
-            buf = oiio.ImageBuf(str(path))
+            # First, find which subimage (part) contains the requested layer
+            subimage_index = 0
+            if layer and layer != "RGBA":
+                # Quick scan to find the part
+                temp_buf = oiio.ImageBuf(str(path))
+                for i in range(temp_buf.nsubimages):
+                    sub_buf = oiio.ImageBuf(str(path), i, 0)
+                    spec = sub_buf.spec()
+                    part_name = spec.getattribute("name")
+                    if part_name:
+                        if isinstance(part_name, bytes):
+                            part_name = part_name.decode("utf-8")
+                        if part_name == layer:
+                            subimage_index = i
+                            break
+
+                    # Also check channel prefixes in this part
+                    if any(c.startswith(f"{layer}.") for c in spec.channelnames):
+                        subimage_index = i
+                        break
+
+            # Load the correct subimage
+            buf = oiio.ImageBuf(str(path), subimage_index, 0)
             if buf.has_error:
-                raise ImageReadError(f"OIIO failed to read {path}: {buf.geterror()}")
+                raise ImageReadError(
+                    f"OIIO failed to read {path} (part {subimage_index}): {buf.geterror()}"
+                )
+
+            # Handle layer selection for multi-layer EXRs within the part
+            spec = buf.spec()
+            if layer and layer != "RGBA":
+                channel_names = spec.channelnames
+                # Check if we need to filter channels (if it's a grouped layer in this part)
+                indices = []
+                new_names = []
+                found_exact_match = False
+
+                # If the part name IS the layer, we usually want all channels of this part
+                part_name = spec.getattribute("name")
+                if part_name and isinstance(part_name, bytes):
+                    part_name = part_name.decode("utf-8")
+
+                if part_name == layer:
+                    # Keep all channels but clean up prefixes if they exist
+                    for i, name in enumerate(channel_names):
+                        indices.append(i)
+                        new_names.append(name.split(".", 1)[1] if "." in name else name)
+                    found_exact_match = True
+                else:
+                    # Look for prefixed channels
+                    for i, name in enumerate(channel_names):
+                        if name.startswith(f"{layer}."):
+                            indices.append(i)
+                            new_names.append(name.split(".", 1)[1])
+                            found_exact_match = True
+
+                if found_exact_match and indices:
+                    buf = oiio.ImageBufAlgo.channels(buf, tuple(indices), tuple(new_names))
+                    if buf.has_error:
+                        raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
+                elif subimage_index == 0 and not found_exact_match:
+                    logger.warning(
+                        f"Layer {layer} not found in any part of {path}, falling back to beauty."
+                    )
 
             # Read image as float32
             data = buf.get_pixels(oiio.FLOAT)
@@ -87,6 +162,54 @@ class OIIOReader(ImageReader):
 
         except Exception as e:
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
+
+    def get_layers(self, path: Path) -> list[str]:
+        """Get available layers from the image file, including multi-part AOVs."""
+        try:
+            import OpenImageIO as oiio
+        except ImportError:
+            return ["RGBA"]
+
+        buf = oiio.ImageBuf(str(path))
+        if buf.has_error:
+            return ["RGBA"]
+
+        layers = set()
+
+        # Scan all subimages (parts)
+        for i in range(buf.nsubimages):
+            # We don't need to fully read pixels, just the spec
+            sub_buf = oiio.ImageBuf(str(path), i, 0)
+            spec = sub_buf.spec()
+
+            # 1. Check subimage name (Standard for multi-part EXR)
+            part_name = spec.getattribute("name")
+            if part_name:
+                if isinstance(part_name, bytes):
+                    part_name = part_name.decode("utf-8")
+
+                # Exclude standard beauty/rgba part names to avoid duplicates
+                if part_name.lower() not in ("rgba", "beauty", "default"):
+                    layers.add(part_name)
+                else:
+                    layers.add("RGBA")
+
+            # 2. Check channel prefixes (Standard for single-part multi-layer EXR)
+            for channel_name in spec.channelnames:
+                if "." in channel_name:
+                    layers.add(channel_name.rsplit(".", 1)[0])
+                else:
+                    # If it's a part but has no dot-channels, it might be the beauty
+                    if not part_name or part_name.lower() in ("rgba", "beauty", "default"):
+                        layers.add("RGBA")
+
+        # Ensure RGBA is first if present
+        result = sorted(layers)
+        if "RGBA" in result:
+            result.remove("RGBA")
+            result.insert(0, "RGBA")
+
+        return result
 
     def get_channels(self, path: Path) -> int:
         """Get channel count using OIIO."""

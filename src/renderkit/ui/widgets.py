@@ -30,6 +30,7 @@ class PreviewWorker(QThread):
         file_path: Path,
         color_space: ColorSpacePreset,
         input_space: Optional[str] = None,
+        layer: Optional[str] = None,
     ) -> None:
         """Initialize preview worker.
 
@@ -37,17 +38,19 @@ class PreviewWorker(QThread):
             file_path: Path to image file
             color_space: Color space preset for conversion
             input_space: Optional explicit input color space
+            layer: Optional EXR layer to load
         """
         super().__init__()
         self.file_path = file_path
         self.color_space = color_space
         self.input_space = input_space
+        self.layer = layer
 
     def run(self) -> None:
         """Load and process preview image."""
         try:
             reader = ImageReaderFactory.create_reader(self.file_path)
-            image = reader.read(self.file_path)
+            image = reader.read(self.file_path, layer=self.layer)
 
             # Convert color space
             converter = ColorSpaceConverter(self.color_space)
@@ -141,6 +144,7 @@ class PreviewWidget(QWidget):
         file_path: Path,
         color_space: ColorSpacePreset,
         input_space: Optional[str] = None,
+        layer: Optional[str] = None,
     ) -> None:
         """Load preview from file.
 
@@ -148,6 +152,7 @@ class PreviewWidget(QWidget):
             file_path: Path to image file
             color_space: Color space preset
             input_space: Optional explicit input color space
+            layer: Optional EXR layer
         """
         # Cancel previous worker if running
         if self.worker and self.worker.isRunning():
@@ -164,7 +169,7 @@ class PreviewWidget(QWidget):
             }
         """)
 
-        self.worker = PreviewWorker(file_path, color_space, input_space=input_space)
+        self.worker = PreviewWorker(file_path, color_space, input_space=input_space, layer=layer)
         self.worker.preview_ready.connect(self._on_preview_ready)
         self.worker.error.connect(self._on_preview_error)
         self.worker.start()

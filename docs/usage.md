@@ -7,30 +7,28 @@ The simplest way to use the tool is via the CLI command `renderkit`.
 ### Examples
 
 ```bash
-# Basic conversion
+# Basic conversion (High Quality)
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 
-# With custom resolution
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --width 1920 --height 1080
+# Set specific visual quality (7 is a good balance)
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --quality 7
 
-# With frame range
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
-
-# With different color space
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --color-space linear_to_rec709
+# Using AV1 for maximum compression
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libaom-av1 --quality 8
 ```
 
 ### Options
 
 | Option | Description | Default |
-|Params|---|---|
+|---|---|---|
 | `INPUT_PATTERN` | File pattern with placeholders | Required |
 | `OUTPUT_PATH` | Output video file path | Required |
 | `--fps` | Frame rate | Auto-detect |
+| `--quality` | Visual Quality (0-10), 10 is best | `10` |
 | `--color-space` | Preset (`linear_to_srgb`, etc.) | `linear_to_srgb` |
 | `--width` | Output width | Source width |
 | `--height` | Output height | Source height |
-| `--codec` | Video codec | `mp4v` |
+| `--codec` | Video codec (`libx264`, `libaom-av1`) | `libx264` |
 | `--start-frame` | Start frame | First frame |
 | `--end-frame` | End frame | Last frame |
 
@@ -46,6 +44,8 @@ processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",
     fps=24.0,
+    quality=10,  # 0-10 scale
+    codec="libx264"
 )
 ```
 

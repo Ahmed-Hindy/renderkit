@@ -20,6 +20,7 @@ class ConversionConfig:
     codec: str = "libx264"
     bitrate: Optional[int] = None
     quality: int = 10  # 0-10, 10 is best
+    layer: Optional[str] = None  # Specific layer to extract (e.g. "diffuse")
     start_frame: Optional[int] = None
     end_frame: Optional[int] = None
     use_multiprocessing: bool = False
@@ -57,6 +58,7 @@ class ConversionConfigBuilder:
         self._codec: str = "libx264"
         self._bitrate: Optional[int] = None
         self._quality: int = 10
+        self._layer: Optional[str] = None
         self._start_frame: Optional[int] = None
         self._end_frame: Optional[int] = None
         self._use_multiprocessing: bool = False
@@ -109,6 +111,11 @@ class ConversionConfigBuilder:
         self._quality = quality
         return self
 
+    def with_layer(self, layer: str) -> "ConversionConfigBuilder":
+        """Set the EXR layer to extract."""
+        self._layer = layer
+        return self
+
     def with_frame_range(self, start: int, end: int) -> "ConversionConfigBuilder":
         """Set the frame range."""
         self._start_frame = start
@@ -140,6 +147,7 @@ class ConversionConfigBuilder:
             codec=self._codec,
             bitrate=self._bitrate,
             quality=self._quality,
+            layer=self._layer,
             start_frame=self._start_frame,
             end_frame=self._end_frame,
             use_multiprocessing=self._use_multiprocessing,

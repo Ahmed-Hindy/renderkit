@@ -25,7 +25,9 @@ class RenderKit:
         color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB,
         width: Optional[int] = None,
         height: Optional[int] = None,
-        codec: str = "mp4v",
+        codec: str = "libx264",
+        quality: int = 10,
+        layer: Optional[str] = None,
         start_frame: Optional[int] = None,
         end_frame: Optional[int] = None,
     ) -> None:
@@ -38,7 +40,9 @@ class RenderKit:
             color_space_preset: Color space conversion preset
             width: Output width (optional, uses source width if not provided)
             height: Output height (optional, uses source height if not provided)
-            codec: Video codec (default: "mp4v")
+            codec: Video codec (default: "libx264")
+            quality: Video quality (0-10), 10 is best (default: 10)
+            layer: Optional EXR layer to extract (default: None)
             start_frame: Start frame number (optional)
             end_frame: End frame number (optional)
 
@@ -47,7 +51,9 @@ class RenderKit:
             >>> processor.convert_exr_sequence_to_mp4(
             ...     "render.%04d.exr",
             ...     "output.mp4",
-            ...     fps=24.0
+            ...     fps=24.0,
+            ...     quality=10,
+            ...     layer="diffuse"
             ... )
         """
         config = (
@@ -57,6 +63,8 @@ class RenderKit:
             .with_fps(fps)
             .with_color_space_preset(color_space_preset)
             .with_codec(codec)
+            .with_quality(quality)
+            .with_layer(layer)
         )
 
         if width is not None and height is not None:

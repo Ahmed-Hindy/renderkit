@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-01
+
+### Added
+- **OpenImageIO (OIIO) Migration**: Migrated Image reading library from ImageIO to OIIO library.
+- **Multi-Layer EXR Selection**: Choose specific AOVs/Layers from EXR sequences in UI and CLI.
+- **AV1 Codec Support**: Integrated `libaom-av1` for maximum compression efficiency.
+
+### Fixed
+- Regression where deleted UI elements were being accessed during conversion startup.
+- FFmpeg "Hang" during AV1 encoding by providing proper CPU utilization and quality parameters.
+- Membership test lint error in `_browse_output_path`.
+
+### Changed
+- Removed legacy dependencies: `Pillow`, `OpenEXR`, and `Imath`.
+- Standardized default codec to `libx264` (Recommended).
+- Updated public `RenderKit` API to include `quality` and `codec` controls.
+
 ## [0.2.0] - 2026-01-01
 
 ### Added

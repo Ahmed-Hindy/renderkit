@@ -50,6 +50,17 @@ def test_oiio():
     colorspace = reader.get_metadata_color_space(sample_path)
     print(f"Metadata ColorSpace: {colorspace}")
 
+    # Test Layers
+    layers = reader.get_layers(sample_path)
+    print(f"Available layers: {layers}")
+
+    if len(layers) > 1:
+        # Try reading a specific layer
+        layer_to_read = layers[1]
+        print(f"Attempting to read layer: {layer_to_read}")
+        layer_img = reader.read(sample_path, layer=layer_to_read)
+        print(f"Layer image shape: {layer_img.shape}")
+
     # Test Scaler
     scaled = ImageScaler.scale_image(img, width=100)
     print(f"Scaled shape: {scaled.shape}")

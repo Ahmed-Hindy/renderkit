@@ -138,7 +138,7 @@ class SequenceConverter:
 
                 # Read image
                 try:
-                    image = self.reader.read(frame_path)
+                    image = self.reader.read(frame_path, layer=self.config.layer)
                 except ImageReadError as e:
                     logger.warning(f"Failed to read frame {frame_num}: {e}")
                     continue

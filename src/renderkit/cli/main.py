@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version="0.3.0")
 def main() -> None:
     """RenderKit - VFX workflow tools."""
     pass
@@ -49,8 +49,20 @@ def main() -> None:
 @click.option(
     "--codec",
     type=str,
-    default="mp4v",
-    help="Video codec (default: mp4v, use 'avc1' for H.264)",
+    default="libx264",
+    help="Video codec (default: libx264, use 'libaom-av1' for AV1)",
+)
+@click.option(
+    "--quality",
+    type=int,
+    default=10,
+    help="Video quality (0-10), 10 is best (default: 10). Sets CRF.",
+)
+@click.option(
+    "--layer",
+    type=str,
+    default=None,
+    help="Specific EXR layer to extract (e.g., 'diffuse').",
 )
 @click.option("--start-frame", type=int, default=None, help="Start frame number")
 @click.option("--end-frame", type=int, default=None, help="End frame number")
@@ -68,6 +80,8 @@ def convert_exr_sequence(
     width: Optional[int],
     height: Optional[int],
     codec: str,
+    quality: int,
+    layer: Optional[str],
     start_frame: Optional[int],
     end_frame: Optional[int],
     overwrite: bool,
@@ -116,6 +130,8 @@ def convert_exr_sequence(
         .with_output_path(output_path)
         .with_color_space_preset(color_space_preset)
         .with_codec(codec)
+        .with_quality(quality)
+        .with_layer(layer)
     )
 
     if fps is not None:

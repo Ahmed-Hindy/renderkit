@@ -11,9 +11,12 @@ A high-performance Python package and CLI tool for converting image sequences (E
 
 ## Features
 
-- **EXR to Video**: Convert high-bit depth EXR sequences to preview MP4s.
-- **Smart Detection**: automatically handles `%04d`, `$F4`, `####` patterns.
-- **Color Space**: Linear-to-sRGB and Rec.709 conversion presets.
+- **VFX-Standard I/O**: High-performance image reading and scaling powered by **OpenImageIO**.
+- **Broad Format Support**: Native support for **EXR, DPX, TIFF, PNG, and JPEG**.
+- **Quality-First Video**: 0-10 Quality Slider using **Constant Rate Factor (CRF)** for professional results.
+- **AV1 & HEVC**: Support for modern codecs including **AV1** and **H.265 (HEVC)**.
+- **Smart Detection**: Automatically handles `%04d`, `$F4`, `####` and numeric sequences.
+- **Color Space**: Professional color management including **Linear-to-sRGB** and **Rec.709** presets.
 - **Interfaces**: Python API, CLI (`renderkit`), and PySide6 UI.
 
 ## Installation
