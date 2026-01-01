@@ -65,19 +65,39 @@ class VideoEncoder:
         # Get fourcc codec
         fourcc = cv2.VideoWriter_fourcc(*self.codec)
 
-        # Create video writer
+        # Create video writer with FFMPEG preference if possible
+        # Some codecs fail on Windows Media Foundation (default)
         self._writer = cv2.VideoWriter(
             str(self.output_path),
+            cv2.CAP_FFMPEG,
             fourcc,
             self.fps,
             (width, height),
         )
 
         if not self._writer.isOpened():
+            # Fallback to default backend if FFMPEG failed
+            self._writer = cv2.VideoWriter(
+                str(self.output_path),
+                fourcc,
+                self.fps,
+                (width, height),
+            )
+
+        if not self._writer.isOpened():
             # Try alternative codec for better compatibility
             if self.codec == "mp4v":
-                logger.warning("mp4v codec failed, trying avc1 (H.264)")
-                fourcc = cv2.VideoWriter_fourcc(*"avc1")
+                logger.warning("mp4v codec failed, trying XVID")
+                fourcc = cv2.VideoWriter_fourcc(*"XVID")
+                self._writer = cv2.VideoWriter(
+                    str(self.output_path),
+                    fourcc,
+                    self.fps,
+                    (width, height),
+                )
+            elif self.codec == "avc1":
+                logger.warning("avc1 codec failed, trying mp4v")
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                 self._writer = cv2.VideoWriter(
                     str(self.output_path),
                     fourcc,
@@ -111,6 +131,17 @@ class VideoEncoder:
             # Clamp and convert
             frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
 
+        # Force 3 channels (OpenCV VideoWriter with standard codecs usually expects BGR)
+        if frame.shape[2] == 4:
+            # RGBA to RGB (drop alpha)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
+        elif frame.shape[2] == 1:
+            # Gray to RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+
+        # Convert RGB to BGR (OpenCV uses BGR)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
         # Resize frame if dimensions don't match encoder dimensions
         h, w = frame.shape[:2]
         if w != self._width or h != self._height:
@@ -119,13 +150,6 @@ class VideoEncoder:
                 f"({self._width}x{self._height}). Resizing frame to match."
             )
             frame = cv2.resize(frame, (self._width, self._height), interpolation=cv2.INTER_LANCZOS4)
-
-        # Convert BGR to RGB if needed (OpenCV uses BGR)
-        if frame.shape[2] == 3:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        elif frame.shape[2] == 4:
-            # RGBA to BGRA
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGRA)
 
         self._writer.write(frame)
 

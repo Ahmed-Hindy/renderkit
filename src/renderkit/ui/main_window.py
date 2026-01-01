@@ -13,6 +13,7 @@ from renderkit.ui.qt_compat import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFont,
     QFormLayout,
@@ -248,10 +249,10 @@ class ModernMainWindow(QMainWindow):
         video_layout.setSpacing(10)
 
         # FPS
-        self.fps_spin = QSpinBox()
-        self.fps_spin.setMinimum(1)
-        self.fps_spin.setMaximum(120)
-        self.fps_spin.setValue(24)
+        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin.setRange(0.01, 120.0)
+        self.fps_spin.setDecimals(3)
+        self.fps_spin.setValue(24.0)
         self.fps_spin.setSuffix(" fps")
         video_layout.addRow("Frame Rate:", self.fps_spin)
 
@@ -716,6 +717,18 @@ class ModernMainWindow(QMainWindow):
                 self.start_frame_spin.setValue(sequence.frame_numbers[0])
             if self.end_frame_spin.value() == 0:
                 self.end_frame_spin.setValue(sequence.frame_numbers[-1])
+
+            # Auto-detect FPS from metadata
+            sample_path = sequence.get_file_path(sequence.frame_numbers[0])
+            self.log_text.appendPlainText(f"Checking metadata for FPS: {sample_path.name}")
+            detected_fps = SequenceDetector.auto_detect_fps(
+                sequence.frame_numbers, sample_path=sample_path
+            )
+            if detected_fps:
+                self.fps_spin.setValue(detected_fps)
+                self.log_text.appendPlainText(f"Auto-detected FPS from metadata: {detected_fps}")
+            else:
+                self.log_text.appendPlainText("No FPS metadata found in sequence.")
 
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)

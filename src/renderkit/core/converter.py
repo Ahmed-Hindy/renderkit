@@ -59,7 +59,14 @@ class SequenceConverter:
 
         # Step 2: Auto-detect FPS if not provided
         if self.config.fps is None:
-            fps = SequenceDetector.auto_detect_fps(self.sequence.frame_numbers)
+            # Use first frame as sample for metadata detection
+            fps = None
+            if self.sequence.frame_numbers:
+                sample_path = self.sequence.get_file_path(self.sequence.frame_numbers[0])
+                fps = SequenceDetector.auto_detect_fps(
+                    self.sequence.frame_numbers, sample_path=sample_path
+                )
+
             if fps is None:
                 raise ValueError(
                     "FPS is required but could not be auto-detected. "
@@ -102,6 +109,7 @@ class SequenceConverter:
         # Step 8: Process frames
         logger.info(f"Processing {len(frame_numbers)} frames...")
         scaler = ImageScaler()
+        success_count = 0
 
         try:
             for frame_num in tqdm(frame_numbers, desc="Converting frames"):
@@ -128,11 +136,18 @@ class SequenceConverter:
                 # Write frame
                 try:
                     self.encoder.write_frame(image)
+                    success_count += 1
                 except VideoEncodingError as e:
                     logger.error(f"Failed to write frame {frame_num}: {e}")
                     raise
 
-            logger.info("Conversion completed successfully")
+            if success_count == 0:
+                raise VideoEncodingError(
+                    "No frames were successfully written to the video file. "
+                    "Check logs for reading or conversion errors."
+                )
+
+            logger.info(f"Conversion completed successfully: {success_count} frames written")
 
         finally:
             # Clean up

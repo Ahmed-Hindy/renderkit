@@ -225,21 +225,32 @@ class SequenceDetector:
 
     @staticmethod
     def auto_detect_fps(
-        frame_numbers: list[int], default_fps: Optional[float] = None
+        frame_numbers: list[int],
+        default_fps: Optional[float] = None,
+        sample_path: Optional[Path] = None,
     ) -> Optional[float]:
-        """Auto-detect frame rate from frame numbers (if possible).
-
-        This is a simple heuristic that assumes constant frame rate.
-        For more accurate detection, would need metadata or user input.
+        """Auto-detect frame rate from frame numbers or metadata.
 
         Args:
             frame_numbers: List of frame numbers
             default_fps: Default FPS to return if detection fails
+            sample_path: Optional path to a file in the sequence to check for metadata
 
         Returns:
             Detected FPS or default, or None if cannot determine
         """
-        # This is a placeholder - real FPS detection would require
-        # file metadata or timestamps
-        # For now, return default or None
+        # 1. Try metadata first if a sample path (e.g. first frame) is provided
+        if sample_path and sample_path.exists():
+            try:
+                from renderkit.io.image_reader import ImageReaderFactory
+
+                reader = ImageReaderFactory.create_reader(sample_path)
+                fps = reader.get_metadata_fps(sample_path)
+                if fps is not None:
+                    return round(fps, 3)  # Round to avoid precision issues (e.g. 23.976)
+            except Exception:
+                # Silently fail for metadata detection
+                pass
+
+        # 2. Return default or None
         return default_fps

@@ -3,6 +3,7 @@
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -53,6 +54,17 @@ class ImageReader(ABC):
             Tuple of (width, height)
         """
         pass
+
+    def get_metadata_fps(self, path: Path) -> Optional[float]:
+        """Get the FPS from image metadata if available.
+
+        Args:
+            path: Path to the image file
+
+        Returns:
+            Detected FPS or None
+        """
+        return None
 
 
 class EXRReader(ImageReader):
@@ -171,6 +183,80 @@ class EXRReader(ImageReader):
 
         except Exception as e:
             raise ImageReadError(f"Failed to read EXR header: {path}") from e
+
+    def get_metadata_fps(self, path: Path) -> Optional[float]:
+        """Get the FPS from EXR metadata.
+
+        Supports standard 'framesPerSecond' and engine-specific keys
+        like 'arnold/fps', 'rs/fps', 'vray/fps', etc.
+        """
+        try:
+            import OpenEXR
+        except ImportError:
+            return None
+
+        if not path.exists():
+            return None
+
+        try:
+            exr_file = OpenEXR.InputFile(str(path))
+            header = exr_file.header()
+            exr_file.close()
+
+            # Priority list of metadata keys for FPS (base names)
+            target_keys = [
+                "framesPerSecond",
+                "fps",
+                "exr/FramesPerSecond",
+                "arnold/fps",
+                "rs/fps",
+                "vray/fps",
+                "cap_fps",
+            ]
+
+            # Create a lookup for case-insensitive matching
+            header_keys_lower = {k.lower(): k for k in header.keys()}
+
+            for target in target_keys:
+                target_lower = target.lower()
+                if target_lower in header_keys_lower:
+                    actual_key = header_keys_lower[target_lower]
+                    val = header[actual_key]
+                    logger.debug(
+                        f"Found FPS metadata key '{actual_key}': {val} (type: {type(val)})"
+                    )
+
+                    try:
+                        # Handle Rational/Rational2 types (often have .n and .d or come as tuples)
+                        if hasattr(val, "n") and hasattr(val, "d"):
+                            return float(val.n) / float(val.d)
+                        elif isinstance(val, (int, float)):
+                            return float(val)
+                        elif isinstance(val, tuple) and len(val) == 2:
+                            return float(val[0]) / float(val[1])
+                        elif isinstance(val, (str, bytes)):
+                            if isinstance(val, bytes):
+                                val = val.decode("utf-8")
+                            # Strip non-numeric chars but keep decimal and division sign
+                            # Handle "24/1" or "24000/1001" strings
+                            if "/" in val:
+                                parts = val.split("/")
+                                if len(parts) == 2:
+                                    return float(parts[0]) / float(parts[1])
+
+                            clean_val = "".join(c for c in val if c.isdigit() or c == ".")
+                            if clean_val:
+                                return float(clean_val)
+                    except (ValueError, ZeroDivisionError) as e:
+                        logger.warning(
+                            f"Failed to parse FPS value '{val}' for key '{actual_key}': {e}"
+                        )
+                        continue
+
+            return None
+        except Exception as e:
+            logger.debug(f"Metadata detection failed for {path}: {e}")
+            return None
 
 
 class StandardImageReader(ImageReader):
