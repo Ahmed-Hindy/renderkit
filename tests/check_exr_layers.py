@@ -1,5 +1,4 @@
 import OpenImageIO as oiio
-from pathlib import Path
 
 path = r"G:\Projects\Data_folder\render\Canyon_Run\sq001\sh001\work\fx\render\CanRun_sh001_fx_v063\SH030_karma_all_render\SH030_karma_all_render.1001.exr"
 buf = oiio.ImageBuf(path)
@@ -22,4 +21,4 @@ else:
             layers.add(name.rsplit(".", 1)[0])
         else:
             layers.add("RGBA")
-    print(f"Detected layers in Part 0: {sorted(list(layers))}")
+    print(f"Detected layers in Part 0: {sorted(layers)}")
