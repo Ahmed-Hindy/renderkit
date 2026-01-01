@@ -1,4 +1,4 @@
 # Image Reader
 
-::: image_video_processor.io.image_reader.ImageReader
-::: image_video_processor.io.image_reader.ImageReaderFactory
+::: renderkit.io.image_reader.ImageReader
+::: renderkit.io.image_reader.ImageReaderFactory

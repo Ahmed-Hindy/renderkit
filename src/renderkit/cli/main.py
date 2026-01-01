@@ -1,4 +1,4 @@
-"""CLI interface for the image video processor."""
+"""CLI interface for the Render Kit."""
 
 import logging
 import sys
@@ -7,9 +7,9 @@ from typing import Optional
 
 import click
 
-from image_video_processor.api.processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit.api.processor import RenderKit
+from renderkit.core.config import ConversionConfigBuilder
+from renderkit.processing.color_space import ColorSpacePreset
 
 # Configure logging
 logging.basicConfig(
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 @click.group()
 @click.version_option(version="0.1.0")
 def main() -> None:
-    """Image and Video Processor - VFX workflow tools."""
+    """RenderKit - VFX workflow tools."""
     pass
 
 
@@ -82,15 +82,15 @@ def convert_exr_sequence(
 
     \b
         # Basic conversion
-        ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+        renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 
     \b
         # With custom resolution
-        ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --width 1920 --height 1080
+        renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --width 1920 --height 1080
 
     \b
         # With frame range
-        ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
+        renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
     """
     output_path_obj = Path(output_path)
 
@@ -133,7 +133,7 @@ def convert_exr_sequence(
 
     try:
         config = config_builder.build()
-        processor = ImageVideoProcessor()
+        processor = RenderKit()
         processor.convert_with_config(config)
         click.echo(f"Successfully converted to: {output_path}")
     except Exception as e:

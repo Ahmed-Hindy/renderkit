@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - EXR sequence to MP4 video conversion
 - Support for multiple frame naming conventions (%04d, $F4, ####, numeric)
 - Color space conversion presets (Linear to sRGB, Linear to Rec.709, etc.)
-- CLI interface with `ivp` command
+- CLI interface with `renderkit` command
 - Python API with builder pattern
 - PySide6/Qt GUI (basic implementation)
 - Frame sequence detection and parsing

@@ -1,20 +1,20 @@
-"""Public Python API for the image video processor."""
+"""Public Python API for the Render Kit."""
 
 import logging
 from typing import Optional
 
-from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
-from image_video_processor.core.converter import SequenceConverter
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.core.converter import SequenceConverter
+from renderkit.processing.color_space import ColorSpacePreset
 
 logger = logging.getLogger(__name__)
 
 
-class ImageVideoProcessor:
+class RenderKit:
     """Main public API for image and video processing."""
 
     def __init__(self) -> None:
-        """Initialize the processor."""
+        """Initialize RenderKit."""
         pass
 
     def convert_exr_sequence_to_mp4(
@@ -43,7 +43,7 @@ class ImageVideoProcessor:
             end_frame: End frame number (optional)
 
         Example:
-            >>> processor = ImageVideoProcessor()
+            >>> processor = RenderKit()
             >>> processor.convert_exr_sequence_to_mp4(
             ...     "render.%04d.exr",
             ...     "output.mp4",
@@ -80,13 +80,13 @@ class ImageVideoProcessor:
             config: Conversion configuration object
 
         Example:
-            >>> from image_video_processor.core.config import ConversionConfigBuilder
+            >>> from renderkit.core.config import ConversionConfigBuilder
             >>> config = ConversionConfigBuilder()\\
             ...     .with_input_pattern("render.%04d.exr")\\
             ...     .with_output_path("output.mp4")\\
             ...     .with_fps(24.0)\\
             ...     .build()
-            >>> processor = ImageVideoProcessor()
+            >>> processor = RenderKit()
             >>> processor.convert_with_config(config)
         """
         converter = SequenceConverter(config)

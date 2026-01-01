@@ -2,8 +2,8 @@
 
 import pytest
 
-from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
-from image_video_processor.exceptions import ConfigurationError
+from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.exceptions import ConfigurationError
 
 
 class TestConversionConfig:

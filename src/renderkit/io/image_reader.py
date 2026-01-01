@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from image_video_processor.exceptions import ImageReadError
-from image_video_processor.io.file_utils import FileUtils
+from renderkit.exceptions import ImageReadError
+from renderkit.io.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
 

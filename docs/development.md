@@ -29,7 +29,7 @@ Run tests with pytest:
 python -m pytest tests/ -v
 
 # Run with coverage
-python -m pytest tests/ --cov=image_video_processor --cov-report=html
+python -m pytest tests/ --cov=renderkit --cov-report=html
 
 # Run only unit tests
 python -m pytest tests/ -v -k "not test_integration_real_files"

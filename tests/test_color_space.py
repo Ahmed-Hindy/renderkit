@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from image_video_processor.processing.color_space import (
+from renderkit.processing.color_space import (
     ColorSpaceConverter,
     ColorSpacePreset,
     LinearToSRGBStrategy,

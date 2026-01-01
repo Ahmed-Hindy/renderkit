@@ -1,4 +1,4 @@
-# Image Video Processor
+# RenderKit
 
 A high-performance image and video processor for VFX workflows, built with Python and PySide6.
 
@@ -13,7 +13,7 @@ A high-performance image and video processor for VFX workflows, built with Pytho
 ## Installation
 
 ```bash
-pip install image-video-processor
+pip install renderkit
 ```
 
 ## Quick Start
@@ -21,9 +21,9 @@ pip install image-video-processor
 ### Python API
 
 ```python
-from image_video_processor import ImageVideoProcessor
+from renderkit import RenderKit
 
-processor = ImageVideoProcessor()
+processor = RenderKit()
 processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",

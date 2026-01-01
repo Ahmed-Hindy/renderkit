@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from image_video_processor.core.sequence import FrameSequence, SequenceDetector
-from image_video_processor.exceptions import SequenceDetectionError
+from renderkit.core.sequence import FrameSequence, SequenceDetector
+from renderkit.exceptions import SequenceDetectionError
 
 
 class TestSequenceDetector:

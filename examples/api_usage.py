@@ -1,11 +1,11 @@
 """Example: Using the Python API programmatically."""
 
-from image_video_processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit import RenderKit
+from renderkit.core.config import ConversionConfigBuilder
+from renderkit.processing.color_space import ColorSpacePreset
 
 # Initialize processor
-processor = ImageVideoProcessor()
+processor = RenderKit()
 
 # Method 1: Using convenience method
 processor.convert_exr_sequence_to_mp4(

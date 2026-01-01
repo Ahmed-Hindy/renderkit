@@ -7,7 +7,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from image_video_processor.exceptions import VideoEncodingError
+from renderkit.exceptions import VideoEncodingError
 
 logger = logging.getLogger(__name__)
 

@@ -1,1 +1,1 @@
-"""Tests for image video processor package."""
+"""Tests for Render Kit package."""

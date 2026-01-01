@@ -1,6 +1,6 @@
-# Contributing to Image Video Processor
+# Contributing to RenderKit
 
-Thank you for your interest in contributing to Image Video Processor! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to RenderKit! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 
@@ -38,7 +38,7 @@ Thank you for your interest in contributing to Image Video Processor! This docum
    uv run python -m pytest tests/ -v
    
    # Run with coverage
-   uv run python -m pytest tests/ --cov=image_video_processor
+   uv run python -m pytest tests/ --cov=renderkit
    ```
 
 4. **Format and lint**:
@@ -98,7 +98,7 @@ uv run python -m pytest tests/ -v
 uv run python -m pytest tests/test_sequence.py -v
 
 # With coverage
-uv run python -m pytest tests/ --cov=image_video_processor --cov-report=html
+uv run python -m pytest tests/ --cov=renderkit --cov-report=html
 ```
 
 ## Pull Request Guidelines

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from image_video_processor.io.file_utils import FileUtils
+from renderkit.io.file_utils import FileUtils
 
 
 class TestFileUtils:

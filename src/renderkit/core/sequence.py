@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from image_video_processor.exceptions import SequenceDetectionError
+from renderkit.exceptions import SequenceDetectionError
 
 
 class FrameSequence:

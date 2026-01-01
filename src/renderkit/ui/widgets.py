@@ -5,9 +5,9 @@ from typing import Optional
 
 import numpy as np
 
-from image_video_processor.io.image_reader import ImageReaderFactory
-from image_video_processor.processing.color_space import ColorSpaceConverter, ColorSpacePreset
-from image_video_processor.ui.qt_compat import (
+from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
+from renderkit.ui.qt_compat import (
     QImage,
     QLabel,
     QPixmap,

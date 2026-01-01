@@ -7,7 +7,7 @@ Run with: pytest tests/test_ui.py -v
 import pytest
 
 # Skip UI tests if pytest-qt is not available
-from image_video_processor.ui.qt_compat import (
+from renderkit.ui.qt_compat import (
     QApplication,
     Qt,
     get_qt_backend,
@@ -32,18 +32,18 @@ def test_qt_backend_detection():
 
 def test_main_window_creation(qtbot, qapp):
     """Test that main window can be created."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
 
     assert window is not None
-    assert window.windowTitle() == "RenderKit - Image Video Processor"
+    assert window.windowTitle() == "RenderKit"
 
 
 def test_input_pattern_edit(qtbot, qapp):
     """Test input pattern edit widget."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
@@ -56,7 +56,7 @@ def test_input_pattern_edit(qtbot, qapp):
 
 def test_output_path_edit(qtbot, qapp):
     """Test output path edit widget."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
@@ -69,7 +69,7 @@ def test_output_path_edit(qtbot, qapp):
 
 def test_fps_spinbox(qtbot, qapp):
     """Test FPS spinbox."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
@@ -81,7 +81,7 @@ def test_fps_spinbox(qtbot, qapp):
 
 def test_color_space_combo(qtbot, qapp):
     """Test color space combo box."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
@@ -93,7 +93,7 @@ def test_color_space_combo(qtbot, qapp):
 
 def test_resolution_checkbox(qtbot, qapp):
     """Test keep resolution checkbox."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
@@ -109,7 +109,7 @@ def test_resolution_checkbox(qtbot, qapp):
 
 def test_detect_button_click(qtbot, qapp, tmp_path):
     """Test detect sequence button."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     # Create test files
     for i in range(1, 6):
@@ -135,8 +135,8 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
 
 def test_convert_button_validation(qtbot, qapp, monkeypatch):
     """Test that convert button validates inputs."""
-    from image_video_processor.ui.main_window import ModernMainWindow
-    from image_video_processor.ui.qt_compat import QMessageBox
+    from renderkit.ui.main_window import ModernMainWindow
+    from renderkit.ui.qt_compat import QMessageBox
 
     # Mock QMessageBox.warning
     warning_called = False
@@ -159,7 +159,7 @@ def test_convert_button_validation(qtbot, qapp, monkeypatch):
 
 def test_preview_widget(qtbot, qapp):
     """Test preview widget creation."""
-    from image_video_processor.ui.widgets import PreviewWidget
+    from renderkit.ui.widgets import PreviewWidget
 
     widget = PreviewWidget()
     qtbot.addWidget(widget)
@@ -170,7 +170,7 @@ def test_preview_widget(qtbot, qapp):
 
 def test_settings_persistence(qtbot, qapp):
     """Test that settings are saved and loaded."""
-    from image_video_processor.ui.main_window import ModernMainWindow
+    from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
     qtbot.addWidget(window)

@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from image_video_processor.exceptions import ConfigurationError
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit.exceptions import ConfigurationError
+from renderkit.processing.color_space import ColorSpacePreset
 
 
 @dataclass

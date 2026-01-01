@@ -6,7 +6,7 @@ from typing import Protocol
 
 import numpy as np
 
-from image_video_processor.exceptions import ColorSpaceError
+from renderkit.exceptions import ColorSpaceError
 
 logger = logging.getLogger(__name__)
 

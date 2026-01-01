@@ -2,22 +2,22 @@
 
 ## Command Line Interface (CLI)
 
-The simplest way to use the tool is via the CLI command `ivp`.
+The simplest way to use the tool is via the CLI command `renderkit`.
 
 ### Examples
 
 ```bash
 # Basic conversion
-ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 
 # With custom resolution
-ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --width 1920 --height 1080
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --width 1920 --height 1080
 
 # With frame range
-ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
 
 # With different color space
-ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --color-space linear_to_rec709
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --color-space linear_to_rec709
 ```
 
 ### Options
@@ -39,9 +39,9 @@ ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --color-space linea
 ### Basic Usage
 
 ```python
-from image_video_processor import ImageVideoProcessor
+from renderkit import RenderKit
 
-processor = ImageVideoProcessor()
+processor = RenderKit()
 processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",
@@ -54,9 +54,9 @@ processor.convert_exr_sequence_to_mp4(
 Use the Builder pattern for complex configurations:
 
 ```python
-from image_video_processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit import RenderKit
+from renderkit.core.config import ConversionConfigBuilder
+from renderkit.processing.color_space import ColorSpacePreset
 
 config = (
     ConversionConfigBuilder()
@@ -69,7 +69,7 @@ config = (
     .build()
 )
 
-processor = ImageVideoProcessor()
+processor = RenderKit()
 processor.convert_with_config(config)
 ```
 
@@ -78,7 +78,7 @@ processor.convert_with_config(config)
 Launch the UI from the terminal:
 
 ```bash
-python -m image_video_processor.ui.main_window
+python -m renderkit.ui.main_window
 ```
 
 ### Qt Backends

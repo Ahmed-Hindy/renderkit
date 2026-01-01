@@ -1,14 +1,14 @@
-"""Modern PySide6 main window for image video processor."""
+"""Modern PySide6 main window for RenderKit."""
 
 import logging
 import sys
 from pathlib import Path
 from typing import Optional
 
-from image_video_processor import __version__
-from image_video_processor.core.config import ConversionConfig, ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
-from image_video_processor.ui.qt_compat import (
+from renderkit import __version__
+from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.ui.qt_compat import (
     QT_BACKEND_NAME,
     QApplication,
     QCheckBox,
@@ -35,7 +35,7 @@ from image_video_processor.ui.qt_compat import (
     QWidget,
     Signal,
 )
-from image_video_processor.ui.widgets import PreviewWidget
+from renderkit.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class ConversionWorker(QThread):
     def run(self) -> None:
         """Run the conversion."""
         try:
-            from image_video_processor.core.converter import SequenceConverter
+            from renderkit.core.converter import SequenceConverter
 
             self.log_message.emit("Starting conversion...")
             converter = SequenceConverter(self.config)
@@ -78,7 +78,7 @@ class ModernMainWindow(QMainWindow):
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
-        self.settings = QSettings("RenderKit", "ImageVideoProcessor")
+        self.settings = QSettings("RenderKit", "RenderKit")
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False  # Flag to prevent double popup
 
@@ -88,7 +88,7 @@ class ModernMainWindow(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
-        self.setWindowTitle("RenderKit - Image Video Processor")
+        self.setWindowTitle("RenderKit")
         self.setMinimumSize(1000, 700)
         self._last_preview_path: Optional[Path] = None
 
@@ -462,7 +462,7 @@ class ModernMainWindow(QMainWindow):
     def _show_about(self) -> None:
         """Show about dialog."""
         about_text = f"""
-        <h2>RenderKit - Image Video Processor</h2>
+        <h2>RenderKit - Render Kit</h2>
         <p><b>Version:</b> {__version__}</p>
         <p><b>Qt Backend:</b> {QT_BACKEND_NAME}</p>
         <p>A high-performance Python package for image and video processing in VFX workflows.</p>
@@ -600,7 +600,7 @@ class ModernMainWindow(QMainWindow):
             return
 
         try:
-            from image_video_processor.core.sequence import SequenceDetector
+            from renderkit.core.sequence import SequenceDetector
 
             sequence = SequenceDetector.detect_sequence(pattern)
             first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
@@ -697,7 +697,7 @@ class ModernMainWindow(QMainWindow):
             return
 
         try:
-            from image_video_processor.core.sequence import SequenceDetector
+            from renderkit.core.sequence import SequenceDetector
 
             sequence = SequenceDetector.detect_sequence(pattern)
             frame_count = len(sequence)

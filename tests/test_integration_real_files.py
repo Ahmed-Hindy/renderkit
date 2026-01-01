@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from image_video_processor.api.processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfigBuilder
-from image_video_processor.core.sequence import SequenceDetector
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit.api.processor import RenderKit
+from renderkit.core.config import ConversionConfigBuilder
+from renderkit.core.sequence import SequenceDetector
+from renderkit.processing.color_space import ColorSpacePreset
 
 
 class TestRealEXRSequence:
@@ -63,7 +63,7 @@ class TestRealEXRSequence:
 
     def test_image_reader_real_files(self) -> None:
         """Test reading real EXR files."""
-        from image_video_processor.io.image_reader import ImageReaderFactory
+        from renderkit.io.image_reader import ImageReaderFactory
 
         sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
         first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
@@ -87,8 +87,8 @@ class TestRealEXRSequence:
 
     def test_color_space_conversion_real_files(self) -> None:
         """Test color space conversion with real EXR files."""
-        from image_video_processor.io.image_reader import ImageReaderFactory
-        from image_video_processor.processing.color_space import ColorSpaceConverter
+        from renderkit.io.image_reader import ImageReaderFactory
+        from renderkit.processing.color_space import ColorSpaceConverter
 
         sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
         first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
@@ -135,7 +135,7 @@ class TestRealEXRSequence:
             )
 
             # Convert
-            processor = ImageVideoProcessor()
+            processor = RenderKit()
             processor.convert_with_config(config)
 
             # Verify output file was created
@@ -160,7 +160,7 @@ class TestRealEXRSequence:
             )
 
             # Convert
-            processor = ImageVideoProcessor()
+            processor = RenderKit()
             processor.convert_with_config(config)
 
             # Verify output file was created
@@ -195,7 +195,7 @@ class TestRealEXRSequence:
                     .build()
                 )
 
-                processor = ImageVideoProcessor()
+                processor = RenderKit()
                 processor.convert_with_config(config)
 
                 assert output_path.exists(), f"Output should be created for {color_space.name}"

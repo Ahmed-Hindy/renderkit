@@ -1,4 +1,4 @@
-site_name: Image Video Processor
+site_name: RenderKit
 site_description: A high-performance image and video processor for VFX workflows.
 site_author: Ahmed Hindy
 repo_url: https://github.com/Ahmed-Hindy/renderkit
@@ -40,7 +40,7 @@ nav:
   - Contributing: contributing.md
   - API Reference:
       - Core:
-          - ImageVideoProcessor: api/image_video_processor.md
+          - RenderKit: api/processor.md
           - Config: api/config.md
           - Sequence: api/sequence.md
       - IO:

@@ -1,3 +1,3 @@
 # Sequence Detection
 
-::: image_video_processor.core.sequence.SequenceDetector
+::: renderkit.core.sequence.SequenceDetector

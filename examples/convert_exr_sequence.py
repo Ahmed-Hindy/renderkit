@@ -1,11 +1,11 @@
 """Example: Convert EXR sequence to MP4 using the API."""
 
-from image_video_processor import ImageVideoProcessor
-from image_video_processor.core.config import ConversionConfigBuilder
-from image_video_processor.processing.color_space import ColorSpacePreset
+from renderkit import RenderKit
+from renderkit.core.config import ConversionConfigBuilder
+from renderkit.processing.color_space import ColorSpacePreset
 
 # Example 1: Simple conversion
-processor = ImageVideoProcessor()
+processor = RenderKit()
 processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",

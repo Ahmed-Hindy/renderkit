@@ -1,4 +1,4 @@
-# Image Video Processor
+# RenderKit
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -14,7 +14,7 @@ A high-performance Python package and CLI tool for converting image sequences (E
 - **EXR to Video**: Convert high-bit depth EXR sequences to preview MP4s.
 - **Smart Detection**: automatically handles `%04d`, `$F4`, `####` patterns.
 - **Color Space**: Linear-to-sRGB and Rec.709 conversion presets.
-- **Interfaces**: Python API, CLI (`ivp`), and PySide6 UI.
+- **Interfaces**: Python API, CLI (`renderkit`), and PySide6 UI.
 
 ## Installation
 
@@ -33,15 +33,15 @@ uv pip install -e .
 
 ```bash
 # Convert EXR sequence to MP4
-ivp convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 ```
 
 ### Python API
 
 ```python
-from image_video_processor import ImageVideoProcessor
+from renderkit import RenderKit
 
-processor = ImageVideoProcessor()
+processor = RenderKit()
 processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",

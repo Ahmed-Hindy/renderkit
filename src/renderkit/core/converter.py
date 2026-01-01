@@ -6,18 +6,18 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from image_video_processor.core.config import ConversionConfig
-from image_video_processor.core.sequence import FrameSequence, SequenceDetector
-from image_video_processor.exceptions import (
+from renderkit.core.config import ConversionConfig
+from renderkit.core.sequence import FrameSequence, SequenceDetector
+from renderkit.exceptions import (
     ColorSpaceError,
     ImageReadError,
     SequenceDetectionError,
     VideoEncodingError,
 )
-from image_video_processor.io.image_reader import ImageReaderFactory
-from image_video_processor.processing.color_space import ColorSpaceConverter
-from image_video_processor.processing.scaler import ImageScaler
-from image_video_processor.processing.video_encoder import VideoEncoder
+from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.processing.color_space import ColorSpaceConverter
+from renderkit.processing.scaler import ImageScaler
+from renderkit.processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
 
