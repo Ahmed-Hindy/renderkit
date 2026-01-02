@@ -761,8 +761,6 @@ class ModernMainWindow(QMainWindow):
                 self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
 
                 # Attempt to find closest match in combo box or add it
-                from PySide6.QtCore import Qt
-
                 index = self.color_space_combo.findText(
                     detected_color_space, Qt.MatchFlag.MatchContains
                 )

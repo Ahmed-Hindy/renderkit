@@ -4,8 +4,6 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from tqdm import tqdm
-
 from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import (
@@ -157,6 +155,8 @@ class SequenceConverter:
                 progress_callback(total_frames, total_frames)
             else:
                 # Use tqdm for console
+                from tqdm import tqdm
+
                 for frame_num in tqdm(frame_numbers, desc="Converting frames"):
                     self._process_single_frame(
                         frame_num,
