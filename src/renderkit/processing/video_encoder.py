@@ -23,6 +23,7 @@ class VideoEncoder:
         codec: str = "libx264",
         bitrate: Optional[int] = None,
         quality: Optional[int] = 10,
+        macro_block_size: int = 16,
     ) -> None:
         """Initialize video encoder.
 
@@ -32,12 +33,15 @@ class VideoEncoder:
             codec: Video codec (FFmpeg name like 'libx264', 'libx265')
             bitrate: Video bitrate in kbps (optional)
             quality: Video quality (0-10), 10 is best (optional, used if bitrate is None)
+            macro_block_size: Macro block size for codec compatibility (default: 16)
+                             Frame dimensions will be rounded up to multiples of this value
         """
         self.output_path = output_path.absolute()
         self.fps = fps
         self.codec = codec
         self.bitrate = bitrate
         self.quality = quality
+        self.macro_block_size = macro_block_size
         self._writer = None
         self._width: Optional[int] = None
         self._height: Optional[int] = None
@@ -80,8 +84,8 @@ class VideoEncoder:
 
         # Adjust dimensions to be divisible by macro_block_size for codec compatibility
         # This prevents imageio-ffmpeg from auto-resizing only the first frame
-        self._adjusted_width = self._make_divisible(width, 16)
-        self._adjusted_height = self._make_divisible(height, 16)
+        self._adjusted_width = self._make_divisible(width, self.macro_block_size)
+        self._adjusted_height = self._make_divisible(height, self.macro_block_size)
 
         if self._adjusted_width != width or self._adjusted_height != height:
             logger.warning(
@@ -105,13 +109,23 @@ class VideoEncoder:
         writer_kwargs = {
             "fps": self.fps,
             "codec": ffmpeg_codec,
-            "macro_block_size": 16,
+            "macro_block_size": self.macro_block_size,
             "pixelformat": "yuv420p",
         }
 
         # Set default FFmpeg parameters for broad compatibility and web optimization
         # -movflags +faststart enables progressive loading for web playback
-        ffmpeg_params = ["-movflags", "+faststart"]
+        # Add explicit SDR color tags for predictable playback across platforms
+        ffmpeg_params = [
+            "-movflags",
+            "+faststart",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ]
 
         # Codec-specific tuning and quality mapping
         if ffmpeg_codec in ["libx264", "libx265"]:
