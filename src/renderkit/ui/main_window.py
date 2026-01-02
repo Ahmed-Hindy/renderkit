@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Optional
 
 from renderkit import __version__, constants
-from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.core.config import (
+    BurnInConfig,
+    BurnInElement,
+    ConversionConfig,
+    ConversionConfigBuilder,
+)
 from renderkit.io.file_utils import FileUtils
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.qt_compat import (
@@ -163,6 +168,7 @@ class ModernMainWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self._create_input_tab(), "Input")
         tabs.addTab(self._create_output_tab(), "Output")
+        tabs.addTab(self._create_burnin_tab(), "Burn-ins")
         tabs.addTab(self._create_advanced_tab(), "Advanced")
 
         layout.addWidget(tabs)
@@ -330,6 +336,45 @@ class ModernMainWindow(QMainWindow):
         video_layout.addRow("Visual Quality:", quality_layout)
 
         layout.addWidget(video_group)
+        layout.addStretch()
+
+        return widget
+
+    def _create_burnin_tab(self) -> QWidget:
+        """Create burn-in settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+
+        # Basic Burn-ins Group
+        burnin_group = QGroupBox("Basic Overlays")
+        burnin_layout = QVBoxLayout(burnin_group)
+        burnin_layout.setSpacing(10)
+
+        self.burnin_frame_check = QCheckBox("Frame Number")
+        self.burnin_frame_check.setToolTip("Overlay the current frame number (top-left)")
+        burnin_layout.addWidget(self.burnin_frame_check)
+
+        self.burnin_layer_check = QCheckBox("EXR Layer Name")
+        self.burnin_layer_check.setToolTip("Overlay the active EXR layer name (top-left)")
+        burnin_layout.addWidget(self.burnin_layer_check)
+
+        self.burnin_fps_check = QCheckBox("Frame Rate (FPS)")
+        self.burnin_fps_check.setToolTip("Overlay the video frame rate (top-left)")
+        burnin_layout.addWidget(self.burnin_fps_check)
+
+        # Opacity
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("Background Opacity:"))
+        self.burnin_opacity_spin = QSpinBox()
+        self.burnin_opacity_spin.setRange(0, 100)
+        self.burnin_opacity_spin.setValue(30)
+        self.burnin_opacity_spin.setSuffix("%")
+        opacity_layout.addWidget(self.burnin_opacity_spin)
+        opacity_layout.addStretch()
+        burnin_layout.addLayout(opacity_layout)
+
+        layout.addWidget(burnin_group)
         layout.addStretch()
 
         return widget
@@ -899,6 +944,48 @@ class ModernMainWindow(QMainWindow):
                 num_workers = self.num_workers_spin.value()
                 config_builder.with_multiprocessing(True, num_workers)
 
+            # Setup burn-ins
+            burnin_elements = []
+            font_size = 20
+            if self.burnin_frame_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="Frame: {frame}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="left",
+                    )
+                )
+            if self.burnin_layer_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="Layer: {layer}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="center",
+                    )
+                )
+            if self.burnin_fps_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="FPS: {fps:.2f}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="right",
+                    )
+                )
+
+            if burnin_elements:
+                config_builder.with_burnin(
+                    BurnInConfig(
+                        elements=burnin_elements,
+                        background_opacity=self.burnin_opacity_spin.value(),
+                    )
+                )
+
             config = config_builder.build()
 
         except Exception as e:
@@ -1063,6 +1150,10 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("quality", self.quality_slider.value())
         self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
         self.settings.setValue("num_workers", self.num_workers_spin.value())
+        self.settings.setValue("burnin_frame", self.burnin_frame_check.isChecked())
+        self.settings.setValue("burnin_layer", self.burnin_layer_check.isChecked())
+        self.settings.setValue("burnin_fps", self.burnin_fps_check.isChecked())
+        self.settings.setValue("burnin_opacity", self.burnin_opacity_spin.value())
 
     def _on_progress_update(self, current: int, total: int) -> None:
         """Handle progress update from worker.
@@ -1106,6 +1197,11 @@ class ModernMainWindow(QMainWindow):
         )
 
         self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
+
+        self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", False, type=bool))
+        self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", False, type=bool))
+        self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", False, type=bool))
+        self.burnin_opacity_spin.setValue(self.settings.value("burnin_opacity", 30, type=int))
 
 
 def run_ui() -> None:

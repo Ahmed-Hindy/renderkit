@@ -1,10 +1,32 @@
 """Configuration classes using Builder pattern for conversion settings."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from renderkit.exceptions import ConfigurationError
 from renderkit.processing.color_space import ColorSpacePreset
+
+
+@dataclass
+class BurnInElement:
+    """Individual burn-in element configuration."""
+
+    text_template: str  # e.g. "Frame: {frame}"
+    x: int = 50
+    y: int = 50
+    font: str = ""  # Default OIIO font
+    font_size: int = 24
+    color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    alignment: str = "left"  # left, center, right
+
+
+@dataclass
+class BurnInConfig:
+    """Configuration for all burn-ins on a frame."""
+
+    elements: list[BurnInElement] = field(default_factory=list)
+    use_background: bool = True
+    background_opacity: int = 30  # 0-100 percentage
 
 
 @dataclass
@@ -28,6 +50,7 @@ class ConversionConfig:
     explicit_input_color_space: Optional[str] = (
         None  # Force specific input space (e.g. "ACES - ACEScg")
     )
+    burnin_config: Optional[BurnInConfig] = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -64,6 +87,7 @@ class ConversionConfigBuilder:
         self._use_multiprocessing: bool = False
         self._num_workers: Optional[int] = None
         self._explicit_input_color_space: Optional[str] = None
+        self._burnin_config: Optional[BurnInConfig] = None
 
     def with_input_pattern(self, pattern: str) -> "ConversionConfigBuilder":
         """Set the input file pattern."""
@@ -130,6 +154,11 @@ class ConversionConfigBuilder:
         self._num_workers = num_workers
         return self
 
+    def with_burnin(self, config: BurnInConfig) -> "ConversionConfigBuilder":
+        """Set the burn-in configuration."""
+        self._burnin_config = config
+        return self
+
     def build(self) -> ConversionConfig:
         """Build the ConversionConfig object."""
         if self._input_pattern is None:
@@ -153,4 +182,5 @@ class ConversionConfigBuilder:
             use_multiprocessing=self._use_multiprocessing,
             num_workers=self._num_workers,
             explicit_input_color_space=self._explicit_input_color_space,
+            burnin_config=self._burnin_config,
         )

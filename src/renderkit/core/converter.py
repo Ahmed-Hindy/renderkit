@@ -1,8 +1,8 @@
-"""Main conversion orchestrator."""
-
 import logging
 from pathlib import Path
 from typing import Callable, Optional
+
+import numpy as np
 
 from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
@@ -14,6 +14,7 @@ from renderkit.exceptions import (
     VideoEncodingError,
 )
 from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
@@ -35,6 +36,7 @@ class SequenceConverter:
         self.reader = None
         self.color_converter: Optional[ColorSpaceConverter] = None
         self.encoder: Optional[VideoEncoder] = None
+        self.burnin_processor = BurnInProcessor()
 
     def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
         """Perform the conversion from image sequence to video.
@@ -219,9 +221,37 @@ class SequenceConverter:
             logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
             return
 
-        # Scale if needed
         if output_width != width or output_height != height:
             image = scaler.scale_image(image, output_width, output_height)
+
+        # Apply burn-ins if configured
+        if self.config.burnin_config:
+            try:
+                import OpenImageIO as oiio
+
+                # Convert NumPy to ImageBuf
+                h, w = image.shape[:2]
+                channels = image.shape[2] if image.ndim == 3 else 1
+                buf = oiio.ImageBuf(oiio.ImageSpec(w, h, channels, oiio.FLOAT))
+                buf.set_pixels(oiio.ROI(), image.astype(np.float32))
+
+                # Prepare metadata for tokens
+                metadata = {
+                    "frame": frame_num,
+                    "file": frame_path.name,
+                    "fps": self.config.fps,
+                    "layer": self.config.layer or "RGBA",
+                    "colorspace": input_space or "Unknown",
+                }
+
+                # Apply burn-ins
+                buf = self.burnin_processor.apply_burnins(buf, metadata, self.config.burnin_config)
+
+                # Convert back to NumPy
+                image = buf.get_pixels(oiio.FLOAT)
+                image = image.reshape((h, w, channels))
+            except Exception as e:
+                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
 
         # Write frame
         try:

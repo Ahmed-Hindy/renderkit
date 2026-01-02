@@ -8,7 +8,7 @@ from typing import Optional
 import click
 
 from renderkit.api.processor import RenderKit
-from renderkit.core.config import ConversionConfigBuilder
+from renderkit.core.config import BurnInConfig, BurnInElement, ConversionConfigBuilder
 from renderkit.processing.color_space import ColorSpacePreset
 
 # Configure logging
@@ -72,6 +72,15 @@ def main() -> None:
     default=False,
     help="Overwrite output file if it exists",
 )
+@click.option("--burnin-frame", is_flag=True, default=False, help="Burn in frame number")
+@click.option("--burnin-layer", is_flag=True, default=False, help="Burn in layer name")
+@click.option("--burnin-fps", is_flag=True, default=False, help="Burn in frame rate (fps)")
+@click.option(
+    "--burnin-opacity",
+    type=int,
+    default=30,
+    help="Opacity of the burn-in background bar (0-100, default: 30)",
+)
 def convert_exr_sequence(
     input_pattern: str,
     output_path: str,
@@ -85,6 +94,10 @@ def convert_exr_sequence(
     start_frame: Optional[int],
     end_frame: Optional[int],
     overwrite: bool,
+    burnin_frame: bool,
+    burnin_layer: bool,
+    burnin_fps: bool,
+    burnin_opacity: int,
 ) -> None:
     """Convert an EXR sequence to MP4 video.
 
@@ -146,6 +159,48 @@ def convert_exr_sequence(
         config_builder.with_frame_range(start_frame, start_frame)
     elif end_frame is not None:
         config_builder.with_frame_range(0, end_frame)
+
+    # Setup burn-ins
+    burnin_elements = []
+    # Assume source width for positioning if output width not yet final in config_builder
+    # But wait, config_builder.width might be None.
+    # Let's use alignment logic instead.
+
+    # We'll need the actual width to position Center/Right correctly
+    # since OIIO render_text takes absolute coordinates.
+    # The converter will handle absolute positioning based on output_width.
+
+    # Actually, I'll update converter.py to handle relative positioning
+    # if I use special x values, or I'll just pass the intention.
+
+    # For now, let's just use standard padding and smaller font.
+    font_size = 20
+    if burnin_frame:
+        burnin_elements.append(
+            BurnInElement(
+                text_template="Frame: {frame}", x=20, y=10, font_size=font_size, alignment="left"
+            )
+        )
+    if burnin_layer:
+        # We can't know the exact center yet, so we'll fix this in converter.py
+        # to interpret -1 as center or something.
+        # Or better: update BurnInProcessor to handle 'left', 'center', 'right' specifically.
+        burnin_elements.append(
+            BurnInElement(
+                text_template="Layer: {layer}", x=0, y=10, font_size=font_size, alignment="center"
+            )
+        )
+    if burnin_fps:
+        burnin_elements.append(
+            BurnInElement(
+                text_template="FPS: {fps:.2f}", x=0, y=10, font_size=font_size, alignment="right"
+            )
+        )
+
+    if burnin_elements:
+        config_builder.with_burnin(
+            BurnInConfig(elements=burnin_elements, background_opacity=burnin_opacity)
+        )
 
     try:
         config = config_builder.build()
