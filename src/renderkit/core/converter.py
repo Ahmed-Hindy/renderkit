@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from tqdm import tqdm
 
@@ -37,7 +37,7 @@ class SequenceConverter:
         self.color_converter: Optional[ColorSpaceConverter] = None
         self.encoder: Optional[VideoEncoder] = None
 
-    def convert(self) -> None:
+    def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
         """Perform the conversion from image sequence to video.
 
         Raises:
@@ -133,34 +133,36 @@ class SequenceConverter:
         success_count = 0
 
         try:
-            for frame_num in tqdm(frame_numbers, desc="Converting frames"):
-                frame_path = self.sequence.get_file_path(frame_num)
-
-                # Read image
-                try:
-                    image = self.reader.read(frame_path, layer=self.config.layer)
-                except ImageReadError as e:
-                    logger.warning(f"Failed to read frame {frame_num}: {e}")
-                    continue
-
-                # Convert color space
-                try:
-                    image = self.color_converter.convert(image, input_space=input_space)
-                except ColorSpaceError as e:
-                    logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-                    continue
-
-                # Scale if needed
-                if output_width != width or output_height != height:
-                    image = scaler.scale_image(image, output_width, output_height)
-
-                # Write frame
-                try:
-                    self.encoder.write_frame(image)
+            total_frames = len(frame_numbers)
+            if progress_callback:
+                # Use provided callback
+                for i, frame_num in enumerate(frame_numbers):
+                    progress_callback(i, total_frames)
+                    self._process_single_frame(
+                        frame_num,
+                        output_width,
+                        output_height,
+                        width,
+                        height,
+                        scaler,
+                        input_space,
+                    )
                     success_count += 1
-                except VideoEncodingError as e:
-                    logger.error(f"Failed to write frame {frame_num}: {e}")
-                    raise
+                # Final progress update
+                progress_callback(total_frames, total_frames)
+            else:
+                # Use tqdm for console
+                for frame_num in tqdm(frame_numbers, desc="Converting frames"):
+                    self._process_single_frame(
+                        frame_num,
+                        output_width,
+                        output_height,
+                        width,
+                        height,
+                        scaler,
+                        input_space,
+                    )
+                    success_count += 1
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -174,3 +176,51 @@ class SequenceConverter:
             # Clean up
             if self.encoder:
                 self.encoder.close()
+
+    def _process_single_frame(
+        self,
+        frame_num: int,
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+    ) -> None:
+        """Process a single frame.
+
+        Args:
+            frame_num: Frame number to process
+            output_width: Target width
+            output_height: Target height
+            width: Source width
+            height: Source height
+            scaler: Image scaler instance
+            input_space: Explicit input color space
+        """
+        frame_path = self.sequence.get_file_path(frame_num)
+
+        # Read image
+        try:
+            image = self.reader.read(frame_path, layer=self.config.layer)
+        except ImageReadError as e:
+            logger.warning(f"Failed to read frame {frame_num}: {e}")
+            return
+
+        # Convert color space
+        try:
+            image = self.color_converter.convert(image, input_space=input_space)
+        except ColorSpaceError as e:
+            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
+            return
+
+        # Scale if needed
+        if output_width != width or output_height != height:
+            image = scaler.scale_image(image, output_width, output_height)
+
+        # Write frame
+        try:
+            self.encoder.write_frame(image)
+        except VideoEncodingError as e:
+            logger.error(f"Failed to write frame {frame_num}: {e}")
+            raise

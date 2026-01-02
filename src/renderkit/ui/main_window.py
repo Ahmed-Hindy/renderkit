@@ -14,6 +14,7 @@ from renderkit.ui.qt_compat import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDesktopServices,
     QDoubleSpinBox,
     QFileDialog,
     QFont,
@@ -34,6 +35,7 @@ from renderkit.ui.qt_compat import (
     Qt,
     QTabWidget,
     QThread,
+    QUrl,
     QVBoxLayout,
     QWidget,
     Signal,
@@ -67,7 +69,11 @@ class ConversionWorker(QThread):
 
             self.log_message.emit("Starting conversion...")
             converter = SequenceConverter(self.config)
-            converter.convert()
+
+            def progress_callback(current, total):
+                self.progress.emit(current, total)
+
+            converter.convert(progress_callback=progress_callback)
             self.log_message.emit("Conversion completed successfully!")
             self.finished.emit()
         except Exception as e:
@@ -412,6 +418,22 @@ class ModernMainWindow(QMainWindow):
         self.preview_widget = PreviewWidget()
         preview_layout.addWidget(self.preview_widget)
 
+        # Flipbook button
+        self.play_btn = QPushButton("Play Result (Flipbook)")
+        self.play_btn.setEnabled(False)
+        self.play_btn.clicked.connect(self._play_output)
+        self.play_btn.setToolTip("Open the conversion result in the default system player.")
+        self.play_btn.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                padding: 5px;
+            }
+            QPushButton:enabled {
+                color: #2196F3;
+            }
+        """)
+        preview_layout.addWidget(self.play_btn)
+
         layout.addWidget(preview_group)
         return panel
 
@@ -519,6 +541,7 @@ class ModernMainWindow(QMainWindow):
         self.convert_btn.clicked.connect(self._start_conversion)
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
+        self.output_path_edit.textChanged.connect(self._update_play_button_state)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
@@ -548,6 +571,19 @@ class ModernMainWindow(QMainWindow):
             10: "10 (Max)",
         }
         self.quality_label.setText(labels.get(value, str(value)))
+
+    def _update_play_button_state(self) -> None:
+        """Enable or disable play button based on output file existence."""
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            self.play_btn.setEnabled(False)
+            return
+
+        try:
+            path = Path(output_path)
+            self.play_btn.setEnabled(path.exists() and path.is_file())
+        except Exception:
+            self.play_btn.setEnabled(False)
 
     def _on_pattern_changed(self) -> None:
         """Handle input pattern text change."""
@@ -880,6 +916,7 @@ class ModernMainWindow(QMainWindow):
         self.worker.finished.connect(self._on_conversion_finished)
         self.worker.error.connect(self._on_conversion_error)
         self.worker.log_message.connect(self._on_log_message)
+        self.worker.progress.connect(self._on_progress_update)
         self.worker.start()
 
         self._save_settings()
@@ -942,6 +979,7 @@ class ModernMainWindow(QMainWindow):
         self.progress_bar.setValue(100)
         self.progress_label.setText("Conversion completed!")
         self.statusBar().showMessage("Conversion completed successfully!", 5000)
+        self.play_btn.setEnabled(True)
 
         QMessageBox.information(
             self,
@@ -961,6 +999,23 @@ class ModernMainWindow(QMainWindow):
         self.log_text.appendPlainText(f"ERROR: {error_msg}")
         QMessageBox.critical(self, "Conversion Error", f"Conversion failed:\n\n{error_msg}")
 
+    def _play_output(self) -> None:
+        """Play the output video file."""
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            return
+
+        path = Path(output_path).absolute()
+        if not path.exists():
+            QMessageBox.warning(self, "File Not Found", f"Output file does not exist:\n{path}")
+            return
+
+        success = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        if not success:
+            QMessageBox.warning(
+                self, "Error", f"Could not open the file with the default player:\n{path}"
+            )
+
     def _on_log_message(self, message: str) -> None:
         """Handle log message from worker."""
         self.log_text.appendPlainText(message)
@@ -976,6 +1031,22 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("quality", self.quality_slider.value())
         self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
         self.settings.setValue("num_workers", self.num_workers_spin.value())
+
+    def _on_progress_update(self, current: int, total: int) -> None:
+        """Handle progress update from worker.
+
+        Args:
+            current: Current frame number (0-indexed)
+            total: Total number of frames
+        """
+        if total > 0:
+            if self.progress_bar.maximum() != total:
+                self.progress_bar.setRange(0, total)
+
+            self.progress_bar.setValue(current)
+            percentage = int((current / total) * 100)
+            self.progress_label.setText(f"Processing frame {current}/{total} ({percentage}%)")
+            self.statusBar().showMessage(f"Processing frame {current}/{total}...")
 
     def _load_settings(self) -> None:
         """Load saved settings."""
@@ -996,6 +1067,7 @@ class ModernMainWindow(QMainWindow):
         # Trigger initial toggle states
         self._on_keep_resolution_toggled(self.keep_resolution_check.isChecked())
         self._on_quality_changed(self.quality_slider.value())
+        self._update_play_button_state()  # Call it here
 
         self.multiprocessing_check.setChecked(
             self.settings.value("multiprocessing", False, type=bool)
