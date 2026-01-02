@@ -79,21 +79,43 @@ class VideoEncoder:
             "fps": self.fps,
             "codec": ffmpeg_codec,
             "macro_block_size": 16,
+            "pixelformat": "yuv420p",
         }
 
-        # Encoder-specific tuning
-        if ffmpeg_codec == "libaom-av1":
-            # AV1 is extremely slow by default. Use -cpu-used 6-8 for better speed.
-            # Also needs bitrate=0 to enable CRF mode in libaom.
+        # Set default FFmpeg parameters for broad compatibility and web optimization
+        # -movflags +faststart enables progressive loading for web playback
+        ffmpeg_params = ["-movflags", "+faststart"]
+
+        # Codec-specific tuning and quality mapping
+        if ffmpeg_codec in ["libx264", "libx265"]:
+            # Map quality (0-10) to CRF (35-18)
+            # 10 -> 18 (Excellent), 0 -> 35 (Low quality)
+            # Default to 23 if not specified
+            crf = 18 + (10 - self.quality) * 1.7 if self.quality is not None else 23
+            ffmpeg_params.extend(["-crf", f"{int(crf)}"])
+            logger.info(f"{ffmpeg_codec} tuning: crf={int(crf)}")
+
+        elif ffmpeg_codec == "libaom-av1":
+            # AV1 is extremely slow by default. Use -cpu-used 6 for better speed.
+            # Map 0-10 quality to CRF 50-20 (lower is better)
+            crf = 20 + (10 - self.quality) * 3 if self.quality is not None else 32
+            ffmpeg_params.extend(["-crf", f"{int(crf)}", "-cpu-used", "6"])
+            # libaom-av1 needs bitrate=0 to enable CRF mode in imageio-ffmpeg
             writer_kwargs["bitrate"] = 0
-            # Map 0-10 quality to CRF 60-15 (lower is better)
-            crf = 60 - (self.quality * 4) if self.quality is not None else 32
-            writer_kwargs["ffmpeg_params"] = ["-crf", str(crf), "-cpu-used", "6"]
-            logger.info(f"AV1 tuning: crf={crf}, cpu-used=6")
+            logger.info(f"AV1 tuning: crf={int(crf)}, cpu-used=6")
+
+        elif ffmpeg_codec == "mpeg4":
+            # Map quality (0-10) to -q:v (31-2)
+            # Higher -q:v is lower quality.
+            qv = 2 + (10 - self.quality) * 2.9 if self.quality is not None else 4
+            ffmpeg_params.extend(["-q:v", f"{int(qv)}"])
+            logger.info(f"MPEG-4 tuning: q:v={int(qv)}")
+
         elif self.bitrate:
             writer_kwargs["bitrate"] = f"{self.bitrate}k"
-        elif self.quality is not None:
-            writer_kwargs["quality"] = self.quality
+
+        # Apply final FFmpeg parameters
+        writer_kwargs["ffmpeg_params"] = ffmpeg_params
 
         try:
             # Using str() on an absolute path is safest across platforms
@@ -107,8 +129,16 @@ class VideoEncoder:
             )
             logger.info(
                 f"Initialized imageio-ffmpeg writer: {width}x{height} @ {self.fps}fps, "
-                f"codec={ffmpeg_codec}, bitrate={self.bitrate or 'Auto'}k, quality={self.quality}"
+                f"codec={ffmpeg_codec}, quality={self.quality}, params={ffmpeg_params}"
             )
+        except (ImportError, RuntimeError) as e:
+            # Catch common issues with missing ffmpeg backend
+            msg = str(e)
+            if "ffmpeg" in msg.lower():
+                raise VideoEncodingError(
+                    "FFmpeg backend not found. Please install imageio-ffmpeg: 'pip install imageio-ffmpeg'"
+                ) from e
+            raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 

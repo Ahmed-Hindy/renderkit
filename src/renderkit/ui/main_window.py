@@ -1,4 +1,4 @@
-"""Modern PySide6 main window for RenderKit."""
+"""Modern main window for RenderKit using the qt_compat abstraction."""
 
 import logging
 import sys
@@ -50,6 +50,7 @@ class ConversionWorker(QThread):
 
     finished = Signal()
     error = Signal(str)
+    cancelled = Signal()
     progress = Signal(int, int)  # current, total
     log_message = Signal(str)  # log messages
 
@@ -61,21 +62,32 @@ class ConversionWorker(QThread):
         """
         super().__init__()
         self.config = config
+        self._is_cancelled = False
+
+    def request_cancel(self) -> None:
+        """Request the worker to stop gracefully."""
+        self._is_cancelled = True
 
     def run(self) -> None:
         """Run the conversion."""
         try:
             from renderkit.core.converter import SequenceConverter
+            from renderkit.exceptions import ConversionCancelledError
 
             self.log_message.emit("Starting conversion...")
             converter = SequenceConverter(self.config)
 
             def progress_callback(current, total):
                 self.progress.emit(current, total)
+                # Return True to continue, False to cancel
+                return not self._is_cancelled
 
             converter.convert(progress_callback=progress_callback)
             self.log_message.emit("Conversion completed successfully!")
             self.finished.emit()
+        except ConversionCancelledError:
+            self.log_message.emit("Conversion cancelled by user.")
+            self.cancelled.emit()
         except Exception as e:
             logger.exception("Conversion failed")
             self.error.emit(str(e))
@@ -915,6 +927,7 @@ class ModernMainWindow(QMainWindow):
         self.worker = ConversionWorker(config)
         self.worker.finished.connect(self._on_conversion_finished)
         self.worker.error.connect(self._on_conversion_error)
+        self.worker.cancelled.connect(self._on_conversion_cancelled)
         self.worker.log_message.connect(self._on_log_message)
         self.worker.progress.connect(self._on_progress_update)
         self.worker.start()
@@ -936,11 +949,20 @@ class ModernMainWindow(QMainWindow):
                 try:
                     self.worker.finished.disconnect()
                     self.worker.error.disconnect()
+                    self.worker.cancelled.disconnect()
                 except TypeError:
                     pass  # Already disconnected
-                self.worker.terminate()
-                self.worker.wait()
-                # Manually reset UI without showing success popup
+
+                # Request graceful cancel
+                self.worker.request_cancel()
+
+                # If it doesn't stop in 2 seconds, terminate
+                if not self.worker.wait(2000):
+                    logger.warning("Worker did not stop gracefully, terminating...")
+                    self.worker.terminate()
+                    self.worker.wait()
+
+                # Manually reset UI
                 self.convert_btn.setEnabled(True)
                 self.progress_bar.setRange(0, 100)
                 self.progress_bar.setValue(0)
@@ -987,6 +1009,15 @@ class ModernMainWindow(QMainWindow):
             f"Conversion completed successfully!\n\nOutput: {self.output_path_edit.text()}",
         )
 
+    def _on_conversion_cancelled(self) -> None:
+        """Handle conversion cancellation."""
+        self.convert_btn.setEnabled(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("Conversion cancelled")
+        self.statusBar().showMessage("Conversion cancelled", 5000)
+        self.log_text.appendPlainText("Conversion cancelled")
+
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
         self.convert_btn.setEnabled(True)
@@ -997,7 +1028,10 @@ class ModernMainWindow(QMainWindow):
         self.statusBar().showMessage("Conversion failed", 5000)
         # Cancel button remains enabled (for quit)
         self.log_text.appendPlainText(f"ERROR: {error_msg}")
-        QMessageBox.critical(self, "Conversion Error", f"Conversion failed:\n\n{error_msg}")
+
+        # Determine error type for better messaging if possible
+        full_msg = f"Conversion failed:\n\n{error_msg}"
+        QMessageBox.critical(self, "Conversion Error", full_msg)
 
     def _play_output(self) -> None:
         """Play the output video file."""

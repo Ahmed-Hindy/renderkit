@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-02
+
+### Added
+- **UI Progress Tracking**: Determinate progress bar in the main window with frame-by-frame status updates and percentage display.
+- **Graceful Cancellation**: Ability to cancel long-running conversions from the UI with proper resource cleanup.
+
+### Fixed
+- **MP4 Compatibility**: Enforced `yuv420p` pixel format to ensure encoding works across all standard media players (QuickTime, WMP) and web browsers.
+- **Web Playback Utility**: Added FFmpeg `+faststart` flag to optimize video files for web streaming and progressive loading.
+- **Improved Diagnostics**: Added descriptive error messages when FFmpeg dependencies are missing.
+
+### Changed
+- **Predictable Quality Mapping**: Replaced generic quality parameters with precise mappings to codec-specific controls (CRF for x264/x265/AV1, `-q:v` for MPEG-4).
+- **Refactored Converter**: Updated `SequenceConverter` to allow external progress callbacks, enabling UI-agnostic progress reporting.
+
 ## [0.3.0] - 2026-01-01
 
 ### Added

@@ -10,6 +10,7 @@ from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import (
     ColorSpaceError,
+    ConversionCancelledError,
     ImageReadError,
     SequenceDetectionError,
     VideoEncodingError,
@@ -137,7 +138,11 @@ class SequenceConverter:
             if progress_callback:
                 # Use provided callback
                 for i, frame_num in enumerate(frame_numbers):
-                    progress_callback(i, total_frames)
+                    # Check for cancellation via callback return value
+                    if progress_callback(i, total_frames) is False:
+                        logger.info("Conversion cancelled by progress callback")
+                        raise ConversionCancelledError("Conversion cancelled by user")
+
                     self._process_single_frame(
                         frame_num,
                         output_width,

@@ -35,3 +35,9 @@ class ConfigurationError(RenderKitError):
     """Raised when configuration is invalid."""
 
     pass
+
+
+class ConversionCancelledError(RenderKitError):
+    """Raised when conversion is cancelled by the user."""
+
+    pass
