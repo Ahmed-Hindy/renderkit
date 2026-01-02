@@ -343,6 +343,7 @@ class ModernMainWindow(QMainWindow):
         self.cs_mode_check.setToolTip(
             "Creates a video where each frame is a grid of all available AOVs."
         )
+        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
         video_layout.addRow("Contact Sheet:", self.cs_mode_check)
 
         layout.addWidget(video_group)
@@ -361,6 +362,12 @@ class ModernMainWindow(QMainWindow):
         burnin_layout = QVBoxLayout(burnin_group)
         burnin_layout.setSpacing(10)
 
+        self.burnin_enable_check = QCheckBox("Enable Burn-ins")
+        self.burnin_enable_check.setToolTip("Enable or disable all burn-in overlays")
+        self.burnin_enable_check.setStyleSheet("font-weight: bold;")
+        self.burnin_enable_check.toggled.connect(self._on_burnin_enable_toggled)
+        burnin_layout.addWidget(self.burnin_enable_check)
+
         self.burnin_frame_check = QCheckBox("Frame Number")
         self.burnin_frame_check.setToolTip("Overlay the current frame number (top-left)")
         burnin_layout.addWidget(self.burnin_frame_check)
@@ -374,15 +381,15 @@ class ModernMainWindow(QMainWindow):
         burnin_layout.addWidget(self.burnin_fps_check)
 
         # Opacity
-        opacity_layout = QHBoxLayout()
-        opacity_layout.addWidget(QLabel("Background Opacity:"))
+        self.burnin_opacity_layout = QHBoxLayout()
+        self.burnin_opacity_layout.addWidget(QLabel("Background Opacity:"))
         self.burnin_opacity_spin = QSpinBox()
         self.burnin_opacity_spin.setRange(0, 100)
         self.burnin_opacity_spin.setValue(30)
         self.burnin_opacity_spin.setSuffix("%")
-        opacity_layout.addWidget(self.burnin_opacity_spin)
-        opacity_layout.addStretch()
-        burnin_layout.addLayout(opacity_layout)
+        self.burnin_opacity_layout.addWidget(self.burnin_opacity_spin)
+        self.burnin_opacity_layout.addStretch()
+        burnin_layout.addLayout(self.burnin_opacity_layout)
 
         layout.addWidget(burnin_group)
         layout.addStretch()
@@ -399,6 +406,12 @@ class ModernMainWindow(QMainWindow):
         grid_group = QGroupBox("Grid Layout")
         grid_layout = QFormLayout(grid_group)
         grid_layout.setSpacing(10)
+
+        self.cs_enable_check = QCheckBox("Enable Contact Sheet")
+        self.cs_enable_check.setToolTip("Enable or disable contact sheet generation")
+        self.cs_enable_check.setStyleSheet("font-weight: bold;")
+        self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
+        grid_layout.addRow(self.cs_enable_check)
 
         self.cs_columns_spin = QSpinBox()
         self.cs_columns_spin.setRange(1, 20)
@@ -669,6 +682,36 @@ class ModernMainWindow(QMainWindow):
         """Handle keep resolution checkbox toggle."""
         self.width_spin.setEnabled(not checked)
         self.height_spin.setEnabled(not checked)
+
+    def _on_burnin_enable_toggled(self, checked: bool) -> None:
+        """Handle burn-in enable checkbox toggle."""
+        self.burnin_frame_check.setEnabled(checked)
+        self.burnin_layer_check.setEnabled(checked)
+        self.burnin_fps_check.setEnabled(checked)
+        self.burnin_opacity_spin.setEnabled(checked)
+
+    def _on_cs_enable_toggled(self, checked: bool) -> None:
+        """Handle contact sheet enable checkbox toggle."""
+        self.cs_columns_spin.setEnabled(checked)
+        self.cs_thumb_width_spin.setEnabled(checked)
+        self.cs_padding_spin.setEnabled(checked)
+        self.cs_show_labels_check.setEnabled(checked)
+        self.cs_font_size_spin.setEnabled(checked)
+
+        # Sync with Output tab toggle
+        if self.cs_mode_check.isChecked() != checked:
+            self.cs_mode_check.blockSignals(True)
+            self.cs_mode_check.setChecked(checked)
+            self.cs_mode_check.blockSignals(False)
+
+    def _on_cs_mode_toggled(self, checked: bool) -> None:
+        """Handle contact sheet mode toggle in Output tab."""
+        if self.cs_enable_check.isChecked() != checked:
+            self.cs_enable_check.blockSignals(True)
+            self.cs_enable_check.setChecked(checked)
+            self.cs_enable_check.blockSignals(False)
+            # Ensure the CS tab widgets are also updated
+            self._on_cs_enable_toggled(checked)
 
     def _on_quality_changed(self, value: int) -> None:
         """Handle quality slider change."""
@@ -1003,7 +1046,7 @@ class ModernMainWindow(QMainWindow):
                 config_builder.with_multiprocessing(True, num_workers)
 
             # Contact Sheet Mode
-            if self.cs_mode_check.isChecked():
+            if self.cs_enable_check.isChecked():
                 cs_config = ContactSheetConfig(
                     columns=self.cs_columns_spin.value(),
                     thumbnail_width=self.cs_thumb_width_spin.value(),
@@ -1047,7 +1090,7 @@ class ModernMainWindow(QMainWindow):
                     )
                 )
 
-            if burnin_elements:
+            if self.burnin_enable_check.isChecked() and burnin_elements:
                 config_builder.with_burnin(
                     BurnInConfig(
                         elements=burnin_elements,
@@ -1234,12 +1277,14 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("quality", self.quality_slider.value())
         self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
         self.settings.setValue("num_workers", self.num_workers_spin.value())
+        self.settings.setValue("burnin_enable", self.burnin_enable_check.isChecked())
         self.settings.setValue("burnin_frame", self.burnin_frame_check.isChecked())
         self.settings.setValue("burnin_layer", self.burnin_layer_check.isChecked())
         self.settings.setValue("burnin_fps", self.burnin_fps_check.isChecked())
         self.settings.setValue("burnin_opacity", self.burnin_opacity_spin.value())
 
         # Contact Sheet settings
+        self.settings.setValue("cs_enable", self.cs_enable_check.isChecked())
         self.settings.setValue("cs_columns", self.cs_columns_spin.value())
         self.settings.setValue("cs_thumb_width", self.cs_thumb_width_spin.value())
         self.settings.setValue("cs_padding", self.cs_padding_spin.value())
@@ -1290,18 +1335,24 @@ class ModernMainWindow(QMainWindow):
 
         self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
 
+        self.burnin_enable_check.setChecked(self.settings.value("burnin_enable", False, type=bool))
         self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", False, type=bool))
         self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", False, type=bool))
         self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", False, type=bool))
         self.burnin_opacity_spin.setValue(self.settings.value("burnin_opacity", 30, type=int))
 
         # Contact Sheet settings
+        self.cs_enable_check.setChecked(self.settings.value("cs_enable", False, type=bool))
         self.cs_columns_spin.setValue(self.settings.value("cs_columns", 4, type=int))
         self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 10, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
         self.cs_mode_check.setChecked(self.settings.value("cs_mode", False, type=bool))
+
+        # Initial refresh of enabled states
+        self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
+        self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
 
 
 def run_ui() -> None:
