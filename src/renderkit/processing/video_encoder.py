@@ -8,6 +8,7 @@ import imageio
 import numpy as np
 
 from renderkit.exceptions import VideoEncodingError
+from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,21 @@ class VideoEncoder:
         self._writer = None
         self._width: Optional[int] = None
         self._height: Optional[int] = None
+        self._adjusted_width: Optional[int] = None
+        self._adjusted_height: Optional[int] = None
+
+    @staticmethod
+    def _make_divisible(dimension: int, divisor: int = 16) -> int:
+        """Round up dimension to be divisible by divisor for codec compatibility.
+
+        Args:
+            dimension: Original dimension
+            divisor: Divisor (typically 16 for macro block size)
+
+        Returns:
+            Dimension rounded up to nearest multiple of divisor
+        """
+        return ((dimension + divisor - 1) // divisor) * divisor
 
     def __enter__(self) -> "VideoEncoder":
         """Context manager entry."""
@@ -61,6 +77,17 @@ class VideoEncoder:
         """
         self._width = width
         self._height = height
+
+        # Adjust dimensions to be divisible by macro_block_size for codec compatibility
+        # This prevents imageio-ffmpeg from auto-resizing only the first frame
+        self._adjusted_width = self._make_divisible(width, 16)
+        self._adjusted_height = self._make_divisible(height, 16)
+
+        if self._adjusted_width != width or self._adjusted_height != height:
+            logger.warning(
+                f"Frame dimensions adjusted from {width}x{height} to "
+                f"{self._adjusted_width}x{self._adjusted_height} for codec compatibility"
+            )
 
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +177,16 @@ class VideoEncoder:
         """
         if self._writer is None:
             raise VideoEncodingError("Video encoder not initialized. Call initialize() first.")
+
+        # Resize frame if needed to match adjusted dimensions
+        # This ensures all frames have consistent size for video encoding
+        if frame.shape[1] != self._adjusted_width or frame.shape[0] != self._adjusted_height:
+            frame = ImageScaler.scale_image(
+                frame,
+                width=self._adjusted_width,
+                height=self._adjusted_height,
+                filter_name="lanczos3",
+            )
 
         # Ensure frame is uint8 [0, 255] for imageio
         if frame.dtype != np.uint8:

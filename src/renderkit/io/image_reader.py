@@ -253,15 +253,24 @@ class OIIOReader(ImageReader):
         spec = buf.spec()
         fps = None
 
-        # Check standard and custom keys in constants
         for key in constants.FPS_METADATA_KEYS:
             val = spec.getattribute(key)
             if val is not None:
                 try:
+                    # Handle bytes
+                    if isinstance(val, bytes):
+                        val = val.decode("utf-8")
+
                     # OIIO attributes can be tuples for rationals
                     if isinstance(val, (list, tuple)) and len(val) == 2:
                         fps = float(val[0]) / float(val[1])
+                    elif isinstance(val, str) and "/" in val:
+                        # Handle rational strings like "24000/1001"
+                        parts = val.split("/")
+                        if len(parts) == 2:
+                            fps = float(parts[0]) / float(parts[1])
                     else:
+                        # Handle simple float/int or float strings
                         fps = float(val)
                     break
                 except (ValueError, TypeError, ZeroDivisionError):
