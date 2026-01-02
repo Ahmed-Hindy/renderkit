@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
 from renderkit.core.converter import SequenceConverter
 from renderkit.processing.color_space import ColorSpacePreset
 
@@ -30,6 +30,8 @@ class RenderKit:
         layer: Optional[str] = None,
         start_frame: Optional[int] = None,
         end_frame: Optional[int] = None,
+        contact_sheet: bool = False,
+        contact_sheet_config: Optional[ContactSheetConfig] = None,
     ) -> None:
         """Convert an EXR sequence to MP4 video.
 
@@ -76,6 +78,9 @@ class RenderKit:
             config.with_frame_range(start_frame, start_frame)
         elif end_frame is not None:
             config.with_frame_range(0, end_frame)
+
+        if contact_sheet:
+            config.with_contact_sheet(True, contact_sheet_config)
 
         conversion_config = config.build()
         converter = SequenceConverter(conversion_config)

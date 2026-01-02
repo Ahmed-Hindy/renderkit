@@ -31,6 +31,11 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libaom-av1 --q
 | `--codec` | Video codec (`libx264`, `libaom-av1`) | `libx264` |
 | `--start-frame` | Start frame | First frame |
 | `--end-frame` | End frame | Last frame |
+| `--contact-sheet` | Enable multi-AOV grid mode | `False` |
+| `--cs-columns` | Number of grid columns | `4` |
+| `--cs-thumb-width`| Width of each layer cell | `512` |
+| `--cs-padding` | Spacing between cells | `10` |
+| `--cs-no-labels` | Disable layer name labels | `False` |
 
 ## Python API
 

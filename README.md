@@ -16,6 +16,7 @@ A high-performance Python package and CLI tool for converting image sequences (E
 - **Quality-First Video**: 0-10 Quality Slider using **Constant Rate Factor (CRF)** for professional results.
 - **AV1 & HEVC**: Support for modern codecs including **AV1** and **H.265 (HEVC)**.
 - **Smart Detection**: Automatically handles `%04d`, `$F4`, `####` and numeric sequences.
+- **Multi-AOV Contact Sheets**: Generate a video grid of all AOVs (layers) for every frame.
 - **Color Space**: Professional color management including **Linear-to-sRGB** and **Rec.709** presets.
 - **Interfaces**: Python API, CLI (`renderkit`), and PySide6 UI.
 
@@ -37,6 +38,9 @@ uv pip install -e .
 ```bash
 # Convert EXR sequence to MP4
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+
+# Generate a Multi-AOV Contact Sheet video
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --contact-sheet --cs-columns 4
 ```
 
 ### Python API

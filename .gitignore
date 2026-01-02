@@ -86,3 +86,4 @@ htmlcov/
 
 # mkdocs
 /site
+ui_test_errors.txt

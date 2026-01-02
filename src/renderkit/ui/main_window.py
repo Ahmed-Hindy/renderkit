@@ -9,6 +9,7 @@ from renderkit import __version__, constants
 from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
+    ContactSheetConfig,
     ConversionConfig,
     ConversionConfigBuilder,
 )
@@ -94,8 +95,9 @@ class ConversionWorker(QThread):
             self.log_message.emit("Conversion cancelled by user.")
             self.cancelled.emit()
         except Exception as e:
-            logger.exception("Conversion failed")
-            self.error.emit(str(e))
+            msg = f"Conversion failed: {e}"
+            logger.exception(msg)
+            self.error.emit(msg)
 
 
 class ModernMainWindow(QMainWindow):
@@ -169,6 +171,7 @@ class ModernMainWindow(QMainWindow):
         tabs.addTab(self._create_input_tab(), "Input")
         tabs.addTab(self._create_output_tab(), "Output")
         tabs.addTab(self._create_burnin_tab(), "Burn-ins")
+        tabs.addTab(self._create_contact_sheet_tab(), "Contact Sheet")
         tabs.addTab(self._create_advanced_tab(), "Advanced")
 
         layout.addWidget(tabs)
@@ -335,6 +338,13 @@ class ModernMainWindow(QMainWindow):
         quality_layout.addWidget(self.quality_label)
         video_layout.addRow("Visual Quality:", quality_layout)
 
+        # Contact Sheet Mode Toggle
+        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
+        self.cs_mode_check.setToolTip(
+            "Creates a video where each frame is a grid of all available AOVs."
+        )
+        video_layout.addRow("Contact Sheet:", self.cs_mode_check)
+
         layout.addWidget(video_group)
         layout.addStretch()
 
@@ -377,6 +387,54 @@ class ModernMainWindow(QMainWindow):
         layout.addWidget(burnin_group)
         layout.addStretch()
 
+        return widget
+
+    def _create_contact_sheet_tab(self) -> QWidget:
+        """Create contact sheet settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+
+        # Grid Group
+        grid_group = QGroupBox("Grid Layout")
+        grid_layout = QFormLayout(grid_group)
+        grid_layout.setSpacing(10)
+
+        self.cs_columns_spin = QSpinBox()
+        self.cs_columns_spin.setRange(1, 20)
+        self.cs_columns_spin.setValue(4)
+        grid_layout.addRow("Columns:", self.cs_columns_spin)
+
+        self.cs_thumb_width_spin = QSpinBox()
+        self.cs_thumb_width_spin.setRange(128, 4096)
+        self.cs_thumb_width_spin.setValue(512)
+        self.cs_thumb_width_spin.setSuffix(" px")
+        grid_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
+
+        self.cs_padding_spin = QSpinBox()
+        self.cs_padding_spin.setRange(0, 100)
+        self.cs_padding_spin.setValue(10)
+        self.cs_padding_spin.setSuffix(" px")
+        grid_layout.addRow("Padding:", self.cs_padding_spin)
+
+        layout.addWidget(grid_group)
+
+        # Labels Group
+        labels_group = QGroupBox("Labels")
+        labels_layout = QFormLayout(labels_group)
+
+        self.cs_show_labels_check = QCheckBox("Show filename labels")
+        self.cs_show_labels_check.setChecked(True)
+        labels_layout.addRow("Enable Labels:", self.cs_show_labels_check)
+
+        self.cs_font_size_spin = QSpinBox()
+        self.cs_font_size_spin.setRange(6, 48)
+        self.cs_font_size_spin.setValue(12)
+        labels_layout.addRow("Font Size:", self.cs_font_size_spin)
+
+        layout.addWidget(labels_group)
+
+        layout.addStretch()
         return widget
 
     def _create_advanced_tab(self) -> QWidget:
@@ -944,6 +1002,17 @@ class ModernMainWindow(QMainWindow):
                 num_workers = self.num_workers_spin.value()
                 config_builder.with_multiprocessing(True, num_workers)
 
+            # Contact Sheet Mode
+            if self.cs_mode_check.isChecked():
+                cs_config = ContactSheetConfig(
+                    columns=self.cs_columns_spin.value(),
+                    thumbnail_width=self.cs_thumb_width_spin.value(),
+                    padding=self.cs_padding_spin.value(),
+                    show_labels=self.cs_show_labels_check.isChecked(),
+                    font_size=self.cs_font_size_spin.value(),
+                )
+                config_builder.with_contact_sheet(True, cs_config)
+
             # Setup burn-ins
             burnin_elements = []
             font_size = 20
@@ -1018,6 +1087,21 @@ class ModernMainWindow(QMainWindow):
         self.worker.start()
 
         self._save_settings()
+
+    def _on_conversion_finished(self) -> None:
+        """Handle conversion completion."""
+        self._conversion_finished_flag = True
+        self.convert_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.progress_label.setText("Conversion finished!")
+        self.statusBar().showMessage("Conversion finished!", 5000)
+        self.log_text.appendPlainText("=" * 50)
+        self.log_text.appendPlainText("Conversion finished successfully.")
+
+        if self.play_btn:
+            self.play_btn.setEnabled(True)
 
     def _cancel_conversion(self) -> None:
         """Cancel the current conversion or quit the application."""
@@ -1155,6 +1239,14 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("burnin_fps", self.burnin_fps_check.isChecked())
         self.settings.setValue("burnin_opacity", self.burnin_opacity_spin.value())
 
+        # Contact Sheet settings
+        self.settings.setValue("cs_columns", self.cs_columns_spin.value())
+        self.settings.setValue("cs_thumb_width", self.cs_thumb_width_spin.value())
+        self.settings.setValue("cs_padding", self.cs_padding_spin.value())
+        self.settings.setValue("cs_show_labels", self.cs_show_labels_check.isChecked())
+        self.settings.setValue("cs_font_size", self.cs_font_size_spin.value())
+        self.settings.setValue("cs_mode", self.cs_mode_check.isChecked())
+
     def _on_progress_update(self, current: int, total: int) -> None:
         """Handle progress update from worker.
 
@@ -1202,6 +1294,14 @@ class ModernMainWindow(QMainWindow):
         self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", False, type=bool))
         self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", False, type=bool))
         self.burnin_opacity_spin.setValue(self.settings.value("burnin_opacity", 30, type=int))
+
+        # Contact Sheet settings
+        self.cs_columns_spin.setValue(self.settings.value("cs_columns", 4, type=int))
+        self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
+        self.cs_padding_spin.setValue(self.settings.value("cs_padding", 10, type=int))
+        self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
+        self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
+        self.cs_mode_check.setChecked(self.settings.value("cs_mode", False, type=bool))
 
 
 def run_ui() -> None:

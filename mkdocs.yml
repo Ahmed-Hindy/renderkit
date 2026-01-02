@@ -50,3 +50,4 @@ nav:
           - ColorSpace: api/processing/color_space.md
           - Scaler: api/processing/scaler.md
           - VideoEncoder: api/processing/video_encoder.md
+          - ContactSheet: api/processing/contact_sheet.md

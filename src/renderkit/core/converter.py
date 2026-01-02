@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
+import OpenImageIO as oiio
 
 from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
@@ -16,6 +17,7 @@ from renderkit.exceptions import (
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
+from renderkit.processing.contact_sheet import ContactSheetGenerator
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
 
@@ -37,6 +39,9 @@ class SequenceConverter:
         self.color_converter: Optional[ColorSpaceConverter] = None
         self.encoder: Optional[VideoEncoder] = None
         self.burnin_processor = BurnInProcessor()
+        self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
+        if self.config.contact_sheet_mode and self.config.contact_sheet_config:
+            self.contact_sheet_generator = ContactSheetGenerator(self.config.contact_sheet_config)
 
     def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
         """Perform the conversion from image sequence to video.
@@ -100,6 +105,36 @@ class SequenceConverter:
         output_width = self.config.width or width
         output_height = self.config.height or height
 
+        if self.config.contact_sheet_mode and self.contact_sheet_generator:
+            # We need to calculate the actual composite size
+            layers = self.reader.get_layers(first_frame_path)
+            if layers:
+                cols = self.config.contact_sheet_config.columns
+                rows = (len(layers) + cols - 1) // cols
+
+                thumb_w = self.config.contact_sheet_config.thumbnail_width
+                aspect = height / width
+                thumb_h = int(thumb_w * aspect)
+
+                padding = self.config.contact_sheet_config.padding
+                label_h = 0
+                if self.config.contact_sheet_config.show_labels:
+                    label_h = int(self.config.contact_sheet_config.font_size * 2.5)
+
+                cell_w = thumb_w + (padding * 2)
+                cell_h = thumb_h + (padding * 2) + label_h
+
+                composite_w = cell_w * cols
+                composite_h = cell_h * rows
+
+                # If explicit resolution not set, use composite size
+                if not self.config.width:
+                    output_width = composite_w
+                if not self.config.height:
+                    output_height = composite_h
+
+                logger.info(f"Targeting contact sheet resolution: {output_width}x{output_height}")
+
         # Step 6: Initialize color space converter
         preset = self.config.color_space_preset
         input_space = self.config.explicit_input_color_space
@@ -151,6 +186,7 @@ class SequenceConverter:
                         height,
                         scaler,
                         input_space,
+                        self.contact_sheet_generator if self.config.contact_sheet_mode else None,
                     )
                     success_count += 1
                 # Final progress update
@@ -168,6 +204,7 @@ class SequenceConverter:
                         height,
                         scaler,
                         input_space,
+                        self.contact_sheet_generator if self.config.contact_sheet_mode else None,
                     )
                     success_count += 1
 
@@ -193,6 +230,7 @@ class SequenceConverter:
         height: int,
         scaler: "ImageScaler",
         input_space: Optional[str],
+        contact_sheet_generator: Optional[ContactSheetGenerator] = None,
     ) -> None:
         """Process a single frame.
 
@@ -207,11 +245,23 @@ class SequenceConverter:
         """
         frame_path = self.sequence.get_file_path(frame_num)
 
-        # Read image
+        # Read image or generate contact sheet
         try:
-            image = self.reader.read(frame_path, layer=self.config.layer)
-        except ImageReadError as e:
-            logger.warning(f"Failed to read frame {frame_num}: {e}")
+            if contact_sheet_generator:
+                buf = contact_sheet_generator.composite_layers(frame_path)
+                # Composite is already in FLOAT and has correct layers (3 or 4)
+                # We need to convert it to numpy for the rest of the pipeline
+                image = buf.get_pixels(oiio.FLOAT)
+                # Reshape if necessary (buf.spec() gives us dimensions)
+                spec = buf.spec()
+                image = image.reshape((spec.height, spec.width, spec.nchannels))
+
+                # Update current width/height for scaling logic
+                width, height = spec.width, spec.height
+            else:
+                image = self.reader.read(frame_path, layer=self.config.layer)
+        except (ImageReadError, Exception) as e:
+            logger.warning(f"Failed to process frame {frame_num}: {e}")
             return
 
         # Convert color space
@@ -227,8 +277,6 @@ class SequenceConverter:
         # Apply burn-ins if configured
         if self.config.burnin_config:
             try:
-                import OpenImageIO as oiio
-
                 # Convert NumPy to ImageBuf
                 h, w = image.shape[:2]
                 channels = image.shape[2] if image.ndim == 3 else 1

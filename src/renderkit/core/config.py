@@ -30,6 +30,72 @@ class BurnInConfig:
 
 
 @dataclass
+class ContactSheetConfig:
+    """Configuration for contact sheet layout in multi-AOV mode."""
+
+    columns: int = 4
+    thumbnail_width: int = 512
+    padding: int = 10
+    background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
+    show_labels: bool = True
+    font_size: int = 12
+
+    def __post_init__(self) -> None:
+        """Validate configuration."""
+        if self.columns <= 0:
+            raise ConfigurationError("Columns must be greater than 0")
+        if self.thumbnail_width <= 0:
+            raise ConfigurationError("Thumbnail width must be greater than 0")
+        if self.padding < 0:
+            raise ConfigurationError("Padding cannot be negative")
+
+
+class ContactSheetConfigBuilder:
+    """Builder for ContactSheetConfig."""
+
+    def __init__(self) -> None:
+        """Initialize builder."""
+        self._columns: int = 4
+        self._thumbnail_width: int = 512
+        self._padding: int = 10
+        self._background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
+        self._show_labels: bool = True
+        self._font_size: int = 12
+
+    def with_columns(self, columns: int) -> "ContactSheetConfigBuilder":
+        """Set number of columns."""
+        self._columns = columns
+        return self
+
+    def with_thumbnail_width(self, width: int) -> "ContactSheetConfigBuilder":
+        """Set thumbnail width."""
+        self._thumbnail_width = width
+        return self
+
+    def with_padding(self, padding: int) -> "ContactSheetConfigBuilder":
+        """Set padding between thumbnails."""
+        self._padding = padding
+        return self
+
+    def with_labels(self, show: bool, font_size: int = 12) -> "ContactSheetConfigBuilder":
+        """Set label options."""
+        self._show_labels = show
+        self._font_size = font_size
+        return self
+
+    def build(self) -> ContactSheetConfig:
+        """Build ContactSheetConfig."""
+        return ContactSheetConfig(
+            columns=self._columns,
+            thumbnail_width=self._thumbnail_width,
+            padding=self._padding,
+            background_color=self._background_color,
+            show_labels=self._show_labels,
+            font_size=self._font_size,
+        )
+
+
+@dataclass
 class ConversionConfig:
     """Configuration for image sequence to video conversion."""
 
@@ -51,6 +117,8 @@ class ConversionConfig:
         None  # Force specific input space (e.g. "ACES - ACEScg")
     )
     burnin_config: Optional[BurnInConfig] = None
+    contact_sheet_mode: bool = False
+    contact_sheet_config: Optional[ContactSheetConfig] = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -88,6 +156,8 @@ class ConversionConfigBuilder:
         self._num_workers: Optional[int] = None
         self._explicit_input_color_space: Optional[str] = None
         self._burnin_config: Optional[BurnInConfig] = None
+        self._contact_sheet_mode: bool = False
+        self._contact_sheet_config: Optional[ContactSheetConfig] = None
 
     def with_input_pattern(self, pattern: str) -> "ConversionConfigBuilder":
         """Set the input file pattern."""
@@ -159,6 +229,14 @@ class ConversionConfigBuilder:
         self._burnin_config = config
         return self
 
+    def with_contact_sheet(
+        self, enabled: bool = True, config: Optional[ContactSheetConfig] = None
+    ) -> "ConversionConfigBuilder":
+        """Enable contact sheet mode."""
+        self._contact_sheet_mode = enabled
+        self._contact_sheet_config = config
+        return self
+
     def build(self) -> ConversionConfig:
         """Build the ConversionConfig object."""
         if self._input_pattern is None:
@@ -183,4 +261,6 @@ class ConversionConfigBuilder:
             num_workers=self._num_workers,
             explicit_input_color_space=self._explicit_input_color_space,
             burnin_config=self._burnin_config,
+            contact_sheet_mode=self._contact_sheet_mode,
+            contact_sheet_config=self._contact_sheet_config,
         )

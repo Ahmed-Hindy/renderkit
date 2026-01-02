@@ -8,7 +8,12 @@ from typing import Optional
 import click
 
 from renderkit.api.processor import RenderKit
-from renderkit.core.config import BurnInConfig, BurnInElement, ConversionConfigBuilder
+from renderkit.core.config import (
+    BurnInConfig,
+    BurnInElement,
+    ContactSheetConfigBuilder,
+    ConversionConfigBuilder,
+)
 from renderkit.processing.color_space import ColorSpacePreset
 
 # Configure logging
@@ -81,6 +86,15 @@ def main() -> None:
     default=30,
     help="Opacity of the burn-in background bar (0-100, default: 30)",
 )
+@click.option(
+    "--contact-sheet", is_flag=True, default=False, help="Enable multi-AOV contact sheet mode"
+)
+@click.option("--cs-columns", type=int, default=4, help="Contact sheet columns (default: 4)")
+@click.option(
+    "--cs-thumb-width", type=int, default=512, help="Contact sheet thumbnail width (default: 512)"
+)
+@click.option("--cs-padding", type=int, default=10, help="Contact sheet padding (default: 10)")
+@click.option("--cs-no-labels", is_flag=True, default=False, help="Disable contact sheet labels")
 def convert_exr_sequence(
     input_pattern: str,
     output_path: str,
@@ -98,6 +112,11 @@ def convert_exr_sequence(
     burnin_layer: bool,
     burnin_fps: bool,
     burnin_opacity: int,
+    contact_sheet: bool,
+    cs_columns: int,
+    cs_thumb_width: int,
+    cs_padding: int,
+    cs_no_labels: bool,
 ) -> None:
     """Convert an EXR sequence to MP4 video.
 
@@ -146,6 +165,17 @@ def convert_exr_sequence(
         .with_quality(quality)
         .with_layer(layer)
     )
+
+    if contact_sheet:
+        from renderkit.core.config import ContactSheetConfig
+
+        cs_config = ContactSheetConfig(
+            columns=cs_columns,
+            thumbnail_width=cs_thumb_width,
+            padding=cs_padding,
+            show_labels=not cs_no_labels,
+        )
+        config_builder.with_contact_sheet(True, cs_config)
 
     if fps is not None:
         config_builder.with_fps(fps)
@@ -209,6 +239,85 @@ def convert_exr_sequence(
         click.echo(f"Successfully converted to: {output_path}")
     except Exception as e:
         logger.exception("Conversion failed")
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("input_pattern", type=str)
+@click.argument("output_path", type=click.Path())
+@click.option("--columns", type=int, default=4, help="Number of columns in the grid (default: 4)")
+@click.option("--thumb-width", type=int, default=512, help="Width of each thumbnail (default: 512)")
+@click.option("--padding", type=int, default=10, help="Padding between thumbnails (default: 10)")
+@click.option(
+    "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
+)
+@click.option("--font-size", type=int, default=12, help="Font size for labels (default: 12)")
+@click.option(
+    "--layer",
+    type=str,
+    default=None,
+    help="Specific EXR layer to extract (e.g., 'diffuse').",
+)
+@click.option("--start-frame", type=int, default=None, help="Start frame number")
+@click.option("--end-frame", type=int, default=None, help="End frame number")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help="Overwrite output file if it exists",
+)
+def contact_sheet(
+    input_pattern: str,
+    output_path: str,
+    columns: int,
+    thumb_width: int,
+    padding: int,
+    no_labels: bool,
+    font_size: int,
+    layer: Optional[str],
+    start_frame: Optional[int],
+    end_frame: Optional[int],
+    overwrite: bool,
+) -> None:
+    """Generate a contact sheet from an image sequence.
+
+    INPUT_PATTERN: File pattern with frame number (e.g., "render.%04d.exr")
+
+    OUTPUT_PATH: Output image path (e.g., "contact_sheet.jpg")
+    """
+    output_path_obj = Path(output_path)
+
+    # Check if output exists
+    if output_path_obj.exists() and not overwrite:
+        click.echo(f"Error: Output file already exists: {output_path}", err=True)
+        click.echo("Use --overwrite to overwrite it.", err=True)
+        sys.exit(1)
+
+    # Build configuration
+    config_builder = (
+        ContactSheetConfigBuilder()
+        .with_input_pattern(input_pattern)
+        .with_output_path(output_path)
+        .with_columns(columns)
+        .with_thumbnail_width(thumb_width)
+        .with_padding(padding)
+        .with_labels(not no_labels, font_size=font_size)
+    )
+
+    if layer:
+        config_builder.with_layer(layer)
+
+    if start_frame is not None and end_frame is not None:
+        config_builder.with_frame_range(start_frame, end_frame)
+
+    try:
+        config = config_builder.build()
+        processor = RenderKit()
+        processor.create_contact_sheet(config)
+        click.echo(f"Successfully created contact sheet: {output_path}")
+    except Exception as e:
+        logger.exception("Contact sheet generation failed")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
