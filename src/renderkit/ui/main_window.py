@@ -10,11 +10,11 @@ from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
     ContactSheetConfig,
-    ConversionConfig,
     ConversionConfigBuilder,
 )
 from renderkit.io.file_utils import FileUtils
 from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.qt_compat import (
     QT_BACKEND_NAME,
     QApplication,
@@ -25,6 +25,7 @@ from renderkit.ui.qt_compat import (
     QFileDialog,
     QFont,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -39,65 +40,13 @@ from renderkit.ui.qt_compat import (
     QSpinBox,
     QSplitter,
     Qt,
-    QTabWidget,
-    QThread,
     QUrl,
     QVBoxLayout,
     QWidget,
-    Signal,
 )
 from renderkit.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
-
-
-class ConversionWorker(QThread):
-    """Worker thread for conversion to avoid blocking UI."""
-
-    finished = Signal()
-    error = Signal(str)
-    cancelled = Signal()
-    progress = Signal(int, int)  # current, total
-    log_message = Signal(str)  # log messages
-
-    def __init__(self, config: ConversionConfig) -> None:
-        """Initialize worker.
-
-        Args:
-            config: Conversion configuration
-        """
-        super().__init__()
-        self.config = config
-        self._is_cancelled = False
-
-    def request_cancel(self) -> None:
-        """Request the worker to stop gracefully."""
-        self._is_cancelled = True
-
-    def run(self) -> None:
-        """Run the conversion."""
-        try:
-            from renderkit.core.converter import SequenceConverter
-            from renderkit.exceptions import ConversionCancelledError
-
-            self.log_message.emit("Starting conversion...")
-            converter = SequenceConverter(self.config)
-
-            def progress_callback(current, total):
-                self.progress.emit(current, total)
-                # Return True to continue, False to cancel
-                return not self._is_cancelled
-
-            converter.convert(progress_callback=progress_callback)
-            self.log_message.emit("Conversion completed successfully!")
-            self.finished.emit()
-        except ConversionCancelledError:
-            self.log_message.emit("Conversion cancelled by user.")
-            self.cancelled.emit()
-        except Exception as e:
-            msg = f"Conversion failed: {e}"
-            logger.exception(msg)
-            self.error.emit(msg)
 
 
 class ModernMainWindow(QMainWindow):
@@ -108,16 +57,28 @@ class ModernMainWindow(QMainWindow):
         super().__init__()
         self.settings = QSettings("RenderKit", "RenderKit")
         self.worker: Optional[ConversionWorker] = None
-        self._conversion_finished_flag = False  # Flag to prevent double popup
+        self._conversion_finished_flag = False
 
         self._setup_ui()
         self._load_settings()
         self._setup_connections()
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """Apply the Kitsu-inspired theme from QSS file."""
+        qss_path = Path(__file__).parent / "stylesheets" / "matcha.qss"
+        if qss_path.exists():
+            try:
+                with open(qss_path) as f:
+                    self.setProperty("theme", "dark")
+                    self.setStyleSheet(f.read())
+            except Exception as e:
+                logger.error(f"Could not load stylesheet: {e}")
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
         self.setWindowTitle("RenderKit")
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(1000, 900)
         self._last_preview_path: Optional[Path] = None
 
         # Central widget with splitter
@@ -134,10 +95,12 @@ class ModernMainWindow(QMainWindow):
         # Left panel - Settings and Preview
         left_splitter = QSplitter(Qt.Orientation.Vertical)
         settings_panel = self._create_settings_panel()
+        settings_panel.setObjectName("Card")
         left_splitter.addWidget(settings_panel)
 
         # Preview panel
         preview_panel = self._create_preview_panel()
+        preview_panel.setObjectName("Card")
         left_splitter.addWidget(preview_panel)
         left_splitter.setSizes([400, 300])
 
@@ -145,6 +108,7 @@ class ModernMainWindow(QMainWindow):
 
         # Right panel - Log and Progress
         right_panel = self._create_log_panel()
+        right_panel.setObjectName("Card")
         main_splitter.addWidget(right_panel)
 
         # Set splitter proportions (70% left, 30% right)
@@ -161,21 +125,175 @@ class ModernMainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
     def _create_settings_panel(self) -> QWidget:
-        """Create the settings panel with tabs."""
+        """Create the settings panel with collapsible sections."""
+        from renderkit.ui.collapsible_group import CollapsibleGroupBox
+
         panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QVBoxLayout(panel)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create tab widget
-        tabs = QTabWidget()
-        tabs.addTab(self._create_input_tab(), "Input")
-        tabs.addTab(self._create_output_tab(), "Output")
-        tabs.addTab(self._create_burnin_tab(), "Burn-ins")
-        tabs.addTab(self._create_contact_sheet_tab(), "Contact Sheet")
-        tabs.addTab(self._create_advanced_tab(), "Advanced")
+        # Create scroll area for collapsible sections
+        from renderkit.ui.qt_compat import QScrollArea
 
-        layout.addWidget(tabs)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Container for all collapsible sections
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(5, 5, 5, 5)
+        container_layout.setSpacing(8)
+
+        # Input Sequence Section
+        input_section = CollapsibleGroupBox("Input Sequence")
+        input_section.set_content_layout(self._create_input_sequence_content())
+        container_layout.addWidget(input_section)
+
+        # Input Color Space Section
+        color_section = CollapsibleGroupBox("Input Color Space")
+        color_section.set_content_layout(self._create_color_space_content())
+        color_section.set_collapsed(True)
+        container_layout.addWidget(color_section)
+
+        # Output Settings Section
+        output_section = CollapsibleGroupBox("Output Settings")
+        output_section.set_content_layout(self._create_output_content())
+        output_section.set_collapsed(True)
+        container_layout.addWidget(output_section)
+
+        # Video Encoding Section
+        video_section = CollapsibleGroupBox("Video Encoding")
+        video_section.set_content_layout(self._create_video_content())
+        video_section.set_collapsed(True)
+        container_layout.addWidget(video_section)
+
+        # Burn-in Overlays Section
+        burnin_section = CollapsibleGroupBox("Burn-in Overlays")
+        burnin_section.set_content_layout(self._create_burnin_content())
+        burnin_section.set_collapsed(True)
+        container_layout.addWidget(burnin_section)
+
+        # Contact Sheet Section
+        cs_section = CollapsibleGroupBox("Contact Sheet")
+        cs_section.set_content_layout(self._create_contact_sheet_content())
+        cs_section.set_collapsed(True)
+        container_layout.addWidget(cs_section)
+
+        # Advanced Options Section
+        advanced_section = CollapsibleGroupBox("Advanced Options")
+        advanced_section.set_content_layout(self._create_advanced_content())
+        advanced_section.set_collapsed(True)
+        container_layout.addWidget(advanced_section)
+
+        container_layout.addStretch()
+
+        scroll.setWidget(container)
+        main_layout.addWidget(scroll)
+
         return panel
+
+    def _create_input_sequence_content(self) -> QVBoxLayout:
+        """Create content for input sequence section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        # Input pattern
+        input_pattern_layout = QHBoxLayout()
+        self.input_pattern_edit = QLineEdit()
+        self.input_pattern_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
+        input_pattern_layout.addWidget(self.input_pattern_edit)
+        self.browse_input_btn = QPushButton("Browse...")
+        self.browse_input_btn.setMaximumWidth(100)
+        input_pattern_layout.addWidget(self.browse_input_btn)
+        form_layout.addRow("Pattern:", input_pattern_layout)
+
+        # Frame Range
+        frame_range_layout = QHBoxLayout()
+        self.start_frame_spin = QSpinBox()
+        self.start_frame_spin.setMinimum(0)
+        self.start_frame_spin.setMaximum(999999)
+        self.start_frame_spin.setSpecialValueText("Auto")
+        self.start_frame_spin.setValue(0)
+        frame_range_layout.addWidget(QLabel("Start:"))
+        frame_range_layout.addWidget(self.start_frame_spin)
+
+        self.end_frame_spin = QSpinBox()
+        self.end_frame_spin.setMinimum(0)
+        self.end_frame_spin.setMaximum(999999)
+        self.end_frame_spin.setSpecialValueText("Auto")
+        self.end_frame_spin.setValue(0)
+        frame_range_layout.addWidget(QLabel("End:"))
+        frame_range_layout.addWidget(self.end_frame_spin)
+        frame_range_layout.addStretch()
+        form_layout.addRow("Frame Range:", frame_range_layout)
+
+        # Sequence Info
+        self.sequence_info_label = QLabel("No sequence detected")
+        self.sequence_info_label.setWordWrap(True)
+        self.sequence_info_label.setMinimumHeight(40)
+        form_layout.addRow("Info:", self.sequence_info_label)
+
+        # Layer Selection
+        self.layer_combo = QComboBox()
+        self.layer_combo.addItems(["RGBA"])
+        self.layer_combo.setEnabled(False)
+        self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
+        form_layout.addRow("Layer:", self.layer_combo)
+
+        layout.addLayout(form_layout)
+
+        # Preview button
+        preview_btn = QPushButton("Load Preview")
+        preview_btn.clicked.connect(self._load_preview)
+        layout.addWidget(preview_btn)
+
+        return layout
+
+    def _create_color_space_content(self) -> QVBoxLayout:
+        """Create content for color space section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        self.color_space_combo = QComboBox()
+        self.color_space_combo.setEditable(True)
+        self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
+        self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
+        form_layout.addRow("Input Space:", self.color_space_combo)
+
+        layout.addLayout(form_layout)
+        return layout
+
+    def _create_output_content(self) -> QVBoxLayout:
+        """Create content for output settings section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        # Output path
+        output_path_layout = QHBoxLayout()
+        self.output_path_edit = QLineEdit()
+        self.output_path_edit.setPlaceholderText("Select output video file...")
+        output_path_layout.addWidget(self.output_path_edit)
+        self.browse_output_btn = QPushButton("Browse...")
+        self.browse_output_btn.setMaximumWidth(100)
+        output_path_layout.addWidget(self.browse_output_btn)
+        form_layout.addRow("Output Path:", output_path_layout)
+
+        layout.addLayout(form_layout)
+        return layout
 
     def _create_input_tab(self) -> QWidget:
         """Create input settings tab."""
@@ -187,6 +305,7 @@ class ModernMainWindow(QMainWindow):
         input_group = QGroupBox("Input Sequence")
         input_layout = QFormLayout(input_group)
         input_layout.setSpacing(10)
+        input_layout.setContentsMargins(12, 18, 12, 12)
 
         # Input pattern
         input_pattern_layout = QHBoxLayout()
@@ -221,8 +340,7 @@ class ModernMainWindow(QMainWindow):
         # Sequence Info
         self.sequence_info_label = QLabel("No sequence detected")
         self.sequence_info_label.setWordWrap(True)
-        self.sequence_info_label.setMinimumHeight(60)
-        self.sequence_info_label.setStyleSheet("color: #666; font-style: italic;")
+        self.sequence_info_label.setMinimumHeight(40)
         input_layout.addRow("Info:", self.sequence_info_label)
 
         # Layer Selection
@@ -238,6 +356,7 @@ class ModernMainWindow(QMainWindow):
         color_group = QGroupBox("Input Color Space")
         color_layout = QFormLayout(color_group)
         color_layout.setSpacing(10)
+        color_layout.setContentsMargins(12, 18, 12, 12)
 
         self.color_space_combo = QComboBox()
         self.color_space_combo.setEditable(True)  # Allow custom input space names
@@ -266,6 +385,7 @@ class ModernMainWindow(QMainWindow):
         output_group = QGroupBox("Output File")
         output_layout = QFormLayout(output_group)
         output_layout.setSpacing(10)
+        output_layout.setContentsMargins(12, 18, 12, 12)
 
         # Output path
         output_path_layout = QHBoxLayout()
@@ -283,6 +403,7 @@ class ModernMainWindow(QMainWindow):
         video_group = QGroupBox("Video Settings")
         video_layout = QFormLayout(video_group)
         video_layout.setSpacing(10)
+        video_layout.setContentsMargins(12, 18, 12, 12)
 
         # FPS
         self.fps_spin = QDoubleSpinBox()
@@ -522,6 +643,7 @@ class ModernMainWindow(QMainWindow):
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
         self.log_text.setMaximumBlockCount(1000)  # Limit log lines
+        self.log_text.setObjectName("LogBox")
         log_layout.addWidget(self.log_text)
 
         # Clear log button
@@ -551,15 +673,7 @@ class ModernMainWindow(QMainWindow):
         self.play_btn.setEnabled(False)
         self.play_btn.clicked.connect(self._play_output)
         self.play_btn.setToolTip("Open the conversion result in the default system player.")
-        self.play_btn.setStyleSheet("""
-            QPushButton {
-                font-weight: bold;
-                padding: 5px;
-            }
-            QPushButton:enabled {
-                color: #2196F3;
-            }
-        """)
+        self.play_btn.setObjectName("IconButton")
         preview_layout.addWidget(self.play_btn)
 
         layout.addWidget(preview_group)
@@ -582,21 +696,7 @@ class ModernMainWindow(QMainWindow):
         # Convert button
         self.convert_btn = QPushButton("Convert")
         self.convert_btn.setMinimumWidth(150)
-        self.convert_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                padding: 8px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-            }
-        """)
+        self.convert_btn.setObjectName("PrimaryButton")
         layout.addWidget(self.convert_btn)
 
         # Cancel button
@@ -878,7 +978,7 @@ class ModernMainWindow(QMainWindow):
                 f"Pattern: {Path(pattern).name}"
             )
             self.sequence_info_label.setText(info_text)
-            self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
+            # self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
 
             # Auto-set frame range if not set
             if self.start_frame_spin.value() == 0:
@@ -953,7 +1053,7 @@ class ModernMainWindow(QMainWindow):
         except Exception as e:
             error_text = f"✗ Error: {str(e)}"
             self.sequence_info_label.setText(error_text)
-            self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
+            # self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
             self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
 
@@ -1354,6 +1454,188 @@ class ModernMainWindow(QMainWindow):
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
         self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
 
+    def _create_video_content(self) -> QVBoxLayout:
+        """Create content for video encoding section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        # FPS
+        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin.setRange(0.01, 120.0)
+        self.fps_spin.setDecimals(3)
+        self.fps_spin.setValue(24.0)
+        self.fps_spin.setSuffix(" fps")
+        form_layout.addRow("Frame Rate:", self.fps_spin)
+
+        # Resolution
+        resolution_layout = QHBoxLayout()
+        self.width_spin = QSpinBox()
+        self.width_spin.setMinimum(1)
+        self.width_spin.setMaximum(7680)
+        self.width_spin.setValue(1920)
+        self.width_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Width:"))
+        resolution_layout.addWidget(self.width_spin)
+
+        self.height_spin = QSpinBox()
+        self.height_spin.setMinimum(1)
+        self.height_spin.setMaximum(4320)
+        self.height_spin.setValue(1080)
+        self.height_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Height:"))
+        resolution_layout.addWidget(self.height_spin)
+
+        self.keep_resolution_check = QCheckBox("Keep source resolution")
+        self.keep_resolution_check.setChecked(True)
+        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
+        resolution_layout.addWidget(self.keep_resolution_check)
+        resolution_layout.addStretch()
+        form_layout.addRow("Resolution:", resolution_layout)
+
+        # Codec
+        self.codec_combo = QComboBox()
+        self._populate_codecs()
+        form_layout.addRow("Codec:", self.codec_combo)
+
+        # Quality Slider
+        quality_layout = QHBoxLayout()
+        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self.quality_slider.setRange(0, 10)
+        self.quality_slider.setValue(10)
+        self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.quality_slider.setTickInterval(1)
+        self.quality_slider.setToolTip("Quality (0-10), 10 is best (visually lossless).")
+
+        self.quality_label = QLabel("10 (Max)")
+        self.quality_label.setFixedWidth(60)
+
+        quality_layout.addWidget(self.quality_slider)
+        quality_layout.addWidget(self.quality_label)
+        form_layout.addRow("Visual Quality:", quality_layout)
+
+        # Contact Sheet Mode Toggle
+        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
+        self.cs_mode_check.setToolTip(
+            "Creates a video where each frame is a grid of all available AOVs."
+        )
+        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
+        form_layout.addRow("Contact Sheet:", self.cs_mode_check)
+
+        layout.addLayout(form_layout)
+        return layout
+
+    def _create_burnin_content(self) -> QVBoxLayout:
+        """Create content for burn-in overlays section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        self.burnin_enable_check = QCheckBox("Enable Burn-ins")
+        self.burnin_enable_check.setToolTip("Enable or disable all burn-in overlays")
+        self.burnin_enable_check.setStyleSheet("font-weight: bold;")
+        self.burnin_enable_check.toggled.connect(self._on_burnin_enable_toggled)
+        layout.addWidget(self.burnin_enable_check)
+
+        self.burnin_frame_check = QCheckBox("Frame Number")
+        self.burnin_frame_check.setToolTip("Overlay the current frame number (top-left)")
+        layout.addWidget(self.burnin_frame_check)
+
+        self.burnin_layer_check = QCheckBox("EXR Layer Name")
+        self.burnin_layer_check.setToolTip("Overlay the active EXR layer name (top-left)")
+        layout.addWidget(self.burnin_layer_check)
+
+        self.burnin_fps_check = QCheckBox("Frame Rate (FPS)")
+        self.burnin_fps_check.setToolTip("Overlay the video frame rate (top-left)")
+        layout.addWidget(self.burnin_fps_check)
+
+        # Opacity
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("Background Opacity:"))
+        self.burnin_opacity_spin = QSpinBox()
+        self.burnin_opacity_spin.setRange(0, 100)
+        self.burnin_opacity_spin.setValue(30)
+        self.burnin_opacity_spin.setSuffix("%")
+        opacity_layout.addWidget(self.burnin_opacity_spin)
+        opacity_layout.addStretch()
+        layout.addLayout(opacity_layout)
+
+        return layout
+
+    def _create_contact_sheet_content(self) -> QVBoxLayout:
+        """Create content for contact sheet section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        self.cs_enable_check = QCheckBox("Enable Contact Sheet")
+        self.cs_enable_check.setToolTip("Enable or disable contact sheet generation")
+        self.cs_enable_check.setStyleSheet("font-weight: bold;")
+        self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
+        form_layout.addRow(self.cs_enable_check)
+
+        self.cs_columns_spin = QSpinBox()
+        self.cs_columns_spin.setRange(1, 20)
+        self.cs_columns_spin.setValue(4)
+        form_layout.addRow("Columns:", self.cs_columns_spin)
+
+        self.cs_thumb_width_spin = QSpinBox()
+        self.cs_thumb_width_spin.setRange(128, 4096)
+        self.cs_thumb_width_spin.setValue(512)
+        self.cs_thumb_width_spin.setSuffix(" px")
+        form_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
+
+        self.cs_padding_spin = QSpinBox()
+        self.cs_padding_spin.setRange(0, 100)
+        self.cs_padding_spin.setValue(10)
+        self.cs_padding_spin.setSuffix(" px")
+        form_layout.addRow("Padding:", self.cs_padding_spin)
+
+        self.cs_show_labels_check = QCheckBox("Show Layer Labels")
+        self.cs_show_labels_check.setChecked(True)
+        form_layout.addRow(self.cs_show_labels_check)
+
+        self.cs_font_size_spin = QSpinBox()
+        self.cs_font_size_spin.setRange(6, 72)
+        self.cs_font_size_spin.setValue(12)
+        self.cs_font_size_spin.setSuffix(" pt")
+        form_layout.addRow("Font Size:", self.cs_font_size_spin)
+
+        layout.addLayout(form_layout)
+        return layout
+
+    def _create_advanced_content(self) -> QVBoxLayout:
+        """Create content for advanced options section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+
+        self.multiprocessing_check = QCheckBox("Enable Multiprocessing")
+        self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
+        form_layout.addRow(self.multiprocessing_check)
+
+        self.num_workers_spin = QSpinBox()
+        self.num_workers_spin.setRange(1, 32)
+        self.num_workers_spin.setValue(4)
+        self.num_workers_spin.setToolTip("Number of worker processes")
+        form_layout.addRow("Worker Processes:", self.num_workers_spin)
+
+        self.overwrite_check = QCheckBox("Overwrite existing files")
+        self.overwrite_check.setToolTip("Automatically overwrite output files if they exist")
+        form_layout.addRow(self.overwrite_check)
+
+        layout.addLayout(form_layout)
+        return layout
+
 
 def run_ui() -> None:
     """Run the UI application."""
@@ -1363,6 +1645,14 @@ def run_ui() -> None:
 
     # Set modern style
     app.setStyle("Fusion")
+
+    # Neutralize system palette overrides to prevent purple "leaks"
+    from renderkit.ui.qt_compat import QPalette
+
+    palette = app.palette()
+    # Explicitly set accents to standard neutral/blue if they were overridden by system
+    palette.setColor(QPalette.ColorRole.Highlight, Qt.GlobalColor.blue)
+    app.setPalette(palette)
 
     window = ModernMainWindow()
     window.show()

@@ -52,7 +52,7 @@ if _backend is None:
 # Import based on detected backend
 if _backend == "pyside6":
     from PySide6.QtCore import QSettings, Qt, QThread, QUrl, Signal
-    from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
+    from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -60,6 +60,7 @@ if _backend == "pyside6":
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
         QGroupBox,
         QHBoxLayout,
         QLabel,
@@ -69,6 +70,7 @@ if _backend == "pyside6":
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QSpinBox,
@@ -79,7 +81,7 @@ if _backend == "pyside6":
     )
 elif _backend == "pyside2":
     from PySide2.QtCore import QSettings, Qt, QThread, QUrl, Signal
-    from PySide2.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
+    from PySide2.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
     from PySide2.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -87,6 +89,7 @@ elif _backend == "pyside2":
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
         QGroupBox,
         QHBoxLayout,
         QLabel,
@@ -96,6 +99,7 @@ elif _backend == "pyside2":
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QSpinBox,
@@ -107,7 +111,7 @@ elif _backend == "pyside2":
 elif _backend == "pyqt6":
     from PyQt6.QtCore import QSettings, Qt, QThread, QUrl
     from PyQt6.QtCore import pyqtSignal as Signal
-    from PyQt6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
+    from PyQt6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
     from PyQt6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -115,6 +119,7 @@ elif _backend == "pyqt6":
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
         QGroupBox,
         QHBoxLayout,
         QLabel,
@@ -124,6 +129,7 @@ elif _backend == "pyqt6":
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QSpinBox,
@@ -135,7 +141,7 @@ elif _backend == "pyqt6":
 elif _backend == "pyqt5":
     from PyQt5.QtCore import QSettings, Qt, QThread, QUrl
     from PyQt5.QtCore import pyqtSignal as Signal
-    from PyQt5.QtGui import QDesktopServices, QFont, QIcon, QImage, QPixmap
+    from PyQt5.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
     from PyQt5.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -143,6 +149,7 @@ elif _backend == "pyqt5":
         QDoubleSpinBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
         QGroupBox,
         QHBoxLayout,
         QLabel,
@@ -152,6 +159,7 @@ elif _backend == "pyqt5":
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QSizePolicy,
         QSlider,
         QSpinBox,
@@ -183,23 +191,26 @@ __all__ = [
     "QComboBox",
     "QFileDialog",
     "QFormLayout",
+    "QFrame",
     "QGroupBox",
     "QHBoxLayout",
     "QLabel",
     "QLineEdit",
     "QMainWindow",
     "QMessageBox",
+    "QPalette",
     "QPlainTextEdit",
     "QProgressBar",
     "QPushButton",
+    "QScrollArea",
     "QSizePolicy",
+    "QSlider",
     "QSpinBox",
     "QDoubleSpinBox",
     "QSplitter",
     "QTabWidget",
     "QVBoxLayout",
     "QWidget",
-    "QSlider",
     # Backend info
     "QT_BACKEND_NAME",
 ]
