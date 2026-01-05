@@ -59,6 +59,12 @@ class ModernMainWindow(QMainWindow):
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
 
+        # UI element references for responsive layout
+        self.main_splitter: Optional[QSplitter] = None
+        self.left_splitter: Optional[QSplitter] = None
+        self.preview_panel: Optional[QWidget] = None
+        self._current_layout_mode: str = "standard"
+
         self._setup_ui()
         self._load_settings()
         self._setup_connections()
@@ -78,7 +84,7 @@ class ModernMainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         """Set up the user interface."""
         self.setWindowTitle("RenderKit")
-        self.setMinimumSize(1000, 900)
+        self.setMinimumSize(500, 450)
         self._last_preview_path: Optional[Path] = None
 
         # Central widget with splitter
@@ -89,40 +95,91 @@ class ModernMainWindow(QMainWindow):
         main_layout.setSpacing(5)  # Reduced spacing
 
         # Create main splitter for resizable panels
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(main_splitter)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(self.main_splitter, 1)  # 1 = stretch to fill space
 
         # Left panel - Settings and Preview
-        left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
         settings_panel = self._create_settings_panel()
         settings_panel.setObjectName("Card")
-        left_splitter.addWidget(settings_panel)
+        self.left_splitter.addWidget(settings_panel)
 
         # Preview panel
-        preview_panel = self._create_preview_panel()
-        preview_panel.setObjectName("Card")
-        left_splitter.addWidget(preview_panel)
-        left_splitter.setSizes([400, 300])
+        self.preview_panel = self._create_preview_panel()
+        self.preview_panel.setObjectName("Card")
+        self.left_splitter.addWidget(self.preview_panel)
+        self.left_splitter.setSizes([400, 300])
 
-        main_splitter.addWidget(left_splitter)
+        self.main_splitter.addWidget(self.left_splitter)
 
         # Right panel - Log and Progress
         right_panel = self._create_log_panel()
         right_panel.setObjectName("Card")
-        main_splitter.addWidget(right_panel)
+        self.main_splitter.addWidget(right_panel)
 
         # Set splitter proportions (70% left, 30% right)
-        main_splitter.setSizes([700, 300])
+        self.main_splitter.setSizes([700, 300])
 
         # Bottom panel - Action buttons
         action_panel = self._create_action_panel()
-        main_layout.addWidget(action_panel)
+        main_layout.addWidget(action_panel, 0)  # 0 = no stretch, stays at bottom
 
         # Menu bar
         self._create_menu_bar()
 
         # Status bar
         self.statusBar().showMessage("Ready")
+
+    def resizeEvent(self, event):
+        """Handle window resize to adjust layout responsively."""
+        super().resizeEvent(event)
+        height = event.size().height()
+
+        # Determine layout mode based on height
+        if height < 900:
+            new_mode = "compact"
+        elif height < 1100:
+            new_mode = "standard"
+        else:
+            new_mode = "comfortable"
+
+        # Only apply if mode changed
+        if new_mode != self._current_layout_mode:
+            self._current_layout_mode = new_mode
+            if new_mode == "compact":
+                self._apply_compact_mode()
+            elif new_mode == "standard":
+                self._apply_standard_mode()
+            else:
+                self._apply_comfortable_mode()
+
+    def _apply_compact_mode(self):
+        """Apply compact layout for small windows (<900px)."""
+        if self.preview_panel:
+            self.preview_panel.setVisible(False)
+        # Adjust splitter to give more space to settings
+        if self.main_splitter:
+            self.main_splitter.setSizes([800, 200])
+
+    def _apply_standard_mode(self):
+        """Apply standard layout (900-1100px)."""
+        if self.preview_panel:
+            self.preview_panel.setVisible(True)
+        # Standard splitter sizes
+        if self.main_splitter:
+            self.main_splitter.setSizes([700, 300])
+        if self.left_splitter:
+            self.left_splitter.setSizes([400, 300])
+
+    def _apply_comfortable_mode(self):
+        """Apply comfortable layout for large windows (>1100px)."""
+        if self.preview_panel:
+            self.preview_panel.setVisible(True)
+        # Give more space to preview
+        if self.main_splitter:
+            self.main_splitter.setSizes([750, 250])
+        if self.left_splitter:
+            self.left_splitter.setSizes([350, 450])
 
     def _create_settings_panel(self) -> QWidget:
         """Create the settings panel with collapsible sections."""
@@ -146,28 +203,16 @@ class ModernMainWindow(QMainWindow):
         container_layout.setContentsMargins(5, 5, 5, 5)
         container_layout.setSpacing(8)
 
-        # Input Sequence Section
+        # Input Sequence Section (includes color space)
         input_section = CollapsibleGroupBox("Input Sequence")
         input_section.set_content_layout(self._create_input_sequence_content())
         container_layout.addWidget(input_section)
-
-        # Input Color Space Section
-        color_section = CollapsibleGroupBox("Input Color Space")
-        color_section.set_content_layout(self._create_color_space_content())
-        color_section.set_collapsed(True)
-        container_layout.addWidget(color_section)
 
         # Output Settings Section
         output_section = CollapsibleGroupBox("Output Settings")
         output_section.set_content_layout(self._create_output_content())
         output_section.set_collapsed(True)
         container_layout.addWidget(output_section)
-
-        # Video Encoding Section
-        video_section = CollapsibleGroupBox("Video Encoding")
-        video_section.set_content_layout(self._create_video_content())
-        video_section.set_collapsed(True)
-        container_layout.addWidget(video_section)
 
         # Burn-in Overlays Section
         burnin_section = CollapsibleGroupBox("Burn-in Overlays")
@@ -181,7 +226,7 @@ class ModernMainWindow(QMainWindow):
         cs_section.set_collapsed(True)
         container_layout.addWidget(cs_section)
 
-        # Advanced Options Section
+        # Advanced Options Section (includes video encoding)
         advanced_section = CollapsibleGroupBox("Advanced Options")
         advanced_section.set_content_layout(self._create_advanced_content())
         advanced_section.set_collapsed(True)
@@ -248,29 +293,24 @@ class ModernMainWindow(QMainWindow):
 
         layout.addLayout(form_layout)
 
-        # Preview button
-        preview_btn = QPushButton("Load Preview")
-        preview_btn.clicked.connect(self._load_preview)
-        layout.addWidget(preview_btn)
-
-        return layout
-
-    def _create_color_space_content(self) -> QVBoxLayout:
-        """Create content for color space section."""
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        layout.setContentsMargins(8, 8, 8, 8)
-
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
+        # Color Space (merged from separate section)
+        color_form = QFormLayout()
+        color_form.setSpacing(10)
 
         self.color_space_combo = QComboBox()
         self.color_space_combo.setEditable(True)
+        self.color_space_combo.setEditable(False)
         self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
         self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
-        form_layout.addRow("Input Space:", self.color_space_combo)
+        color_form.addRow("Color Space:", self.color_space_combo)
 
-        layout.addLayout(form_layout)
+        layout.addLayout(color_form)
+
+        # Preview button
+        if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
+            self.load_preview_btn = QPushButton("Load Preview")
+            self.load_preview_btn.clicked.connect(self._load_preview)
+
         return layout
 
     def _create_output_content(self) -> QVBoxLayout:
@@ -293,6 +333,15 @@ class ModernMainWindow(QMainWindow):
         form_layout.addRow("Output Path:", output_path_layout)
 
         layout.addLayout(form_layout)
+
+        if not hasattr(self, "play_btn") or self.play_btn is None:
+            self.play_btn = QPushButton("Play Result (Flipbook)")
+            self.play_btn.setEnabled(False)
+            self.play_btn.clicked.connect(self._play_output)
+            self.play_btn.setToolTip("Open the conversion result in the default system player.")
+            self.play_btn.setObjectName("IconButton")
+        layout.addWidget(self.play_btn)
+
         return layout
 
     def _create_input_tab(self) -> QWidget:
@@ -360,6 +409,7 @@ class ModernMainWindow(QMainWindow):
 
         self.color_space_combo = QComboBox()
         self.color_space_combo.setEditable(True)  # Allow custom input space names
+        self.color_space_combo.setEditable(False)
         self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
         self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
         color_layout.addRow("Input Space:", self.color_space_combo)
@@ -367,9 +417,9 @@ class ModernMainWindow(QMainWindow):
         layout.addWidget(color_group)
 
         # Preview button
-        preview_btn = QPushButton("Load Preview")
-        preview_btn.clicked.connect(self._load_preview)
-        layout.addWidget(preview_btn)
+        if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
+            self.load_preview_btn = QPushButton("Load Preview")
+            self.load_preview_btn.clicked.connect(self._load_preview)
 
         layout.addStretch()
 
@@ -668,13 +718,17 @@ class ModernMainWindow(QMainWindow):
         self.preview_widget = PreviewWidget()
         preview_layout.addWidget(self.preview_widget)
 
+        buttons_layout = QHBoxLayout()
+
+        if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
+            self.load_preview_btn = QPushButton("Load Preview")
+            self.load_preview_btn.clicked.connect(self._load_preview)
+        buttons_layout.addWidget(self.load_preview_btn)
+
+        buttons_layout.addStretch()
+
         # Flipbook button
-        self.play_btn = QPushButton("Play Result (Flipbook)")
-        self.play_btn.setEnabled(False)
-        self.play_btn.clicked.connect(self._play_output)
-        self.play_btn.setToolTip("Open the conversion result in the default system player.")
-        self.play_btn.setObjectName("IconButton")
-        preview_layout.addWidget(self.play_btn)
+        preview_layout.addLayout(buttons_layout)
 
         layout.addWidget(preview_group)
         return panel
@@ -1282,15 +1336,7 @@ class ModernMainWindow(QMainWindow):
                 self.statusBar().showMessage("Conversion cancelled", 3000)
                 self.log_text.appendPlainText("Conversion cancelled by user")
         else:
-            # Quit application if no conversion running
-            reply = QMessageBox.question(
-                self,
-                "Quit Application",
-                "Are you sure you want to quit?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                QApplication.instance().quit()
+            QApplication.instance().quit()
 
     def _on_conversion_finished(self) -> None:
         """Handle conversion completion."""
@@ -1454,80 +1500,6 @@ class ModernMainWindow(QMainWindow):
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
         self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
 
-    def _create_video_content(self) -> QVBoxLayout:
-        """Create content for video encoding section."""
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        layout.setContentsMargins(8, 8, 8, 8)
-
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-
-        # FPS
-        self.fps_spin = QDoubleSpinBox()
-        self.fps_spin.setRange(0.01, 120.0)
-        self.fps_spin.setDecimals(3)
-        self.fps_spin.setValue(24.0)
-        self.fps_spin.setSuffix(" fps")
-        form_layout.addRow("Frame Rate:", self.fps_spin)
-
-        # Resolution
-        resolution_layout = QHBoxLayout()
-        self.width_spin = QSpinBox()
-        self.width_spin.setMinimum(1)
-        self.width_spin.setMaximum(7680)
-        self.width_spin.setValue(1920)
-        self.width_spin.setSuffix(" px")
-        resolution_layout.addWidget(QLabel("Width:"))
-        resolution_layout.addWidget(self.width_spin)
-
-        self.height_spin = QSpinBox()
-        self.height_spin.setMinimum(1)
-        self.height_spin.setMaximum(4320)
-        self.height_spin.setValue(1080)
-        self.height_spin.setSuffix(" px")
-        resolution_layout.addWidget(QLabel("Height:"))
-        resolution_layout.addWidget(self.height_spin)
-
-        self.keep_resolution_check = QCheckBox("Keep source resolution")
-        self.keep_resolution_check.setChecked(True)
-        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
-        resolution_layout.addWidget(self.keep_resolution_check)
-        resolution_layout.addStretch()
-        form_layout.addRow("Resolution:", resolution_layout)
-
-        # Codec
-        self.codec_combo = QComboBox()
-        self._populate_codecs()
-        form_layout.addRow("Codec:", self.codec_combo)
-
-        # Quality Slider
-        quality_layout = QHBoxLayout()
-        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
-        self.quality_slider.setRange(0, 10)
-        self.quality_slider.setValue(10)
-        self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.quality_slider.setTickInterval(1)
-        self.quality_slider.setToolTip("Quality (0-10), 10 is best (visually lossless).")
-
-        self.quality_label = QLabel("10 (Max)")
-        self.quality_label.setFixedWidth(60)
-
-        quality_layout.addWidget(self.quality_slider)
-        quality_layout.addWidget(self.quality_label)
-        form_layout.addRow("Visual Quality:", quality_layout)
-
-        # Contact Sheet Mode Toggle
-        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
-        self.cs_mode_check.setToolTip(
-            "Creates a video where each frame is a grid of all available AOVs."
-        )
-        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
-        form_layout.addRow("Contact Sheet:", self.cs_mode_check)
-
-        layout.addLayout(form_layout)
-        return layout
-
     def _create_burnin_content(self) -> QVBoxLayout:
         """Create content for burn-in overlays section."""
         layout = QVBoxLayout()
@@ -1619,6 +1591,70 @@ class ModernMainWindow(QMainWindow):
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
 
+        # Video Encoding Settings (merged from separate section)
+        # FPS
+        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin.setRange(0.01, 120.0)
+        self.fps_spin.setDecimals(3)
+        self.fps_spin.setValue(24.0)
+        self.fps_spin.setSuffix(" fps")
+        form_layout.addRow("Frame Rate:", self.fps_spin)
+
+        # Resolution
+        resolution_layout = QHBoxLayout()
+        self.width_spin = QSpinBox()
+        self.width_spin.setMinimum(1)
+        self.width_spin.setMaximum(7680)
+        self.width_spin.setValue(1920)
+        self.width_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Width:"))
+        resolution_layout.addWidget(self.width_spin)
+
+        self.height_spin = QSpinBox()
+        self.height_spin.setMinimum(1)
+        self.height_spin.setMaximum(4320)
+        self.height_spin.setValue(1080)
+        self.height_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Height:"))
+        resolution_layout.addWidget(self.height_spin)
+
+        self.keep_resolution_check = QCheckBox("Keep source resolution")
+        self.keep_resolution_check.setChecked(True)
+        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
+        resolution_layout.addWidget(self.keep_resolution_check)
+        resolution_layout.addStretch()
+        form_layout.addRow("Resolution:", resolution_layout)
+
+        # Codec
+        self.codec_combo = QComboBox()
+        self._populate_codecs()
+        form_layout.addRow("Codec:", self.codec_combo)
+
+        # Quality Slider
+        quality_layout = QHBoxLayout()
+        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self.quality_slider.setRange(0, 10)
+        self.quality_slider.setValue(10)
+        self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.quality_slider.setTickInterval(1)
+        self.quality_slider.setToolTip("Quality (0-10), 10 is best (visually lossless).")
+
+        self.quality_label = QLabel("10 (Max)")
+        self.quality_label.setFixedWidth(60)
+
+        quality_layout.addWidget(self.quality_slider)
+        quality_layout.addWidget(self.quality_label)
+        form_layout.addRow("Visual Quality:", quality_layout)
+
+        # Contact Sheet Mode Toggle
+        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
+        self.cs_mode_check.setToolTip(
+            "Creates a video where each frame is a grid of all available AOVs."
+        )
+        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
+        form_layout.addRow("Contact Sheet:", self.cs_mode_check)
+
+        # Multiprocessing Options
         self.multiprocessing_check = QCheckBox("Enable Multiprocessing")
         self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
         form_layout.addRow(self.multiprocessing_check)
