@@ -105,7 +105,7 @@ class ConversionConfig:
     color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
     width: Optional[int] = None
     height: Optional[int] = None
-    codec: str = "libx264"
+    codec: str = "libx265"
     bitrate: Optional[int] = None
     quality: int = 10  # 0-10, 10 is best
     layer: Optional[str] = None  # Specific layer to extract (e.g. "diffuse")
@@ -146,7 +146,7 @@ class ConversionConfigBuilder:
         self._color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
         self._width: Optional[int] = None
         self._height: Optional[int] = None
-        self._codec: str = "libx264"
+        self._codec: str = "libx265"
         self._bitrate: Optional[int] = None
         self._quality: int = 10
         self._layer: Optional[str] = None

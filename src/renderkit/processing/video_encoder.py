@@ -20,7 +20,7 @@ class VideoEncoder:
         self,
         output_path: Path,
         fps: float,
-        codec: str = "libx264",
+        codec: str = "libx265",
         bitrate: Optional[int] = None,
         quality: Optional[int] = 10,
         macro_block_size: int = 16,
@@ -30,7 +30,7 @@ class VideoEncoder:
         Args:
             output_path: Path to output video file
             fps: Frame rate
-            codec: Video codec (FFmpeg name like 'libx264', 'libx265')
+            codec: Video codec (FFmpeg name like 'libx265', 'libaom-av1')
             bitrate: Video bitrate in kbps (optional)
             quality: Video quality (0-10), 10 is best (optional, used if bitrate is None)
             macro_block_size: Macro block size for codec compatibility (default: 16)

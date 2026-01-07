@@ -61,6 +61,32 @@ python -m PyInstaller --noconfirm RenderKit.spec
 
 The distributable output is in `dist/RenderKit/`.
 
+## Bundled FFmpeg (Windows, Hybrid)
+
+The repo does not commit `vendor/ffmpeg/`. You can build and stage a minimal
+GPL FFmpeg locally (x265 + AV1 only), and CI will also generate it for releases.
+
+### Prerequisites (MSYS2 UCRT64)
+
+```bash
+pacman -S --needed \
+  base-devel git \
+  mingw-w64-ucrt-x86_64-toolchain \
+  mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-yasm \
+  mingw-w64-ucrt-x86_64-pkg-config \
+  mingw-w64-ucrt-x86_64-x265 \
+  mingw-w64-ucrt-x86_64-aom
+```
+
+### Build and Stage
+
+```bash
+./scripts/build_ffmpeg_windows_msys2.sh
+```
+
+This script writes `ffmpeg.exe` and required DLLs to `vendor/ffmpeg/`, which the
+PyInstaller spec bundles automatically.
+
 ## Architecture
 
 The package is organized with clear separation of concerns:

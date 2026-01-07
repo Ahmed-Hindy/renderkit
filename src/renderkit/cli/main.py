@@ -14,6 +14,7 @@ from renderkit.core.config import (
     ContactSheetConfigBuilder,
     ConversionConfigBuilder,
 )
+from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.processing.color_space import ColorSpacePreset
 
 # Configure logging
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 @click.version_option(version="0.3.0")
 def main() -> None:
     """RenderKit - VFX workflow tools."""
+    ensure_ffmpeg_env()
     pass
 
 
@@ -54,8 +56,8 @@ def main() -> None:
 @click.option(
     "--codec",
     type=str,
-    default="libx264",
-    help="Video codec (default: libx264, use 'libaom-av1' for AV1)",
+    default="libx265",
+    help="Video codec (default: libx265, use 'libaom-av1' for AV1)",
 )
 @click.option(
     "--quality",

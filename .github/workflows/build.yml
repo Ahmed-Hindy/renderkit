@@ -66,6 +66,63 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0
 
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-yasm
+            mingw-w64-ucrt-x86_64-pkg-config
+            mingw-w64-ucrt-x86_64-x265
+            mingw-w64-ucrt-x86_64-aom
+
+      - name: Build FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          repo_root="$(cygpath -u "$GITHUB_WORKSPACE")"
+          build_root="$repo_root/_ffmpeg_build"
+          rm -rf "$build_root"
+          mkdir -p "$build_root"
+          cd "$build_root"
+          git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git
+          cd ffmpeg
+          ./configure \
+            --prefix="$build_root/ffmpeg/build" \
+            --target-os=mingw32 --arch=x86_64 \
+            --enable-gpl \
+            --disable-doc --disable-debug --enable-small \
+            --disable-programs --enable-ffmpeg \
+            --disable-ffplay --disable-ffprobe \
+            --disable-everything \
+            --enable-protocol=file,pipe \
+            --enable-demuxer=rawvideo \
+            --enable-decoder=rawvideo \
+            --enable-muxer=mov,mp4 \
+            --enable-filter=scale,format \
+            --enable-swscale \
+            --enable-libx265 --enable-libaom \
+            --enable-encoder=libx265,libaom-av1 \
+            --enable-parser=hevc,av1
+          make -j"$(nproc)"
+          make install
+          mkdir -p "$repo_root/vendor/ffmpeg"
+          cp -f "$build_root/ffmpeg/build/bin/ffmpeg.exe" "$repo_root/vendor/ffmpeg/ffmpeg.exe"
+          strip "$repo_root/vendor/ffmpeg/ffmpeg.exe"
+          if ldd "$repo_root/vendor/ffmpeg/ffmpeg.exe" | grep -q "not found"; then
+            echo "Missing DLL dependencies for ffmpeg.exe" >&2
+            exit 1
+          fi
+          deps=$(ldd "$repo_root/vendor/ffmpeg/ffmpeg.exe" | awk '/=>/ {print $3}' | grep -i 'ucrt64/bin/.*\.dll$' | sort -u)
+          for dep in $deps; do
+            cp -f "$dep" "$repo_root/vendor/ffmpeg/"
+          done
+
       - name: Install dependencies
         run: uv pip install --system -e . pyinstaller
 

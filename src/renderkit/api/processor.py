@@ -5,6 +5,7 @@ from typing import Optional
 
 from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
 from renderkit.core.converter import SequenceConverter
+from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.processing.color_space import ColorSpacePreset
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class RenderKit:
 
     def __init__(self) -> None:
         """Initialize RenderKit."""
-        pass
+        ensure_ffmpeg_env()
 
     def convert_exr_sequence_to_mp4(
         self,
@@ -25,7 +26,7 @@ class RenderKit:
         color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB,
         width: Optional[int] = None,
         height: Optional[int] = None,
-        codec: str = "libx264",
+        codec: str = "libx265",
         quality: int = 10,
         layer: Optional[str] = None,
         start_frame: Optional[int] = None,
@@ -42,7 +43,7 @@ class RenderKit:
             color_space_preset: Color space conversion preset
             width: Output width (optional, uses source width if not provided)
             height: Output height (optional, uses source height if not provided)
-            codec: Video codec (default: "libx264")
+            codec: Video codec (default: "libx265")
             quality: Video quality (0-10), 10 is best (default: 10)
             layer: Optional EXR layer to extract (default: None)
             start_frame: Start frame number (optional)

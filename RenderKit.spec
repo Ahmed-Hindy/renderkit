@@ -12,11 +12,18 @@ tmp_ret = collect_all('OpenImageIO')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('opencolorio')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('imageio_ffmpeg')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # Ensure importlib.metadata can resolve package versions at runtime.
 datas += copy_metadata('imageio')
 datas += copy_metadata('imageio-ffmpeg')
+hiddenimports += ["imageio_ffmpeg"]
+
+vendor_ffmpeg_dir = Path("vendor") / "ffmpeg"
+if vendor_ffmpeg_dir.exists():
+    for ffmpeg_path in vendor_ffmpeg_dir.iterdir():
+        if not ffmpeg_path.is_file():
+            continue
+        if ffmpeg_path.suffix.lower() in {".exe", ".dll"}:
+            binaries.append((str(ffmpeg_path), "ffmpeg"))
 
 qt_excludes = [
     "tkinter",

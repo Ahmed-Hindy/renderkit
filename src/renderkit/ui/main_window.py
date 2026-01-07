@@ -13,6 +13,7 @@ from renderkit.core.config import (
     ContactSheetConfig,
     ConversionConfigBuilder,
 )
+from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.io.file_utils import FileUtils
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.conversion_worker import ConversionWorker
@@ -67,13 +68,16 @@ class ModernMainWindow(QMainWindow):
         self.preview_panel: Optional[QWidget] = None
         self._current_layout_mode: str = "standard"
 
+        self._apply_theme()
         self._setup_ui()
         self._load_settings()
         self._setup_connections()
-        self._apply_theme()
 
     def _apply_theme(self) -> None:
         """Apply a theme from QSS file."""
+        theme_name = "dark"
+        self.setProperty("theme", theme_name)
+        icon_manager.set_default_color("#e6edf3" if theme_name == "dark" else "#1f2328")
         try:
             qss_text = (
                 resources.files("renderkit.ui")
@@ -84,7 +88,6 @@ class ModernMainWindow(QMainWindow):
             logger.error(f"Could not load stylesheet: {e}")
             return
 
-        self.setProperty("theme", "dark")
         self.setStyleSheet(qss_text)
 
     def _setup_ui(self) -> None:
@@ -813,12 +816,10 @@ class ModernMainWindow(QMainWindow):
 
     def _populate_codecs(self) -> None:
         """Populate codec combo box with standard FFmpeg codecs."""
-        # Standard robust codecs supported by imageio-ffmpeg
+        # Codecs supported by the bundled FFmpeg build.
         codecs = [
-            ("libx264", "H.264 (AVC) - Recommended"),
-            ("libx265", "H.265 (HEVC) - High Efficiency"),
+            ("libx265", "H.265 (HEVC) - Recommended"),
             ("libaom-av1", "AV1 - Maximum Compression"),
-            ("mpeg4", "MPEG-4 - Legacy compatibility"),
         ]
 
         available_codecs = []
@@ -1202,7 +1203,7 @@ class ModernMainWindow(QMainWindow):
 
             # Codec
             codec_index = self.codec_combo.currentIndex()
-            codec_id = self._codec_map.get(codec_index, "libx264")
+            codec_id = self._codec_map.get(codec_index, "libx265")
             config_builder.with_codec(codec_id)
 
             # Frame range
@@ -1692,6 +1693,7 @@ class ModernMainWindow(QMainWindow):
 
 def run_ui() -> None:
     """Run the UI application."""
+    ensure_ffmpeg_env()
     app = QApplication(sys.argv)
     app.setApplicationName("RenderKit")
     app.setOrganizationName("RenderKit")
