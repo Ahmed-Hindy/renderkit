@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/stylesheets', 'renderkit/ui/stylesheets')]
@@ -17,9 +19,11 @@ datas += copy_metadata('imageio')
 datas += copy_metadata('imageio-ffmpeg')
 
 
+entry_script = Path("src") / "renderkit" / "ui" / "main_window.py"
+
 a = Analysis(
-    ['src\\renderkit\\ui\\main_window.py'],
-    pathex=['src'],
+    [str(entry_script)],
+    pathex=[str(Path("src"))],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
