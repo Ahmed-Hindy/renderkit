@@ -39,8 +39,11 @@ jobs:
           else
             suffix=""
           fi
+          os_label="${{ matrix.os }}"
+          os_label="${os_label%-latest}"
           echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
           echo "artifact_suffix=$suffix" >> "$GITHUB_OUTPUT"
+          echo "os_label=$os_label" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -73,14 +76,14 @@ jobs:
         id: package
         shell: bash
         run: |
-          out="dist/RenderKit-${{ matrix.os }}${{ steps.meta.outputs.artifact_suffix }}.zip"
+          out="dist/RenderKit-${{ steps.meta.outputs.os_label }}${{ steps.meta.outputs.artifact_suffix }}.zip"
           python -m zipfile -c "$out" dist/RenderKit
           echo "package_path=$out" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RenderKit-${{ matrix.os }}${{ steps.meta.outputs.artifact_suffix }}
+          name: RenderKit-${{ steps.meta.outputs.os_label }}${{ steps.meta.outputs.artifact_suffix }}
           path: ${{ steps.package.outputs.package_path }}
 
       - name: Upload release assets
