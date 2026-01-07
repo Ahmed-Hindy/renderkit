@@ -85,7 +85,12 @@ pacman -S --needed \
 ```
 
 This script writes `ffmpeg.exe` and required DLLs to `vendor/ffmpeg/`, which the
-PyInstaller spec bundles automatically.
+PyInstaller spec bundles automatically. To build a different version, set
+`FFMPEG_VERSION` (default: 8.0.1):
+
+```bash
+FFMPEG_VERSION=8.0.1 ./scripts/build_ffmpeg_windows_msys2.sh
+```
 
 ## Architecture
 

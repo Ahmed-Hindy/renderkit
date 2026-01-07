@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FFMPEG_VERSION: "8.0.1"
+
 jobs:
   build:
     name: Build (${{ matrix.os }})
@@ -72,6 +75,7 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          cache: true
           install: >-
             base-devel git
             mingw-w64-ucrt-x86_64-toolchain
@@ -80,48 +84,24 @@ jobs:
             mingw-w64-ucrt-x86_64-x265
             mingw-w64-ucrt-x86_64-aom
 
-      - name: Build FFmpeg (Windows)
+      - name: Cache bundled FFmpeg (Windows)
         if: matrix.os == 'windows-latest'
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg
+          key: ffmpeg-${{ matrix.os }}-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh') }}
+
+      - name: Build FFmpeg (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: msys2 {0}
+        env:
+          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
         run: |
           set -euo pipefail
           repo_root="$(cygpath -u "$GITHUB_WORKSPACE")"
-          build_root="$repo_root/_ffmpeg_build"
-          rm -rf "$build_root"
-          mkdir -p "$build_root"
-          cd "$build_root"
-          git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git
-          cd ffmpeg
-          ./configure \
-            --prefix="$build_root/ffmpeg/build" \
-            --target-os=mingw32 --arch=x86_64 \
-            --enable-gpl \
-            --disable-doc --disable-debug --enable-small \
-            --disable-programs --enable-ffmpeg \
-            --disable-ffplay --disable-ffprobe \
-            --disable-everything \
-            --enable-protocol=file,pipe \
-            --enable-demuxer=rawvideo \
-            --enable-decoder=rawvideo \
-            --enable-muxer=mov,mp4 \
-            --enable-filter=scale,format \
-            --enable-swscale \
-            --enable-libx265 --enable-libaom \
-            --enable-encoder=libx265,libaom-av1 \
-            --enable-parser=hevc,av1
-          make -j"$(nproc)"
-          make install
-          mkdir -p "$repo_root/vendor/ffmpeg"
-          cp -f "$build_root/ffmpeg/build/bin/ffmpeg.exe" "$repo_root/vendor/ffmpeg/ffmpeg.exe"
-          strip "$repo_root/vendor/ffmpeg/ffmpeg.exe"
-          if ldd "$repo_root/vendor/ffmpeg/ffmpeg.exe" | grep -q "not found"; then
-            echo "Missing DLL dependencies for ffmpeg.exe" >&2
-            exit 1
-          fi
-          deps=$(ldd "$repo_root/vendor/ffmpeg/ffmpeg.exe" | awk '/=>/ {print $3}' | grep -i 'ucrt64/bin/.*\.dll$' | sort -u)
-          for dep in $deps; do
-            cp -f "$dep" "$repo_root/vendor/ffmpeg/"
-          done
+          cd "$repo_root"
+          ./scripts/build_ffmpeg_windows_msys2.sh
 
       - name: Install dependencies
         run: uv pip install --system -e . pyinstaller

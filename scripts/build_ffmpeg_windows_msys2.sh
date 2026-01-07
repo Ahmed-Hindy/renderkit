@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${FFMPEG_VERSION:=8.0.1}"
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 build_root="${repo_root}/_ffmpeg_build"
 vendor_dir="${repo_root}/vendor/ffmpeg"
+tarball="ffmpeg-${FFMPEG_VERSION}.tar.xz"
+tarball_url="https://ffmpeg.org/releases/${tarball}"
 
 rm -rf "${build_root}"
 mkdir -p "${build_root}"
 cd "${build_root}"
 
-git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git
-cd ffmpeg
+curl -L -o "${tarball}" "${tarball_url}"
+tar -xf "${tarball}"
+cd "ffmpeg-${FFMPEG_VERSION}"
 
 ./configure \
   --prefix="${build_root}/ffmpeg/build" \
