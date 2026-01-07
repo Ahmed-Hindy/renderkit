@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from importlib import resources
 from pathlib import Path
 from typing import Optional
 
@@ -73,14 +74,18 @@ class ModernMainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         """Apply a theme from QSS file."""
-        qss_path = Path(__file__).parent / "stylesheets" / "matcha.qss"
-        if qss_path.exists():
-            try:
-                with open(qss_path) as f:
-                    self.setProperty("theme", "dark")
-                    self.setStyleSheet(f.read())
-            except Exception as e:
-                logger.error(f"Could not load stylesheet: {e}")
+        try:
+            qss_text = (
+                resources.files("renderkit.ui")
+                .joinpath("stylesheets", "matcha.qss")
+                .read_text(encoding="utf-8")
+            )
+        except Exception as e:
+            logger.error(f"Could not load stylesheet: {e}")
+            return
+
+        self.setProperty("theme", "dark")
+        self.setStyleSheet(qss_text)
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""

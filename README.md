@@ -22,10 +22,11 @@ A high-performance Python package and CLI tool for converting image sequences (E
 
 ## Installation
 
-### Prebuilt App (Windows)
+### Prebuilt App (Windows, Linux, MacOS)
 
-Download a .zip file from the Releases section, unpack then run:
+Download a .zip file from the Releases section, unpack then run the executable:
 
+Example for Windows:
 ```
 RenderKit/RenderKit.exe
 ```
