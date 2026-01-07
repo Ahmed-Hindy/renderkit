@@ -72,7 +72,7 @@ class ModernMainWindow(QMainWindow):
         self._apply_theme()
 
     def _apply_theme(self) -> None:
-        """Apply the Kitsu-inspired theme from QSS file."""
+        """Apply a theme from QSS file."""
         qss_path = Path(__file__).parent / "stylesheets" / "matcha.qss"
         if qss_path.exists():
             try:

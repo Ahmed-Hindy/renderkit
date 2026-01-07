@@ -13,7 +13,7 @@
 
 QWidget {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-    font-size: 14px; /* Scaled down slightly for desktop apps */
+    font-size: 18px;
     outline: none;
 }
 
@@ -59,7 +59,7 @@ QScrollBar:vertical {
 }
 
 QScrollBar::handle:vertical {
-    border-radius: 4px;
+    border-radius: 6px;
     min-height: 20px;
 }
 
@@ -71,7 +71,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 QGroupBox {
     font-weight: 600;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 6px;
     margin-top: 10px; /* Reduced from 12px */
     padding-top: 10px; /* Reduced from 15px */
 }
@@ -99,10 +99,6 @@ QScrollArea > QWidget > QWidget {
     border-radius: 6px;
     padding: 8px 12px;
     font-weight: 600;
-}
-
-#CollapsibleHeader:hover {
-    background-color: rgba(0, 0, 0, 0.05);
 }
 
 #CollapsibleIndicator {
@@ -146,6 +142,13 @@ QSlider::handle:horizontal {
     border-radius: 7px;
 }
 
+/* Progress Bars */
+QProgressBar {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    text-align: center;
+}
+
 /* ============================================================================
    LIGHT THEME
    ============================================================================ */
@@ -165,23 +168,33 @@ QSlider::handle:horizontal {
 }
 
 [theme="light"] QPushButton {
-    background-color: #f6f8fa;
+    background-color: transparent;
     border-color: #d0d7deb3;
     color: #0969da;
 }
 
 [theme="light"] QPushButton:hover {
     background-color: #0969da;
-    color: #ffffff;
+    border-color: transparent;
+    color: #e6edf3;
 }
 
 [theme="light"] QPushButton#PrimaryButton {
-    background-color: #0969da;
-    color: #ffffff;
+    background-color: transparent;
+    border-color: #0969da;
+    color: #0969da;
 }
 
 [theme="light"] QPushButton#PrimaryButton:hover {
-    background-color: #085bc1;
+    background-color: #0969da;
+    border-color: transparent;
+    color: #e6edf3;
+}
+
+[theme="light"] QPushButton:disabled {
+    background-color: transparent;
+    border-color: #d0d7deb3;
+    color: #656d76;
 }
 
 [theme="light"] QLineEdit, [theme="light"] QTextEdit, [theme="light"] QPlainTextEdit, 
@@ -191,8 +204,20 @@ QSlider::handle:horizontal {
     color: #1f2328;
 }
 
-[theme="light"] QLineEdit:focus, [theme="light"] QTextEdit:focus, [theme="light"] QComboBox:focus {
+[theme="light"] QLineEdit:hover, [theme="light"] QTextEdit:hover, [theme="light"] QComboBox:hover,
+[theme="light"] QPlainTextEdit:hover, [theme="light"] QSpinBox:hover, [theme="light"] QDoubleSpinBox:hover {
     border-color: #0969da;
+}
+
+[theme="light"] QLineEdit:focus, [theme="light"] QTextEdit:focus, [theme="light"] QComboBox:focus,
+[theme="light"] QPlainTextEdit:focus, [theme="light"] QSpinBox:focus, [theme="light"] QDoubleSpinBox:focus {
+    border-color: #8250df;
+}
+
+[theme="light"] QLineEdit:disabled, [theme="light"] QTextEdit:disabled, [theme="light"] QPlainTextEdit:disabled,
+[theme="light"] QSpinBox:disabled, [theme="light"] QDoubleSpinBox:disabled, [theme="light"] QComboBox:disabled {
+    background-color: #f6f8fa;
+    color: #656d76;
 }
 
 [theme="light"] QTabWidget::pane {
@@ -213,15 +238,15 @@ QSlider::handle:horizontal {
 }
 
 [theme="light"] QScrollBar::handle:vertical {
-    background-color: #d0d7de;
+    background-color: #656d76;
 }
 
 [theme="light"] QScrollBar::handle:vertical:hover {
-    background-color: #afb8c1;
+    background-color: #656d76;
 }
 
 [theme="light"] #CollapsibleHeader {
-    border-color: #d0d7de;
+    border-color: #d0d7deb3;
 }
 
 [theme="light"] #CollapsibleHeader:hover {
@@ -229,20 +254,20 @@ QSlider::handle:horizontal {
 }
 
 [theme="light"] #CollapsibleIndicator {
-    color: #57606a;
+    color: #656d76;
 }
 
 [theme="light"] #CollapsibleTitle {
-    color: #24292f;
+    color: #1f2328;
 }
 
 [theme="light"] QGroupBox {
-    border-color: #d0d7de;
+    border-color: #d0d7deb3;
     background-color: transparent;
 }
 
 [theme="light"] QGroupBox::title {
-    color: #57606a;
+    color: #656d76;
 }
 
 [theme="light"] QCheckBox::indicator, [theme="light"] QRadioButton::indicator {
@@ -264,7 +289,18 @@ QSlider::handle:horizontal {
 }
 
 [theme="light"] QSlider::handle:horizontal:hover {
-    background-color: #085bc1;
+    background-color: #0969da;
+}
+
+[theme="light"] QProgressBar {
+    background-color: #f6f8fa;
+    border-color: #d0d7deb3;
+    color: #1f2328;
+}
+
+[theme="light"] QProgressBar::chunk {
+    background-color: #0969da;
+    border-radius: 6px;
 }
 
 /* ============================================================================
@@ -286,23 +322,33 @@ QSlider::handle:horizontal {
 }
 
 [theme="dark"] QPushButton {
-    background-color: #161b22;
+    background-color: transparent;
     border-color: #30363db3;
     color: #4493f8;
 }
 
 [theme="dark"] QPushButton:hover {
     background-color: #4493f8;
-    color: #0d1117;
+    border-color: transparent;
+    color: #e6edf3;
 }
 
 [theme="dark"] QPushButton#PrimaryButton {
-    background-color: #4493f8;
-    color: #0d1117;
+    background-color: transparent;
+    border-color: #4493f8;
+    color: #4493f8;
 }
 
 [theme="dark"] QPushButton#PrimaryButton:hover {
-    background-color: #58a6ff;
+    background-color: #4493f8;
+    border-color: transparent;
+    color: #e6edf3;
+}
+
+[theme="dark"] QPushButton:disabled {
+    background-color: transparent;
+    border-color: #30363db3;
+    color: #848d97;
 }
 
 [theme="dark"] QLineEdit, [theme="dark"] QTextEdit, [theme="dark"] QPlainTextEdit, 
@@ -312,8 +358,20 @@ QSlider::handle:horizontal {
     color: #e6edf3;
 }
 
-[theme="dark"] QLineEdit:focus, [theme="dark"] QTextEdit:focus, [theme="dark"] QComboBox:focus {
+[theme="dark"] QLineEdit:hover, [theme="dark"] QTextEdit:hover, [theme="dark"] QComboBox:hover,
+[theme="dark"] QPlainTextEdit:hover, [theme="dark"] QSpinBox:hover, [theme="dark"] QDoubleSpinBox:hover {
     border-color: #4493f8;
+}
+
+[theme="dark"] QLineEdit:focus, [theme="dark"] QTextEdit:focus, [theme="dark"] QComboBox:focus,
+[theme="dark"] QPlainTextEdit:focus, [theme="dark"] QSpinBox:focus, [theme="dark"] QDoubleSpinBox:focus {
+    border-color: #a371f7;
+}
+
+[theme="dark"] QLineEdit:disabled, [theme="dark"] QTextEdit:disabled, [theme="dark"] QPlainTextEdit:disabled,
+[theme="dark"] QSpinBox:disabled, [theme="dark"] QDoubleSpinBox:disabled, [theme="dark"] QComboBox:disabled {
+    background-color: #161b22;
+    color: #848d97;
 }
 
 [theme="dark"] QTabWidget::pane {
@@ -334,15 +392,15 @@ QSlider::handle:horizontal {
 }
 
 [theme="dark"] QScrollBar::handle:vertical {
-    background-color: #30363d;
+    background-color: #848d97;
 }
 
 [theme="dark"] QScrollBar::handle:vertical:hover {
-    background-color: #484f58;
+    background-color: #848d97;
 }
 
 [theme="dark"] #CollapsibleHeader {
-    border-color: #30363d;
+    border-color: #30363db3;
 }
 
 [theme="dark"] #CollapsibleHeader:hover {
@@ -350,20 +408,20 @@ QSlider::handle:horizontal {
 }
 
 [theme="dark"] #CollapsibleIndicator {
-    color: #8b949e;
+    color: #848d97;
 }
 
 [theme="dark"] #CollapsibleTitle {
-    color: #c9d1d9;
+    color: #e6edf3;
 }
 
 [theme="dark"] QGroupBox {
-    border-color: #30363d;
+    border-color: #30363db3;
     background-color: transparent;
 }
 
 [theme="dark"] QGroupBox::title {
-    color: #8b949e;
+    color: #848d97;
 }
 
 [theme="dark"] QCheckBox::indicator, [theme="dark"] QRadioButton::indicator {
@@ -385,7 +443,18 @@ QSlider::handle:horizontal {
 }
 
 [theme="dark"] QSlider::handle:horizontal:hover {
-    background-color: #58a6ff;
+    background-color: #4493f8;
+}
+
+[theme="dark"] QProgressBar {
+    background-color: #161b22;
+    border-color: #30363db3;
+    color: #e6edf3;
+}
+
+[theme="dark"] QProgressBar::chunk {
+    background-color: #4493f8;
+    border-radius: 6px;
 }
 
 /* ============================================================================
@@ -415,7 +484,7 @@ QSlider::handle:horizontal {
 #Card {
     border: 1px solid #d0d7deb3;
     border-radius: 6px;
-    background-color: #ffffff;
+    background-color: #f6f8fa;
 }
 
 [theme="dark"] #Card {
