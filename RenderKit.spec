@@ -19,6 +19,10 @@ datas += copy_metadata('imageio')
 datas += copy_metadata('imageio-ffmpeg')
 
 qt_excludes = [
+    "tkinter",
+    "_tkinter",
+    "tk",
+    "tcl",
     "PySide6.Qt3DAnimation",
     "PySide6.Qt3DCore",
     "PySide6.Qt3DExtras",
