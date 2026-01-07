@@ -77,9 +77,20 @@ allowed_qt_plugin_dirs = {
     "platformthemes",
 }
 
-def _prune_qt_plugins(datas_list):
+qt_excluded_tokens = {name.split(".")[-1] for name in qt_excludes}
+qt_excluded_tokens.add("QtWebEngineProcess")
+
+def _should_drop_qt_lib(dest_parts, dest):
+    if len(dest_parts) >= 4 and dest_parts[:3] in {("PySide6", "Qt", "lib"), ("PySide6", "Qt", "bin")}:
+        dest_str = str(dest)
+        for token in qt_excluded_tokens:
+            if token in dest_str:
+                return True
+    return False
+
+def _prune_qt_payload(entries):
     pruned = []
-    for entry in datas_list:
+    for entry in entries:
         if len(entry) == 2:
             src, dest = entry
             entry_type = None
@@ -91,6 +102,8 @@ def _prune_qt_plugins(datas_list):
             if plugin_dir not in allowed_qt_plugin_dirs:
                 continue
         if len(dest_parts) >= 3 and dest_parts[:3] == ("PySide6", "Qt", "qml"):
+            continue
+        if _should_drop_qt_lib(dest_parts, dest):
             continue
         if entry_type is None:
             pruned.append((src, dest))
@@ -116,7 +129,8 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-a.datas = _prune_qt_plugins(a.datas)
+a.datas = _prune_qt_payload(a.datas)
+a.binaries = _prune_qt_payload(a.binaries)
 pyz = PYZ(a.pure)
 
 exe = EXE(
