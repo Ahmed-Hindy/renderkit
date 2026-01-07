@@ -79,9 +79,21 @@ allowed_qt_plugin_dirs = {
 
 qt_excluded_tokens = {name.split(".")[-1] for name in qt_excludes}
 qt_excluded_tokens.add("QtWebEngineProcess")
+qt_excluded_tokens.update(
+    {
+        f"Qt6{token[2:]}"
+        for token in qt_excluded_tokens
+        if token.startswith("Qt") and not token.startswith("Qt6")
+    }
+)
 
 def _should_drop_qt_lib(dest_parts, dest):
-    if len(dest_parts) >= 4 and dest_parts[:3] in {("PySide6", "Qt", "lib"), ("PySide6", "Qt", "bin")}:
+    if len(dest_parts) >= 4 and dest_parts[:3] in {
+        ("PySide6", "Qt", "lib"),
+        ("PySide6", "Qt", "bin"),
+        ("PySide6", "Qt6", "lib"),
+        ("PySide6", "Qt6", "bin"),
+    }:
         dest_str = str(dest)
         for token in qt_excluded_tokens:
             if token in dest_str:
@@ -97,11 +109,17 @@ def _prune_qt_payload(entries):
         else:
             src, dest, entry_type = entry
         dest_parts = Path(dest).parts
-        if len(dest_parts) >= 4 and dest_parts[:3] == ("PySide6", "Qt", "plugins"):
+        if len(dest_parts) >= 4 and dest_parts[:3] in {
+            ("PySide6", "Qt", "plugins"),
+            ("PySide6", "Qt6", "plugins"),
+        }:
             plugin_dir = dest_parts[3]
             if plugin_dir not in allowed_qt_plugin_dirs:
                 continue
-        if len(dest_parts) >= 3 and dest_parts[:3] == ("PySide6", "Qt", "qml"):
+        if len(dest_parts) >= 3 and dest_parts[:3] in {
+            ("PySide6", "Qt", "qml"),
+            ("PySide6", "Qt6", "qml"),
+        }:
             continue
         if _should_drop_qt_lib(dest_parts, dest):
             continue
