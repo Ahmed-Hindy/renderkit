@@ -1,5 +1,6 @@
 """Integration tests using real EXR sequence files."""
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -10,19 +11,30 @@ from renderkit.core.config import ConversionConfigBuilder
 from renderkit.core.sequence import SequenceDetector
 from renderkit.processing.color_space import ColorSpacePreset
 
+REAL_SEQUENCE_PATTERN = (
+    r"G:/Projects/AYON_PROJECTS/Canyon_Run/sq001/sh001/publish/render/renderCompositingMain/v001"
+    r"/CanRun_sh001_renderCompositingMain_v001.%04d.exr"
+)
+REAL_SEQUENCE_ROOT = Path(
+    r"G:/Projects/AYON_PROJECTS/Canyon_Run/sq001/sh001/publish/render/renderCompositingMain/v001"
+)
+REQUIRE_REAL_ASSETS = os.getenv("RENDERKIT_REAL_ASSETS") == "1"
+
+pytestmark = pytest.mark.skipif(
+    not (REQUIRE_REAL_ASSETS and REAL_SEQUENCE_ROOT.exists()),
+    reason=(
+        "Real EXR assets not available. Set RENDERKIT_REAL_ASSETS=1 and ensure "
+        "the local path exists to run these tests."
+    ),
+)
+
 
 class TestRealEXRSequence:
     """Integration tests with real EXR sequence files."""
 
-    # Real file path pattern
-    REAL_SEQUENCE_PATTERN = (
-        r"G:/Projects/AYON_PROJECTS/Canyon_Run/sq001/sh001/publish/render/renderCompositingMain/v001"
-        r"/CanRun_sh001_renderCompositingMain_v001.%04d.exr"
-    )
-
     def test_sequence_detection_real_files(self) -> None:
         """Test sequence detection with real EXR files."""
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
 
         # Verify sequence was detected
         assert sequence is not None
@@ -38,7 +50,7 @@ class TestRealEXRSequence:
 
     def test_sequence_frame_numbers(self) -> None:
         """Test that frame numbers are correctly detected."""
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
 
         # Verify frame numbers are sorted
         assert sequence.frame_numbers == sorted(sequence.frame_numbers)
@@ -48,7 +60,7 @@ class TestRealEXRSequence:
 
     def test_get_file_paths(self) -> None:
         """Test getting file paths for specific frames."""
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
 
         # Test getting path for first frame
         first_frame_num = sequence.frame_numbers[0]
@@ -65,7 +77,7 @@ class TestRealEXRSequence:
         """Test reading real EXR files."""
         from renderkit.io.image_reader import ImageReaderFactory
 
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
         first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
 
         # Create reader and read image
@@ -90,7 +102,7 @@ class TestRealEXRSequence:
         from renderkit.io.image_reader import ImageReaderFactory
         from renderkit.processing.color_space import ColorSpaceConverter
 
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
         first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
 
         # Read image
@@ -126,7 +138,7 @@ class TestRealEXRSequence:
             # Build configuration
             config = (
                 ConversionConfigBuilder()
-                .with_input_pattern(self.REAL_SEQUENCE_PATTERN)
+                .with_input_pattern(REAL_SEQUENCE_PATTERN)
                 .with_output_path(str(output_path))
                 .with_fps(24.0)
                 .with_frame_range(start_frame, end_frame)
@@ -144,7 +156,7 @@ class TestRealEXRSequence:
 
     def test_full_conversion_all_frames(self) -> None:
         """Test full conversion with all frames (may take longer)."""
-        SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_output_all_frames.mp4"
@@ -152,7 +164,7 @@ class TestRealEXRSequence:
             # Build configuration
             config = (
                 ConversionConfigBuilder()
-                .with_input_pattern(self.REAL_SEQUENCE_PATTERN)
+                .with_input_pattern(REAL_SEQUENCE_PATTERN)
                 .with_output_path(str(output_path))
                 .with_fps(24.0)
                 .with_color_space_preset(ColorSpacePreset.LINEAR_TO_SRGB)
@@ -169,7 +181,7 @@ class TestRealEXRSequence:
 
     def test_conversion_with_different_color_spaces(self) -> None:
         """Test conversion with different color space presets."""
-        sequence = SequenceDetector.detect_sequence(self.REAL_SEQUENCE_PATTERN)
+        sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
 
         # Use only first frame for quick test
         start_frame = sequence.frame_numbers[0]
@@ -187,7 +199,7 @@ class TestRealEXRSequence:
 
                 config = (
                     ConversionConfigBuilder()
-                    .with_input_pattern(self.REAL_SEQUENCE_PATTERN)
+                    .with_input_pattern(REAL_SEQUENCE_PATTERN)
                     .with_output_path(str(output_path))
                     .with_fps(24.0)
                     .with_frame_range(start_frame, end_frame)
