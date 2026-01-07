@@ -6,8 +6,7 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/stylesheets', 'renderkit/ui/stylesheets')]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('PySide6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# Rely on PyInstaller's built-in PySide6 hook to avoid duplicate Qt frameworks on macOS.
 tmp_ret = collect_all('OpenImageIO')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('opencolorio')
