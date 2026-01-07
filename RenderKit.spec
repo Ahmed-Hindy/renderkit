@@ -79,7 +79,12 @@ allowed_qt_plugin_dirs = {
 
 def _prune_qt_plugins(datas_list):
     pruned = []
-    for src, dest in datas_list:
+    for entry in datas_list:
+        if len(entry) == 2:
+            src, dest = entry
+            entry_type = None
+        else:
+            src, dest, entry_type = entry
         dest_parts = Path(dest).parts
         if len(dest_parts) >= 4 and dest_parts[:3] == ("PySide6", "Qt", "plugins"):
             plugin_dir = dest_parts[3]
@@ -87,7 +92,10 @@ def _prune_qt_plugins(datas_list):
                 continue
         if len(dest_parts) >= 3 and dest_parts[:3] == ("PySide6", "Qt", "qml"):
             continue
-        pruned.append((src, dest))
+        if entry_type is None:
+            pruned.append((src, dest))
+        else:
+            pruned.append((src, dest, entry_type))
     return pruned
 
 strip_binaries = sys.platform != "win32"
