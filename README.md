@@ -7,7 +7,7 @@
 
 A high-performance Python package and CLI tool for converting image sequences (EXR, PNG, JPEG) to video (MP4) in VFX workflows.
 
-📘 **[Full Documentation](https://Ahmed-Hindy.github.io/renderkit/)**
+**[Full Documentation](https://Ahmed-Hindy.github.io/renderkit/)**
 
 ## Features
 
@@ -22,12 +22,19 @@ A high-performance Python package and CLI tool for converting image sequences (E
 
 ## Installation
 
+### Prebuilt App (Windows)
+
+Download a .zip file from the Releases section, unpack then run:
+
+```
+RenderKit/RenderKit.exe
+```
+
+### From Source (uv)
+
 ```bash
-# Clone the repository
 git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
-
-# Install the package in editable mode
 uv pip install -e .
 ```
 
@@ -41,7 +48,22 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 
 # Generate a Multi-AOV Contact Sheet video
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --contact-sheet --cs-columns 4
+
+# Add burn-ins
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-fps
 ```
+
+### UI
+
+```bash
+python -m renderkit.ui.main_window
+```
+
+### Environment Variables
+
+- `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
+- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, for offline systems).
+- `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).
 
 ### Python API
 

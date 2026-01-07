@@ -5,18 +5,15 @@
 ### Using uv (Recommended)
 
 ```bash
-# Clone the repository
 git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
-
-# Install with dev dependencies
+uv venv
 uv pip install -e ".[dev]"
 ```
 
 ### Using pip
 
 ```bash
-# Install with dev dependencies
 pip install -e ".[dev]"
 ```
 
@@ -55,6 +52,15 @@ ruff check .
 mypy src/
 ```
 
+## Build (PyInstaller)
+
+```bash
+uv pip install -e . pyinstaller
+python -m PyInstaller --noconfirm RenderKit.spec
+```
+
+The distributable output is in `dist/RenderKit/`.
+
 ## Architecture
 
 The package is organized with clear separation of concerns:
@@ -88,8 +94,9 @@ The package is organized with clear separation of concerns:
 ## CI/CD
 
 The project uses GitHub Actions for:
-- Linting (Ruff)
-- Type Checking (mypy)
-- Tests (Python 3.9-3.12, Linux/Windows/macOS)
-- UI Tests
-- Documentation Deployment
+- Linting and formatting (Ruff)
+- Type checking (mypy, non-blocking)
+- Tests on Windows and Ubuntu (Python 3.10)
+- UI tests on Ubuntu (xvfb)
+- Python package build on Ubuntu
+- PyInstaller builds on Windows, Linux, and macOS (Build workflow)

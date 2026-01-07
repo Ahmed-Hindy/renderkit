@@ -11,7 +11,12 @@ Contributions are welcome! Please follow these guidelines:
 ## Pull Request Workflow
 
 1.  Clone your fork.
-2.  Install dev dependencies: `uv pip install -e ".[dev]"`
+2.  Install dev dependencies:
+
+    ```bash
+    uv venv
+    uv pip install -e ".[dev]"
+    ```
 3.  Create a branch.
 4.  Make changes.
 5.  Verify tests: `pytest`

@@ -12,13 +12,39 @@ A high-performance image and video processor for VFX workflows, built with Pytho
 - **Modern UI**: Dark-themed, studio-grade interface using PySide6.
 - **CLI Support**: Fully functional command-line interface for headless automation.
 
-## Installation
+## Install
+
+### Prebuilt App
+
+/**
+ * 1. Download the Pre-compiled binaries from the GitHub Releases section
+ * 2. Unzip the downloaded archive
+ * 3. Run RenderKit.exe
+ * 4. Profit!
+ */
+
+
+### From Source (uv)
 
 ```bash
-pip install renderkit
+git clone https://github.com/Ahmed-Hindy/renderkit.git
+cd renderkit
+uv pip install -e .
 ```
 
 ## Quick Start
+
+### CLI
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+```
+
+### UI
+
+```bash
+python -m renderkit.ui.main_window
+```
 
 ### Python API
 
