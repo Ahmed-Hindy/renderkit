@@ -15,6 +15,7 @@ from renderkit.core.config import (
 from renderkit.io.file_utils import FileUtils
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.conversion_worker import ConversionWorker
+from renderkit.ui.icons import icon_manager
 from renderkit.ui.qt_compat import (
     QT_BACKEND_NAME,
     QApplication,
@@ -255,6 +256,7 @@ class ModernMainWindow(QMainWindow):
         input_pattern_layout.addWidget(self.input_pattern_edit)
         self.browse_input_btn = QPushButton("Browse...")
         self.browse_input_btn.setMaximumWidth(100)
+        self.browse_input_btn.setIcon(icon_manager.get_icon("browse"))
         input_pattern_layout.addWidget(self.browse_input_btn)
         form_layout.addRow("Pattern:", input_pattern_layout)
 
@@ -310,6 +312,7 @@ class ModernMainWindow(QMainWindow):
         if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
             self.load_preview_btn = QPushButton("Load Preview")
             self.load_preview_btn.clicked.connect(self._load_preview)
+            self.load_preview_btn.setIcon(icon_manager.get_icon("preview"))
 
         return layout
 
@@ -329,6 +332,7 @@ class ModernMainWindow(QMainWindow):
         output_path_layout.addWidget(self.output_path_edit)
         self.browse_output_btn = QPushButton("Browse...")
         self.browse_output_btn.setMaximumWidth(100)
+        self.browse_output_btn.setIcon(icon_manager.get_icon("browse"))
         output_path_layout.addWidget(self.browse_output_btn)
         form_layout.addRow("Output Path:", output_path_layout)
 
@@ -340,6 +344,7 @@ class ModernMainWindow(QMainWindow):
             self.play_btn.clicked.connect(self._play_output)
             self.play_btn.setToolTip("Open the conversion result in the default system player.")
             self.play_btn.setObjectName("IconButton")
+            self.play_btn.setIcon(icon_manager.get_icon("play"))
         layout.addWidget(self.play_btn)
 
         return layout
@@ -420,6 +425,7 @@ class ModernMainWindow(QMainWindow):
         if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
             self.load_preview_btn = QPushButton("Load Preview")
             self.load_preview_btn.clicked.connect(self._load_preview)
+            self.load_preview_btn.setIcon(icon_manager.get_icon("preview"))
 
         layout.addStretch()
 
@@ -699,6 +705,7 @@ class ModernMainWindow(QMainWindow):
         # Clear log button
         clear_log_btn = QPushButton("Clear Log")
         clear_log_btn.clicked.connect(self.log_text.clear)
+        clear_log_btn.setIcon(icon_manager.get_icon("close"))
         log_layout.addWidget(clear_log_btn)
 
         layout.addWidget(log_group)
@@ -723,6 +730,7 @@ class ModernMainWindow(QMainWindow):
         if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
             self.load_preview_btn = QPushButton("Load Preview")
             self.load_preview_btn.clicked.connect(self._load_preview)
+            self.load_preview_btn.setIcon(icon_manager.get_icon("preview"))
         buttons_layout.addWidget(self.load_preview_btn)
 
         buttons_layout.addStretch()
@@ -743,6 +751,7 @@ class ModernMainWindow(QMainWindow):
         # Detect sequence button
         self.detect_btn = QPushButton("Detect Sequence")
         self.detect_btn.setToolTip("Detect frame sequence from pattern")
+        self.detect_btn.setIcon(icon_manager.get_icon("detect"))
         layout.addWidget(self.detect_btn)
 
         layout.addStretch()
@@ -751,12 +760,14 @@ class ModernMainWindow(QMainWindow):
         self.convert_btn = QPushButton("Convert")
         self.convert_btn.setMinimumWidth(150)
         self.convert_btn.setObjectName("PrimaryButton")
+        self.convert_btn.setIcon(icon_manager.get_icon("convert"))
         layout.addWidget(self.convert_btn)
 
         # Cancel button
         self.cancel_btn = QPushButton("Quit")
         self.cancel_btn.setEnabled(True)  # Always enabled
         self.cancel_btn.setMinimumWidth(100)
+        self.cancel_btn.setIcon(icon_manager.get_icon("close"))
         layout.addWidget(self.cancel_btn)
 
         return panel
@@ -770,6 +781,7 @@ class ModernMainWindow(QMainWindow):
 
         # About action
         about_action = help_menu.addAction("About")
+        about_action.setIcon(icon_manager.get_icon("help"))
         about_action.triggered.connect(self._show_about)
         about_action.setShortcut("F1")
 

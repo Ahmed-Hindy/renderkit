@@ -51,8 +51,17 @@ if _backend is None:
 
 # Import based on detected backend
 if _backend == "pyside6":
-    from PySide6.QtCore import QEvent, QSettings, Qt, QThread, QUrl, Signal
-    from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
+    from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThread, QUrl, Signal
+    from PySide6.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPalette,
+        QPixmap,
+    )
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -80,8 +89,17 @@ if _backend == "pyside6":
         QWidget,
     )
 elif _backend == "pyside2":
-    from PySide2.QtCore import QEvent, QSettings, Qt, QThread, QUrl, Signal
-    from PySide2.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
+    from PySide2.QtCore import QEvent, QSettings, QSize, Qt, QThread, QUrl, Signal
+    from PySide2.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPalette,
+        QPixmap,
+    )
     from PySide2.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -109,9 +127,18 @@ elif _backend == "pyside2":
         QWidget,
     )
 elif _backend == "pyqt6":
-    from PyQt6.QtCore import QEvent, QSettings, Qt, QThread, QUrl
+    from PyQt6.QtCore import QEvent, QSettings, QSize, Qt, QThread, QUrl
     from PyQt6.QtCore import pyqtSignal as Signal
-    from PyQt6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
+    from PyQt6.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPalette,
+        QPixmap,
+    )
     from PyQt6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -139,9 +166,18 @@ elif _backend == "pyqt6":
         QWidget,
     )
 elif _backend == "pyqt5":
-    from PyQt5.QtCore import QEvent, QSettings, Qt, QThread, QUrl
+    from PyQt5.QtCore import QEvent, QSettings, QSize, Qt, QThread, QUrl
     from PyQt5.QtCore import pyqtSignal as Signal
-    from PyQt5.QtGui import QDesktopServices, QFont, QIcon, QImage, QPalette, QPixmap
+    from PyQt5.QtGui import (
+        QColor,
+        QDesktopServices,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPalette,
+        QPixmap,
+    )
     from PyQt5.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -180,12 +216,16 @@ __all__ = [
     "Qt",
     "QUrl",
     "QEvent",
+    "QSize",
     # Qt Gui
     "QFont",
     "QIcon",
     "QPixmap",
     "QImage",
     "QDesktopServices",
+    "QColor",
+    "QPainter",
+    "QPalette",
     # Qt Widgets
     "QApplication",
     "QCheckBox",
@@ -199,7 +239,6 @@ __all__ = [
     "QLineEdit",
     "QMainWindow",
     "QMessageBox",
-    "QPalette",
     "QPlainTextEdit",
     "QProgressBar",
     "QPushButton",
