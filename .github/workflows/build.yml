@@ -69,8 +69,16 @@ jobs:
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0
 
-      - name: Set up MSYS2 (Windows)
+      - name: Cache bundled FFmpeg (Windows)
         if: matrix.os == 'windows-latest'
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg
+          key: ffmpeg-${{ matrix.os }}-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh') }}
+
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -83,14 +91,6 @@ jobs:
             mingw-w64-ucrt-x86_64-pkg-config
             mingw-w64-ucrt-x86_64-x265
             mingw-w64-ucrt-x86_64-aom
-
-      - name: Cache bundled FFmpeg (Windows)
-        if: matrix.os == 'windows-latest'
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: vendor/ffmpeg
-          key: ffmpeg-${{ matrix.os }}-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh') }}
 
       - name: Build FFmpeg (Windows)
         if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
