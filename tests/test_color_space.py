@@ -1,9 +1,11 @@
 """Tests for color space conversion."""
 
 import numpy as np
+import pytest
 
 from renderkit.processing.color_space import (
     ColorSpaceConverter,
+    ColorSpaceError,
     ColorSpacePreset,
     LinearToSRGBStrategy,
     NoConversionStrategy,
@@ -53,8 +55,19 @@ class TestColorSpaceConverter:
         for preset in ColorSpacePreset:
             converter = ColorSpaceConverter(preset)
             test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-            result = converter.convert(test_image)
-            assert result.shape == test_image.shape
+            if preset == ColorSpacePreset.OCIO_CONVERSION:
+                with pytest.raises(ColorSpaceError):
+                    converter.convert(test_image)
+            else:
+                result = converter.convert(test_image)
+                assert result.shape == test_image.shape
+
+    def test_ocio_requires_input_space(self) -> None:
+        """Test OCIO conversion requires an input space."""
+        converter = ColorSpaceConverter(ColorSpacePreset.OCIO_CONVERSION)
+        test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        with pytest.raises(ColorSpaceError):
+            converter.convert(test_image)
 
 
 class TestLinearToSRGBStrategy:

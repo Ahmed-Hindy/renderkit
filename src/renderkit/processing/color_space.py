@@ -11,6 +11,77 @@ from renderkit.exceptions import ColorSpaceError
 
 logger = logging.getLogger(__name__)
 
+_OIIO_LINEAR_CANDIDATES = ["linear", "Linear", "scene_linear", "scene-linear"]
+_OIIO_SRGB_CANDIDATES = ["sRGB", "srgb", "Output - sRGB", "srgb_display", "out_srgb"]
+_OIIO_REC709_CANDIDATES = ["Rec709", "Rec.709", "rec709", "BT.709", "bt709"]
+_OIIO_COLOR_SPACE_CACHE: dict[str, str] | None = None
+
+
+def _get_oiio_color_space_map(oiio) -> dict[str, str]:
+    global _OIIO_COLOR_SPACE_CACHE
+    if _OIIO_COLOR_SPACE_CACHE is not None:
+        return _OIIO_COLOR_SPACE_CACHE
+    try:
+        config = oiio.ColorConfig()
+        names = config.getColorSpaceNames()
+        if names:
+            _OIIO_COLOR_SPACE_CACHE = {name.lower(): name for name in names}
+        else:
+            _OIIO_COLOR_SPACE_CACHE = {}
+    except Exception:
+        _OIIO_COLOR_SPACE_CACHE = {}
+    return _OIIO_COLOR_SPACE_CACHE
+
+
+def _resolve_oiio_spaces(candidates: list[str], space_map: dict[str, str]) -> list[str]:
+    if not space_map:
+        return candidates
+    resolved = []
+    for name in candidates:
+        actual = space_map.get(name.lower())
+        if actual:
+            resolved.append(actual)
+    return resolved or candidates
+
+
+def _oiio_colorconvert(
+    image: np.ndarray, from_spaces: list[str], to_spaces: list[str]
+) -> np.ndarray:
+    try:
+        import OpenImageIO as oiio
+    except ImportError as err:
+        raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+
+    if image.dtype != np.float32:
+        image = image.astype(np.float32)
+
+    if image.ndim != 3 or image.shape[2] not in (3, 4):
+        raise ColorSpaceError("Color conversion expects an image array of shape (H, W, 3|4).")
+
+    try:
+        height, width = image.shape[:2]
+        channels = image.shape[2]
+
+        src_buf = oiio.ImageBuf(oiio.ImageSpec(width, height, channels, oiio.FLOAT))
+        src_buf.set_pixels(oiio.ROI(), image)
+        dst_buf = oiio.ImageBuf(oiio.ImageSpec(width, height, channels, oiio.FLOAT))
+
+        space_map = _get_oiio_color_space_map(oiio)
+        from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
+        to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
+
+        for from_space in from_candidates:
+            for to_space in to_candidates:
+                if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
+                    pixels = dst_buf.get_pixels(oiio.FLOAT)
+                    if pixels.ndim == 1:
+                        return pixels.reshape((height, width, channels))
+                    return pixels
+    except Exception as e:
+        raise ColorSpaceError(f"OIIO color conversion failed: {e}") from e
+
+    raise ColorSpaceError(f"OIIO color conversion failed for '{from_spaces}' -> '{to_spaces}'.")
+
 
 class ColorSpacePreset(Enum):
     """Color space conversion presets."""
@@ -65,12 +136,10 @@ class OCIOColorSpaceStrategy:
         Returns:
             Converted image array
         """
-        if not self.config or not input_space:
-            # Fallback to linear-to-srgb if OCIO not available or input space unknown
-            logger.warning(
-                "OCIO not active or input space unknown. Falling back to simple Linear->sRGB."
-            )
-            return LinearToSRGBStrategy().convert(image)
+        if not self.config:
+            raise ColorSpaceError("OCIO config not available.")
+        if not input_space:
+            raise ColorSpaceError("OCIO input color space is required.")
 
         try:
             # Determine output space (assume sRGB for now, could be configurable)
@@ -93,8 +162,7 @@ class OCIOColorSpaceStrategy:
                 output_space = self.config.getDisplayViewColorSpaceName(display, view)
 
             if not output_space:
-                logger.warning("Could not find suitable OCIO output space. Falling back.")
-                return LinearToSRGBStrategy().convert(image)
+                raise ColorSpaceError("Could not find suitable OCIO output space.")
 
             logger.info(f"OCIO Conversion: '{input_space}' -> '{output_space}'")
 
@@ -126,8 +194,7 @@ class OCIOColorSpaceStrategy:
             return flat_image.reshape(height, width, channels)
 
         except Exception as e:
-            logger.error(f"OCIO conversion error: {e}. Falling back.")
-            return LinearToSRGBStrategy().convert(image)
+            raise ColorSpaceError(f"OCIO conversion error: {e}") from e
 
 
 class LinearToSRGBStrategy:
@@ -169,14 +236,16 @@ class LinearToSRGBStrategy:
         if image.dtype != np.float32:
             image = image.astype(np.float32)
 
-        # Apply tone mapping for HDR values
-        # Simple Reinhard tone mapping
+        # Apply tone mapping for HDR values (simple Reinhard)
         tone_mapped = image / (1.0 + image)
+        tone_mapped = np.maximum(tone_mapped, 0.0)
 
-        # Convert to sRGB
-        srgb = self._linear_to_srgb(tone_mapped)
-
-        return srgb
+        oiio_result = _oiio_colorconvert(
+            tone_mapped,
+            _OIIO_LINEAR_CANDIDATES,
+            _OIIO_SRGB_CANDIDATES,
+        )
+        return np.clip(oiio_result, 0.0, 1.0)
 
 
 class LinearToRec709Strategy:
@@ -219,11 +288,14 @@ class LinearToRec709Strategy:
 
         # Apply tone mapping
         tone_mapped = image / (1.0 + image)
+        tone_mapped = np.maximum(tone_mapped, 0.0)
 
-        # Convert to Rec.709
-        rec709 = self._linear_to_rec709(tone_mapped)
-
-        return rec709
+        oiio_result = _oiio_colorconvert(
+            tone_mapped,
+            _OIIO_LINEAR_CANDIDATES,
+            _OIIO_REC709_CANDIDATES,
+        )
+        return np.clip(oiio_result, 0.0, 1.0)
 
 
 class SRGBToLinearStrategy:
@@ -264,7 +336,13 @@ class SRGBToLinearStrategy:
         if image.dtype != np.float32:
             image = image.astype(np.float32)
 
-        return self._srgb_to_linear(image)
+        srgb = np.clip(image, 0.0, 1.0)
+        oiio_result = _oiio_colorconvert(
+            srgb,
+            _OIIO_SRGB_CANDIDATES,
+            _OIIO_LINEAR_CANDIDATES,
+        )
+        return oiio_result
 
 
 class NoConversionStrategy:
