@@ -1,14 +1,16 @@
-"""Video encoding using imageio/FFmpeg."""
+"""Video encoding using FFmpeg."""
 
 import logging
 import os
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import imageio
+import imageio_ffmpeg
 import numpy as np
+from imageio_ffmpeg._utils import _popen_kwargs
 
 from renderkit.exceptions import VideoEncodingError
 from renderkit.processing.scaler import ImageScaler
@@ -16,8 +18,139 @@ from renderkit.processing.scaler import ImageScaler
 logger = logging.getLogger(__name__)
 
 
+def _escape_ffreport_path(path: Path) -> str:
+    if os.name == "nt":
+        return path.as_posix().replace(":", r"\:")
+    return str(path)
+
+
+def get_available_encoders() -> set[str]:
+    try:
+        cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-encoders"]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            **_popen_kwargs(prevent_sigint=True),
+        )
+        text = (result.stdout or "") + "\n" + (result.stderr or "")
+    except Exception as exc:
+        logger.warning("Unable to query FFmpeg encoders: %s", exc)
+        return set()
+
+    encoders: set[str] = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Encoders:") or line.startswith("-"):
+            continue
+        if not line[0].isalpha() or len(line) < 2:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        if parts[0].startswith("V"):
+            encoders.add(parts[1])
+    return encoders
+
+
+def select_available_encoder(requested: str, available: set[str]) -> tuple[str, Optional[str]]:
+    if not available or requested in available:
+        return requested, None
+
+    fallback_map = {
+        "libx264": ["libx265", "libaom-av1", "mpeg4"],
+        "libx265": ["libaom-av1", "mpeg4"],
+        "libaom-av1": ["libx265", "mpeg4"],
+        "mpeg4": ["libx265", "libaom-av1"],
+    }
+    for candidate in fallback_map.get(requested, ["libx265", "libaom-av1", "mpeg4"]):
+        if candidate in available:
+            return candidate, (
+                f"Requested encoder '{requested}' is unavailable; falling back to '{candidate}'."
+            )
+
+    return requested, None
+
+
+class _RawFfmpegPipeWriter:
+    def __init__(
+        self,
+        output_path: Path,
+        width: int,
+        height: int,
+        fps: float,
+        codec: str,
+        pix_fmt_in: str,
+        pix_fmt_out: str,
+        ffmpeg_params: list[str],
+        ffmpeg_log_level: str,
+        bitrate: Optional[str],
+    ) -> None:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        size_str = f"{width}x{height}"
+        self._cmd = [
+            ffmpeg_exe,
+            "-y",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-s",
+            size_str,
+            "-pix_fmt",
+            pix_fmt_in,
+            "-r",
+            f"{fps:.02f}",
+            "-i",
+            "pipe:0",
+            "-an",
+            "-vcodec",
+            codec,
+            "-pix_fmt",
+            pix_fmt_out,
+        ]
+        if bitrate is not None:
+            self._cmd += ["-b:v", bitrate]
+        self._cmd += ["-v", ffmpeg_log_level]
+        self._cmd += ffmpeg_params
+        self._cmd.append(str(output_path))
+        self._cmd_str = " ".join(self._cmd)
+        try:
+            self._process = subprocess.Popen(
+                self._cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=None,
+                **_popen_kwargs(prevent_sigint=True),
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to start FFmpeg: {exc}") from exc
+        if self._process.stdin is None:
+            raise RuntimeError("FFmpeg stdin is not available for writing.")
+
+    def append_data(self, frame: np.ndarray) -> None:
+        if self._process.poll() is not None:
+            raise RuntimeError(f"FFmpeg exited early with code {self._process.returncode}.")
+        try:
+            self._process.stdin.write(frame.tobytes())
+        except Exception as exc:
+            raise RuntimeError(f"{exc}\n\nFFMPEG COMMAND:\n{self._cmd_str}") from exc
+
+    def close(self) -> None:
+        if self._process.poll() is None:
+            try:
+                self._process.stdin.close()
+            except Exception as exc:
+                logger.warning("Error closing FFmpeg stdin: %s", exc)
+            self._process.wait()
+        try:
+            self._process.stdout.close()
+        except Exception:
+            pass
+
+
 class VideoEncoder:
-    """Video encoder for creating MP4 files using imageio (FFmpeg)."""
+    """Video encoder for creating MP4 files using FFmpeg."""
 
     def __init__(
         self,
@@ -70,7 +203,8 @@ class VideoEncoder:
             self._ffreport_prev = os.environ["FFREPORT"]
         else:
             self._ffreport_prev = None
-        os.environ["FFREPORT"] = f"file={path}:level=48"
+        escaped_path = _escape_ffreport_path(path)
+        os.environ["FFREPORT"] = f"file={escaped_path}:level=48"
         self._ffreport_set = True
         return path
 
@@ -133,7 +267,7 @@ class VideoEncoder:
         self._height = height
 
         # Adjust dimensions to be divisible by macro_block_size for codec compatibility
-        # This prevents imageio-ffmpeg from auto-resizing only the first frame
+        # This prevents ffmpeg from needing to auto-resize frames.
         self._adjusted_width = self._make_divisible(width, self.macro_block_size)
         self._adjusted_height = self._make_divisible(height, self.macro_block_size)
 
@@ -154,18 +288,22 @@ class VideoEncoder:
             "XVID": "mpeg4",
         }
         ffmpeg_codec = codec_map.get(self.codec, self.codec)
+        available_encoders = get_available_encoders()
+        ffmpeg_codec, fallback_warning = select_available_encoder(ffmpeg_codec, available_encoders)
+        if fallback_warning:
+            logger.warning(fallback_warning)
+        if available_encoders and ffmpeg_codec not in available_encoders:
+            available = ", ".join(sorted(available_encoders))
+            raise VideoEncodingError(
+                f"Requested FFmpeg encoder '{ffmpeg_codec}' is not available. "
+                f"Available encoders: {available}"
+            )
 
-        # Prepare writer options
-        writer_kwargs = {
-            "fps": self.fps,
-            "codec": ffmpeg_codec,
-            "macro_block_size": self.macro_block_size,
-            "pixelformat": "yuv420p",
-        }
+        ffmpeg_log_level = "warning"
         self._ffmpeg_report_path = self._configure_ffmpeg_report()
         if self._ffmpeg_report_path is not None:
-            writer_kwargs["ffmpeg_log_level"] = "info"
-            logger.info("FFmpeg report enabled: %s", self._ffmpeg_report_path)
+            ffmpeg_log_level = "info"
+            logger.info("Logging to file: %s", self._ffmpeg_report_path)
 
         # Set default FFmpeg parameters for broad compatibility and web optimization
         # -movflags +faststart enables progressive loading for web playback
@@ -181,6 +319,8 @@ class VideoEncoder:
             "bt709",
         ]
 
+        bitrate: Optional[str] = None
+
         # Codec-specific tuning and quality mapping
         if ffmpeg_codec in ["libx264", "libx265"]:
             # Map quality (0-10) to CRF (35-18)
@@ -188,55 +328,54 @@ class VideoEncoder:
             # Default to 23 if not specified
             crf = 18 + (10 - self.quality) * 1.7 if self.quality is not None else 23
             ffmpeg_params.extend(["-crf", f"{int(crf)}"])
-            logger.info(f"{ffmpeg_codec} tuning: crf={int(crf)}")
+            logger.debug(f"{ffmpeg_codec} tuning: crf={int(crf)}")
 
         elif ffmpeg_codec == "libaom-av1":
             # AV1 is extremely slow by default. Use -cpu-used 6 for better speed.
             # Map 0-10 quality to CRF 50-20 (lower is better)
             crf = 20 + (10 - self.quality) * 3 if self.quality is not None else 32
             ffmpeg_params.extend(["-crf", f"{int(crf)}", "-cpu-used", "6"])
-            # libaom-av1 needs bitrate=0 to enable CRF mode in imageio-ffmpeg
-            writer_kwargs["bitrate"] = 0
-            logger.info(f"AV1 tuning: crf={int(crf)}, cpu-used=6")
+            # libaom-av1 needs bitrate=0 to enable CRF mode in FFmpeg
+            bitrate = "0"
+            logger.debug(f"AV1 tuning: crf={int(crf)}, cpu-used=6")
 
         elif ffmpeg_codec == "mpeg4":
             # Map quality (0-10) to -q:v (31-2)
             # Higher -q:v is lower quality.
             qv = 2 + (10 - self.quality) * 2.9 if self.quality is not None else 4
             ffmpeg_params.extend(["-q:v", f"{int(qv)}"])
-            logger.info(f"MPEG-4 tuning: q:v={int(qv)}")
+            logger.debug(f"MPEG-4 tuning: q:v={int(qv)}")
 
         elif self.bitrate:
-            writer_kwargs["bitrate"] = f"{self.bitrate}k"
+            bitrate = f"{self.bitrate}k"
 
         # Apply final FFmpeg parameters
         if self._ffmpeg_report_path is not None:
             ffmpeg_params.extend(["-report", "-loglevel", "info"])
-        writer_kwargs["ffmpeg_params"] = ffmpeg_params
-
         try:
-            # Using str() on an absolute path is safest across platforms
-            output_str = str(self.output_path)
-
-            self._writer = imageio.get_writer(
-                output_str,
-                format="FFMPEG",
-                mode="I",
-                **writer_kwargs,
+            self._writer = _RawFfmpegPipeWriter(
+                self.output_path,
+                self._adjusted_width,
+                self._adjusted_height,
+                self.fps,
+                ffmpeg_codec,
+                "rgb24",
+                "yuv420p",
+                ffmpeg_params,
+                ffmpeg_log_level,
+                bitrate,
             )
-            logger.info(
-                f"Initialized imageio-ffmpeg writer: {width}x{height} @ {self.fps}fps, "
+            logger.debug(
+                f"Initialized FFmpeg pipe writer: {width}x{height} @ {self.fps}fps, "
                 f"codec={ffmpeg_codec}, quality={self.quality}, params={ffmpeg_params}"
             )
-        except (ImportError, RuntimeError) as e:
-            # Catch common issues with missing ffmpeg backend
+        except RuntimeError as e:
             msg = str(e)
+            self._restore_ffmpeg_report_env()
             if "ffmpeg" in msg.lower():
-                self._restore_ffmpeg_report_env()
                 raise VideoEncodingError(
                     "FFmpeg backend not found. Please install imageio-ffmpeg: 'pip install imageio-ffmpeg'"
                 ) from e
-            self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:
             self._restore_ffmpeg_report_env()
@@ -261,11 +400,11 @@ class VideoEncoder:
                 filter_name="lanczos3",
             )
 
-        # Ensure frame is uint8 [0, 255] for imageio
+        # Ensure frame is uint8 [0, 255] for FFmpeg rawvideo
         if frame.dtype != np.uint8:
             frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
 
-        # imageio expects RGB (standard)
+        # FFmpeg rawvideo expects RGB (standard)
         # If RGBA, drop alpha channel
         if len(frame.shape) == 3 and frame.shape[2] == 4:
             frame = frame[:, :, :3]
@@ -288,7 +427,7 @@ class VideoEncoder:
         if self._writer is not None:
             try:
                 self._writer.close()
-                logger.info(f"Video encoding completed: {self.output_path}")
+                logger.info("Video encoding completed.")
             except Exception as e:
                 logger.error(f"Error closing video writer: {e}")
             finally:

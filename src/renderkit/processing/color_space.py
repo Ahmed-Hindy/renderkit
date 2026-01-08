@@ -205,7 +205,7 @@ class OCIOColorSpaceStrategy:
             if not output_space:
                 raise ColorSpaceError("Could not find suitable OCIO output space.")
 
-            logger.info(f"OCIO Conversion: '{input_space}' -> '{output_space}'")
+            logger.debug(f"OCIO Conversion: '{input_space}' -> '{output_space}'")
 
             processor = self.config.getProcessor(input_space, output_space)
             cpu_processor = processor.getDefaultCPUProcessor()

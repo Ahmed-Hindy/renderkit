@@ -164,7 +164,7 @@ class SequenceConverter:
         self.encoder.initialize(output_width, output_height)
 
         # Step 8: Process frames
-        logger.info(f"Processing {len(frame_numbers)} frames...")
+        logger.debug(f"Processing {len(frame_numbers)} frames...")
         scaler = ImageScaler()
         success_count = 0
 
@@ -214,7 +214,8 @@ class SequenceConverter:
                     "Check logs for reading or conversion errors."
                 )
 
-            logger.info(f"Conversion completed successfully: {success_count} frames written")
+            logger.info("Conversion completed successfully.")
+            logger.info(f"{success_count} frames written")
 
         finally:
             # Clean up

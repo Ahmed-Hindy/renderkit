@@ -17,6 +17,7 @@ from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.io.file_utils import FileUtils
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.processing.video_encoder import get_available_encoders, select_available_encoder
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.qt_compat import (
@@ -115,6 +116,7 @@ class ModernMainWindow(QMainWindow):
         """Set up the user interface."""
         self.setWindowTitle("RenderKit")
         self.setMinimumSize(500, 450)
+        self.resize(1400, 950)
         self._last_preview_path: Optional[Path] = None
 
         # Central widget with splitter
@@ -1226,7 +1228,33 @@ class ModernMainWindow(QMainWindow):
             # Codec
             codec_index = self.codec_combo.currentIndex()
             codec_id = self._codec_map.get(codec_index, "libx264")
-            config_builder.with_codec(codec_id)
+            available_encoders = get_available_encoders()
+            resolved_codec, fallback_warning = select_available_encoder(
+                codec_id, available_encoders
+            )
+            if available_encoders and resolved_codec not in available_encoders:
+                available = ", ".join(sorted(available_encoders))
+                QMessageBox.critical(
+                    self,
+                    "Encoder Unavailable",
+                    (
+                        f"Requested encoder '{codec_id}' is not available.\n\n"
+                        f"Available encoders: {available}"
+                    ),
+                )
+                return
+            if fallback_warning:
+                QMessageBox.warning(
+                    self,
+                    "Encoder Unavailable",
+                    f"{fallback_warning}\n\nUsing '{resolved_codec}' for this conversion.",
+                )
+                self.log_text.appendPlainText(f"WARNING: {fallback_warning}")
+                for idx, mapped_codec in self._codec_map.items():
+                    if mapped_codec == resolved_codec:
+                        self.codec_combo.setCurrentIndex(idx)
+                        break
+            config_builder.with_codec(resolved_codec)
 
             # Frame range
             start_frame = self.start_frame_spin.value()

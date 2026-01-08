@@ -60,7 +60,15 @@ class TestColorSpaceConverter:
                     converter.convert(test_image)
             elif preset == ColorSpacePreset.LINEAR_TO_REC709:
                 if not _has_oiio_colorspace_candidates(
-                    ["Rec709", "Rec.709", "rec709", "BT.709", "bt709", "Output - Rec.709", "Output - Rec709"]
+                    [
+                        "Rec709",
+                        "Rec.709",
+                        "rec709",
+                        "BT.709",
+                        "bt709",
+                        "Output - Rec.709",
+                        "Output - Rec709",
+                    ]
                 ):
                     pytest.skip("Rec.709 colorspace not available in OCIO config.")
                 result = converter.convert(test_image)
