@@ -28,7 +28,7 @@ class RenderKit:
         color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB,
         width: Optional[int] = None,
         height: Optional[int] = None,
-        codec: str = "libx265",
+        codec: str = "libx264",
         quality: int = 10,
         layer: Optional[str] = None,
         start_frame: Optional[int] = None,
@@ -45,7 +45,7 @@ class RenderKit:
             color_space_preset: Color space conversion preset
             width: Output width (optional, uses source width if not provided)
             height: Output height (optional, uses source height if not provided)
-            codec: Video codec (default: "libx265")
+            codec: Video codec (default: "libx264")
             quality: Video quality (0-10), 10 is best (default: 10)
             layer: Optional EXR layer to extract (default: None)
             start_frame: Start frame number (optional)

@@ -34,7 +34,7 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burni
 | `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, `no_conversion` | `linear_to_srgb` |
 | `--width` | Output width | Source width |
 | `--height` | Output height | Source height |
-| `--codec` | Video codec (`libx265`, `libaom-av1`) | `libx265` |
+| `--codec` | Video codec (`libx264`, `libx265`, `libaom-av1`) | `libx264` |
 | `--layer` | EXR layer/AOV to extract | None |
 | `--start-frame` | Start frame number | First frame |
 | `--end-frame` | End frame number | Last frame |
@@ -62,7 +62,7 @@ processor.convert_exr_sequence_to_mp4(
     output_path="output.mp4",
     fps=24.0,
     quality=10,  # 0-10 scale
-    codec="libx265",
+    codec="libx264",
 )
 ```
 
@@ -83,7 +83,7 @@ config = (
     .with_color_space_preset(ColorSpacePreset.OCIO_CONVERSION)
     .with_explicit_input_color_space("ACES - ACEScg")
     .with_resolution(3840, 2160)
-    .with_codec("libx265")
+    .with_codec("libx264")
     .with_contact_sheet(
         True,
         ContactSheetConfig(columns=4, thumbnail_width=512, padding=10, show_labels=True),

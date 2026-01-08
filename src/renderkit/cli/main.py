@@ -53,8 +53,8 @@ def main() -> None:
 @click.option(
     "--codec",
     type=str,
-    default="libx265",
-    help="Video codec (default: libx265, use 'libaom-av1' for AV1)",
+    default="libx264",
+    help="Video codec (default: libx264, use 'libaom-av1' for AV1)",
 )
 @click.option(
     "--quality",

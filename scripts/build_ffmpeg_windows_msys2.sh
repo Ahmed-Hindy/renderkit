@@ -32,9 +32,9 @@ cd "ffmpeg-${FFMPEG_VERSION}"
   --enable-muxer=mov,mp4 \
   --enable-filter=scale,format \
   --enable-swscale \
-  --enable-libx265 --enable-libaom \
-  --enable-encoder=libx265,libaom-av1 \
-  --enable-parser=hevc,av1
+  --enable-libx264 --enable-libx265 --enable-libaom \
+  --enable-encoder=libx264,libx265,libaom-av1 \
+  --enable-parser=h264,hevc,av1
 
 make -j"$(nproc)"
 make install

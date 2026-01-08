@@ -839,7 +839,8 @@ class ModernMainWindow(QMainWindow):
         """Populate codec combo box with standard FFmpeg codecs."""
         # Codecs supported by the bundled FFmpeg build.
         codecs = [
-            ("libx265", "H.265 (HEVC) - Recommended"),
+            ("libx264", "H.264 (AVC) - Default"),
+            ("libx265", "H.265 (HEVC)"),
             ("libaom-av1", "AV1 - Maximum Compression"),
         ]
 
@@ -1224,7 +1225,7 @@ class ModernMainWindow(QMainWindow):
 
             # Codec
             codec_index = self.codec_combo.currentIndex()
-            codec_id = self._codec_map.get(codec_index, "libx265")
+            codec_id = self._codec_map.get(codec_index, "libx264")
             config_builder.with_codec(codec_id)
 
             # Frame range

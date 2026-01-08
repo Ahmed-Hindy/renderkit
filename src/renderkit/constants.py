@@ -48,4 +48,4 @@ COLOR_SPACE_UI_OPTIONS = [
 
 # Supported Formats
 OIIO_SUPPORTED_EXTENSIONS = {"exr", "png", "jpg", "jpeg", "tif", "tiff", "dpx"}
-SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mkv", "mov", "avi"}
+SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mov"}
