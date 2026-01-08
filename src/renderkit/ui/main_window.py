@@ -35,6 +35,7 @@ from renderkit.ui.qt_compat import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QObject,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -46,10 +47,28 @@ from renderkit.ui.qt_compat import (
     QUrl,
     QVBoxLayout,
     QWidget,
+    Signal,
 )
 from renderkit.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
+
+
+class QtLogHandler(QObject, logging.Handler):
+    """Logging handler that forwards messages to the UI thread."""
+
+    message = Signal(str)
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        QObject.__init__(self, parent)
+        logging.Handler.__init__(self)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+        except Exception:
+            msg = record.getMessage()
+        self.message.emit(msg)
 
 
 class ModernMainWindow(QMainWindow):
@@ -61,6 +80,7 @@ class ModernMainWindow(QMainWindow):
         self.settings = QSettings("RenderKit", "RenderKit")
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
+        self._qt_log_handler: Optional[QtLogHandler] = None
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -70,8 +90,24 @@ class ModernMainWindow(QMainWindow):
 
         self._apply_theme()
         self._setup_ui()
+        self._setup_logging()
         self._load_settings()
         self._setup_connections()
+
+    def _setup_logging(self) -> None:
+        """Route renderkit logs into the UI log widget."""
+        if self._qt_log_handler is not None:
+            return
+        handler = QtLogHandler(self)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        handler.message.connect(self._on_log_message)
+
+        renderkit_logger = logging.getLogger("renderkit")
+        if not any(isinstance(h, QtLogHandler) for h in renderkit_logger.handlers):
+            renderkit_logger.addHandler(handler)
+        renderkit_logger.setLevel(logging.INFO)
+        self._qt_log_handler = handler
 
     def _apply_theme(self) -> None:
         """Apply a theme from QSS file."""

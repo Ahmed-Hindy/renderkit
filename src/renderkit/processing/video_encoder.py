@@ -1,6 +1,9 @@
 """Video encoding using imageio/FFmpeg."""
 
 import logging
+import os
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +50,53 @@ class VideoEncoder:
         self._height: Optional[int] = None
         self._adjusted_width: Optional[int] = None
         self._adjusted_height: Optional[int] = None
+        self._ffmpeg_report_path: Optional[Path] = None
+        self._ffreport_prev: Optional[str] = None
+        self._ffreport_set: bool = False
+
+    def _configure_ffmpeg_report(self) -> Optional[Path]:
+        """Enable ffmpeg report logging (on by default)."""
+        value = os.environ.get("RENDERKIT_FFMPEG_LOG", "1")
+        if value.lower() in {"0", "false", "no", "off"}:
+            return None
+        if value.lower() in {"1", "true", "yes", "on"}:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            path = Path(tempfile.gettempdir()) / f"renderkit-ffmpeg-{stamp}.log"
+        else:
+            path = Path(value).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if "FFREPORT" in os.environ:
+            self._ffreport_prev = os.environ["FFREPORT"]
+        else:
+            self._ffreport_prev = None
+        os.environ["FFREPORT"] = f"file={path}:level=48"
+        self._ffreport_set = True
+        return path
+
+    def _restore_ffmpeg_report_env(self) -> None:
+        if not self._ffreport_set:
+            return
+        if self._ffreport_prev is None:
+            os.environ.pop("FFREPORT", None)
+        else:
+            os.environ["FFREPORT"] = self._ffreport_prev
+        self._ffreport_set = False
+
+    def _read_ffmpeg_report_tail(self, max_lines: int = 80) -> Optional[str]:
+        if self._ffmpeg_report_path is None:
+            return None
+        if not self._ffmpeg_report_path.exists():
+            return None
+        try:
+            content = self._ffmpeg_report_path.read_text(errors="ignore")
+        except Exception:
+            return None
+        lines = [line for line in content.splitlines() if line.strip()]
+        if not lines:
+            return None
+        tail = "\n".join(lines[-max_lines:])
+        return f"FFMPEG REPORT (tail) [{self._ffmpeg_report_path}]:\n{tail}"
 
     @staticmethod
     def _make_divisible(dimension: int, divisor: int = 16) -> int:
@@ -112,6 +162,10 @@ class VideoEncoder:
             "macro_block_size": self.macro_block_size,
             "pixelformat": "yuv420p",
         }
+        self._ffmpeg_report_path = self._configure_ffmpeg_report()
+        if self._ffmpeg_report_path is not None:
+            writer_kwargs["ffmpeg_log_level"] = "info"
+            logger.info("FFmpeg report enabled: %s", self._ffmpeg_report_path)
 
         # Set default FFmpeg parameters for broad compatibility and web optimization
         # -movflags +faststart enables progressive loading for web playback
@@ -156,6 +210,8 @@ class VideoEncoder:
             writer_kwargs["bitrate"] = f"{self.bitrate}k"
 
         # Apply final FFmpeg parameters
+        if self._ffmpeg_report_path is not None:
+            ffmpeg_params.extend(["-report", "-loglevel", "info"])
         writer_kwargs["ffmpeg_params"] = ffmpeg_params
 
         try:
@@ -176,11 +232,14 @@ class VideoEncoder:
             # Catch common issues with missing ffmpeg backend
             msg = str(e)
             if "ffmpeg" in msg.lower():
+                self._restore_ffmpeg_report_env()
                 raise VideoEncodingError(
                     "FFmpeg backend not found. Please install imageio-ffmpeg: 'pip install imageio-ffmpeg'"
                 ) from e
+            self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:
+            self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 
     def write_frame(self, frame: np.ndarray) -> None:
@@ -217,6 +276,11 @@ class VideoEncoder:
         try:
             self._writer.append_data(frame)
         except Exception as e:
+            report_tail = self._read_ffmpeg_report_tail()
+            if report_tail:
+                raise VideoEncodingError(
+                    f"Failed to write frame to video: {e}\n\n{report_tail}"
+                ) from e
             raise VideoEncodingError(f"Failed to write frame to video: {e}") from e
 
     def close(self) -> None:
@@ -229,6 +293,7 @@ class VideoEncoder:
                 logger.error(f"Error closing video writer: {e}")
             finally:
                 self._writer = None
+        self._restore_ffmpeg_report_env()
 
     def is_initialized(self) -> bool:
         """Check if encoder is initialized."""
