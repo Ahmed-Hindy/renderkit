@@ -10,6 +10,17 @@ vendor_dir="${repo_root}/vendor/ffmpeg/windows"
 tarball="ffmpeg-${FFMPEG_VERSION}.tar.xz"
 tarball_url="https://ffmpeg.org/releases/${tarball}"
 
+export PATH="/ucrt64/bin:${PATH}"
+export PKG_CONFIG="/ucrt64/bin/pkgconf"
+export PKG_CONFIG_PATH="/ucrt64/lib/pkgconfig"
+
+for pkg in x264 x265 aom; do
+  if ! "${PKG_CONFIG}" --exists "$pkg"; then
+    echo "Missing pkg-config package: $pkg" >&2
+    exit 1
+  fi
+done
+
 rm -rf "${build_root}"
 mkdir -p "${build_root}"
 cd "${build_root}"
@@ -31,13 +42,19 @@ cd "ffmpeg-${FFMPEG_VERSION}"
   --enable-decoder=rawvideo \
   --enable-muxer=mov,mp4 \
   --enable-filter=scale,format \
+  --enable-bsf=extract_extradata \
   --enable-swscale \
   --enable-libx264 --enable-libx265 --enable-libaom \
-  --enable-encoder=libx264,libx265,libaom-av1 \
+  --enable-encoder=libx264,libx265,libaom_av1 \
   --enable-parser=h264,hevc,av1
 
 make -j"$(nproc)"
 make install
+
+if ! "${build_root}/ffmpeg/build/bin/ffmpeg.exe" -hide_banner -encoders 2>&1 | grep -qi "libaom"; then
+  echo "libaom-av1 encoder was not enabled in the FFmpeg build." >&2
+  exit 1
+fi
 
 mkdir -p "${vendor_dir}"
 cp -f "${build_root}/ffmpeg/build/bin/ffmpeg.exe" "${vendor_dir}/ffmpeg.exe"

@@ -133,10 +133,22 @@ jobs:
         id: ffmpeg-version-macos
         shell: bash
         run: |
-          version="$(brew info ffmpeg --json=v2 | python - <<'PY'
-          import json, sys
-          data = json.load(sys.stdin)
-          print(data["formulae"][0]["versions"]["stable"])
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          export HOMEBREW_NO_ENV_HINTS=1
+          brew_info="$(brew info --json=v2 ffmpeg 2>/dev/null || true)"
+          version="$(BREW_INFO="$brew_info" python - <<'PY'
+          import json
+          import os
+          data = os.environ.get("BREW_INFO", "").strip()
+          if not data:
+              print("unknown")
+          else:
+              try:
+                  parsed = json.loads(data)
+                  print(parsed["formulae"][0]["versions"]["stable"])
+              except Exception:
+                  print("unknown")
           PY
           )"
           echo "version=$version" >> "$GITHUB_OUTPUT"
