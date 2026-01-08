@@ -15,6 +15,7 @@ from renderkit.core.config import (
 )
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.io.file_utils import FileUtils
+from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.icons import icon_manager
@@ -54,21 +55,10 @@ from renderkit.ui.widgets import PreviewWidget
 logger = logging.getLogger(__name__)
 
 
-class QtLogHandler(QObject, logging.Handler):
-    """Logging handler that forwards messages to the UI thread."""
+class UiLogForwarder(QObject):
+    """Signal-based forwarder for log messages."""
 
     message = Signal(str)
-
-    def __init__(self, parent: Optional[QObject] = None) -> None:
-        QObject.__init__(self, parent)
-        logging.Handler.__init__(self)
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            msg = self.format(record)
-        except Exception:
-            msg = record.getMessage()
-        self.message.emit(msg)
 
 
 class ModernMainWindow(QMainWindow):
@@ -80,7 +70,7 @@ class ModernMainWindow(QMainWindow):
         self.settings = QSettings("RenderKit", "RenderKit")
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
-        self._qt_log_handler: Optional[QtLogHandler] = None
+        self._log_forwarder: Optional[UiLogForwarder] = None
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -96,18 +86,13 @@ class ModernMainWindow(QMainWindow):
 
     def _setup_logging(self) -> None:
         """Route renderkit logs into the UI log widget."""
-        if self._qt_log_handler is not None:
+        if self._log_forwarder is not None:
             return
-        handler = QtLogHandler(self)
-        handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-        handler.message.connect(self._on_log_message)
-
-        renderkit_logger = logging.getLogger("renderkit")
-        if not any(isinstance(h, QtLogHandler) for h in renderkit_logger.handlers):
-            renderkit_logger.addHandler(handler)
-        renderkit_logger.setLevel(logging.INFO)
-        self._qt_log_handler = handler
+        forwarder = UiLogForwarder(self)
+        forwarder.message.connect(self._on_log_message)
+        log_path = setup_logging(ui_sink=forwarder.message.emit, enable_console=False)
+        self._on_log_message(f"Log file: {log_path}")
+        self._log_forwarder = forwarder
 
     def _apply_theme(self) -> None:
         """Apply a theme from QSS file."""
