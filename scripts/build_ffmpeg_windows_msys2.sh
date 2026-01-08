@@ -6,7 +6,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 build_root="${repo_root}/_ffmpeg_build"
-vendor_dir="${repo_root}/vendor/ffmpeg"
+vendor_dir="${repo_root}/vendor/ffmpeg/windows"
 tarball="ffmpeg-${FFMPEG_VERSION}.tar.xz"
 tarball_url="https://ffmpeg.org/releases/${tarball}"
 

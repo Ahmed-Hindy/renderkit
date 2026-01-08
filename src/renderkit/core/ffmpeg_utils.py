@@ -16,6 +16,22 @@ def _find_repo_root(start: Path) -> Optional[Path]:
     return None
 
 
+def _get_vendor_ffmpeg_candidates(root: Path) -> list[Path]:
+    vendor_root = root / "vendor" / "ffmpeg"
+    platform_map = {
+        "win32": "windows",
+        "linux": "linux",
+        "darwin": "macos",
+    }
+    platform_dir = platform_map.get(sys.platform)
+    names = ["ffmpeg.exe"] if sys.platform == "win32" else ["ffmpeg"]
+    candidates = []
+    if platform_dir:
+        platform_root = vendor_root / platform_dir
+        candidates.extend(platform_root / name for name in names)
+    return candidates
+
+
 def ensure_ffmpeg_env() -> None:
     """Set IMAGEIO_FFMPEG_EXE if a bundled FFmpeg binary is available."""
     if os.environ.get("IMAGEIO_FFMPEG_EXE"):
@@ -24,15 +40,19 @@ def ensure_ffmpeg_env() -> None:
     candidates = []
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         base = Path(sys._MEIPASS)
-        candidates.append(base / "ffmpeg" / "ffmpeg.exe")
-        candidates.append(base / "ffmpeg.exe")
+        if sys.platform == "win32":
+            candidates.append(base / "ffmpeg" / "ffmpeg.exe")
+            candidates.append(base / "ffmpeg.exe")
+        else:
+            candidates.append(base / "ffmpeg" / "ffmpeg")
+            candidates.append(base / "ffmpeg")
 
     package_root = Path(__file__).resolve().parents[1]
-    candidates.append(package_root / "vendor" / "ffmpeg" / "ffmpeg.exe")
+    candidates.extend(_get_vendor_ffmpeg_candidates(package_root))
 
     repo_root = _find_repo_root(Path(__file__).resolve().parent)
     if repo_root:
-        candidates.append(repo_root / "vendor" / "ffmpeg" / "ffmpeg.exe")
+        candidates.extend(_get_vendor_ffmpeg_candidates(repo_root))
 
     for candidate in candidates:
         if candidate.is_file():

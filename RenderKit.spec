@@ -17,12 +17,31 @@ datas += copy_metadata('imageio')
 datas += copy_metadata('imageio-ffmpeg')
 hiddenimports += ["imageio_ffmpeg"]
 
-vendor_ffmpeg_dir = Path("vendor") / "ffmpeg"
-if vendor_ffmpeg_dir.exists():
+vendor_ffmpeg_root = Path("vendor") / "ffmpeg"
+platform_dir_map = {
+    "win32": "windows",
+    "linux": "linux",
+    "darwin": "macos",
+}
+platform_dir = platform_dir_map.get(sys.platform)
+vendor_ffmpeg_dir = None
+if platform_dir:
+    candidate_dir = vendor_ffmpeg_root / platform_dir
+    if candidate_dir.exists():
+        vendor_ffmpeg_dir = candidate_dir
+
+def _should_include_ffmpeg_path(path: Path) -> bool:
+    if sys.platform == "win32":
+        return path.suffix.lower() in {".exe", ".dll"}
+    if path.name == "ffmpeg":
+        return True
+    return path.suffix.lower() in {".so", ".dylib"}
+
+if vendor_ffmpeg_dir and vendor_ffmpeg_dir.exists():
     for ffmpeg_path in vendor_ffmpeg_dir.iterdir():
         if not ffmpeg_path.is_file():
             continue
-        if ffmpeg_path.suffix.lower() in {".exe", ".dll"}:
+        if _should_include_ffmpeg_path(ffmpeg_path):
             binaries.append((str(ffmpeg_path), "ffmpeg"))
 
 qt_excludes = [
