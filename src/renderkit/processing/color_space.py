@@ -13,7 +13,15 @@ logger = logging.getLogger(__name__)
 
 _OIIO_LINEAR_CANDIDATES = ["linear", "Linear", "scene_linear", "scene-linear"]
 _OIIO_SRGB_CANDIDATES = ["sRGB", "srgb", "Output - sRGB", "srgb_display", "out_srgb"]
-_OIIO_REC709_CANDIDATES = ["Rec709", "Rec.709", "rec709", "BT.709", "bt709"]
+_OIIO_REC709_CANDIDATES = [
+    "Rec709",
+    "Rec.709",
+    "rec709",
+    "BT.709",
+    "bt709",
+    "Output - Rec.709",
+    "Output - Rec709",
+]
 _OIIO_COLOR_SPACE_CACHE: dict[str, str] | None = None
 
 
@@ -24,12 +32,31 @@ def _get_oiio_color_space_map(oiio) -> dict[str, str]:
     try:
         config = oiio.ColorConfig()
         names = config.getColorSpaceNames()
-        if names:
-            _OIIO_COLOR_SPACE_CACHE = {name.lower(): name for name in names}
-        else:
-            _OIIO_COLOR_SPACE_CACHE = {}
-    except Exception:
-        _OIIO_COLOR_SPACE_CACHE = {}
+        if not names:
+            raise ColorSpaceError("OCIO config does not define any color spaces.")
+        _OIIO_COLOR_SPACE_CACHE = {name.lower(): name for name in names}
+        role_candidates = [
+            "scene_linear",
+            "reference",
+            "default",
+            "data",
+            "color_picking",
+            "interchange_display",
+            "interchange_scene",
+            "compositing_log",
+            "texture_paint",
+            "matte_paint",
+            "rendering",
+        ]
+        for role in role_candidates:
+            try:
+                role_name = config.getColorSpaceNameByRole(role)
+            except Exception:
+                role_name = None
+            if role_name:
+                _OIIO_COLOR_SPACE_CACHE[role.lower()] = role_name
+    except Exception as e:
+        raise ColorSpaceError(f"Failed to load OCIO config from OIIO: {e}") from e
     return _OIIO_COLOR_SPACE_CACHE
 
 
@@ -38,7 +65,13 @@ def _resolve_oiio_spaces(candidates: list[str], space_map: dict[str, str]) -> li
         return candidates
     resolved = []
     for name in candidates:
-        actual = space_map.get(name.lower())
+        key = name.lower()
+        actual = space_map.get(key)
+        if actual:
+            resolved.append(actual)
+            continue
+        normalized = key.replace("-", "_").replace(" ", "_")
+        actual = space_map.get(normalized)
         if actual:
             resolved.append(actual)
     return resolved or candidates
@@ -70,6 +103,7 @@ def _oiio_colorconvert(
         from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
         to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
 
+        errors: list[str] = []
         for from_space in from_candidates:
             for to_space in to_candidates:
                 if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
@@ -77,6 +111,14 @@ def _oiio_colorconvert(
                     if pixels.ndim == 1:
                         return pixels.reshape((height, width, channels))
                     return pixels
+                err = dst_buf.geterror()
+                if err:
+                    errors.append(err)
+        if errors:
+            message = " ".join(errors)
+            raise ColorSpaceError(message.strip())
+    except ColorSpaceError:
+        raise
     except Exception as e:
         raise ColorSpaceError(f"OIIO color conversion failed: {e}") from e
 
@@ -117,14 +159,13 @@ class OCIOColorSpaceStrategy:
         self.config = None
         try:
             import PyOpenColorIO as OCIO
+        except ImportError as e:
+            raise ColorSpaceError("PyOpenColorIO not available.") from e
 
-            try:
-                self.config = OCIO.GetCurrentConfig()
-            except Exception as e:
-                logger.warning(f"Failed to get OCIO config: {e}")
-                self.config = None
-        except ImportError:
-            logger.warning("PyOpenColorIO not found. OCIO conversion disabled.")
+        try:
+            self.config = OCIO.GetCurrentConfig()
+        except Exception as e:
+            raise ColorSpaceError(f"Failed to get OCIO config: {e}") from e
 
     def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
         """Convert image using OCIO.
