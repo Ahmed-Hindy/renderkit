@@ -47,6 +47,7 @@ from renderkit.ui.qt_compat import (
     QProgressBar,
     QPushButton,
     QSettings,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -59,6 +60,10 @@ from renderkit.ui.qt_compat import (
 from renderkit.ui.widgets import PreviewWidget
 
 logger = logging.getLogger(__name__)
+
+RECENT_PATTERNS_LIMIT = 10
+RECENT_PATTERNS_KEY = "recent_patterns"
+RECENT_PATTERNS_CLEAR_LABEL = "Clear recent patterns"
 
 
 class NoWheelSpinBox(QSpinBox):
@@ -101,6 +106,14 @@ class NoWheelComboBox(QComboBox):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
+        size_adjust_policy = getattr(QComboBox, "SizeAdjustPolicy", None)
+        if size_adjust_policy is not None:
+            self.setSizeAdjustPolicy(size_adjust_policy.AdjustToMinimumContentsLengthWithIcon)
+        else:
+            self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(12)
         line_edit = self.lineEdit()
         if line_edit is not None:
             line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -118,6 +131,8 @@ class NoWheelSlider(QSlider):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
 
     def wheelEvent(self, event) -> None:
         if not self.hasFocus():
@@ -143,6 +158,9 @@ class ModernMainWindow(QMainWindow):
         self._conversion_finished_flag = False
         self._log_forwarder: Optional[UiLogForwarder] = None
         self._ocio_role_display_map: dict[str, str] = {}
+        self._recent_patterns: list[str] = []
+        self._last_pattern_text = ""
+        self._convert_btn_handler: Optional[str] = None
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -178,8 +196,7 @@ class ModernMainWindow(QMainWindow):
             return
         forwarder = UiLogForwarder(self)
         forwarder.message.connect(self._on_log_message)
-        log_path = setup_logging(ui_sink=forwarder.message.emit, enable_console=False)
-        self._on_log_message(f"Log file: {log_path}")
+        setup_logging(ui_sink=forwarder.message.emit, enable_console=False)
         self._log_forwarder = forwarder
 
     def _apply_theme(self) -> None:
@@ -238,6 +255,8 @@ class ModernMainWindow(QMainWindow):
 
         # Set splitter proportions (70% left, 30% right)
         self.main_splitter.setSizes([700, 300])
+        self.main_splitter.setStretchFactor(0, 3)
+        self.main_splitter.setStretchFactor(1, 1)
 
         # Bottom panel - Action buttons
         action_panel = self._create_action_panel()
@@ -248,6 +267,13 @@ class ModernMainWindow(QMainWindow):
 
         # Status bar
         self.statusBar().showMessage("Ready")
+
+    def _set_form_growth_policy(self, form_layout: QFormLayout) -> None:
+        policy_enum = getattr(QFormLayout, "FieldGrowthPolicy", None)
+        if policy_enum is not None:
+            form_layout.setFieldGrowthPolicy(policy_enum.AllNonFixedFieldsGrow)
+        else:
+            form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
     def resizeEvent(self, event):
         """Handle window resize to adjust layout responsively."""
@@ -356,6 +382,13 @@ class ModernMainWindow(QMainWindow):
         scroll.setWidget(container)
         main_layout.addWidget(scroll)
 
+        reset_layout = QHBoxLayout()
+        reset_layout.addStretch()
+        self.reset_settings_btn = QPushButton("Reset to defaults")
+        self.reset_settings_btn.setToolTip("Reset settings panels to default values.")
+        reset_layout.addWidget(self.reset_settings_btn)
+        main_layout.addLayout(reset_layout)
+
         return panel
 
     def _create_input_sequence_content(self) -> QVBoxLayout:
@@ -366,16 +399,30 @@ class ModernMainWindow(QMainWindow):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        self._set_form_growth_policy(form_layout)
 
         # Input pattern
         input_pattern_layout = QHBoxLayout()
-        self.input_pattern_edit = QLineEdit()
-        self.input_pattern_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
-        input_pattern_layout.addWidget(self.input_pattern_edit)
-        self.browse_input_btn = QPushButton("Browse...")
+        self.input_pattern_combo = NoWheelComboBox()
+        self.input_pattern_combo.setEditable(True)
+        insert_policy = getattr(QComboBox, "InsertPolicy", None)
+        if insert_policy is not None:
+            self.input_pattern_combo.setInsertPolicy(insert_policy.NoInsert)
+        else:
+            self.input_pattern_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.input_pattern_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
+        self.input_pattern_combo.setToolTip("Enter a pattern or pick a recent one.")
+        self.input_pattern_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.input_pattern_combo.setMinimumWidth(0)
+        input_pattern_layout.addWidget(self.input_pattern_combo)
+        self.browse_input_btn = QPushButton("Browse")
         self.browse_input_btn.setMaximumWidth(100)
         self.browse_input_btn.setIcon(icon_manager.get_icon("browse"))
         input_pattern_layout.addWidget(self.browse_input_btn)
+        input_pattern_layout.setStretch(0, 1)
+        input_pattern_layout.setStretch(1, 0)
         form_layout.addRow("Pattern:", input_pattern_layout)
 
         # Frame Range
@@ -407,6 +454,8 @@ class ModernMainWindow(QMainWindow):
         # Layer Selection
         self.layer_combo = NoWheelComboBox()
         self.layer_combo.addItems(["RGBA"])
+        self.layer_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.layer_combo.setMinimumWidth(0)
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
         form_layout.addRow("Layer:", self.layer_combo)
@@ -416,8 +465,11 @@ class ModernMainWindow(QMainWindow):
         # Color Space (merged from separate section)
         color_form = QFormLayout()
         color_form.setSpacing(10)
+        self._set_form_growth_policy(color_form)
 
         self.color_space_combo = NoWheelComboBox()
+        self.color_space_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.color_space_combo.setMinimumWidth(0)
         self.color_space_combo.setEditable(True)
         self.color_space_combo.setEditable(False)
         self._populate_color_space_combo(self.color_space_combo)
@@ -442,16 +494,27 @@ class ModernMainWindow(QMainWindow):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        self._set_form_growth_policy(form_layout)
 
         # Output path
         output_path_layout = QHBoxLayout()
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setPlaceholderText("Select output video file...")
+        self.output_path_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.output_path_edit.setMinimumWidth(0)
         output_path_layout.addWidget(self.output_path_edit)
-        self.browse_output_btn = QPushButton("Browse...")
+        self.browse_output_btn = QPushButton("Browse")
         self.browse_output_btn.setMaximumWidth(100)
         self.browse_output_btn.setIcon(icon_manager.get_icon("browse"))
         output_path_layout.addWidget(self.browse_output_btn)
+        self.output_validation_label = QLabel("")
+        self.output_validation_label.setMinimumWidth(70)
+        self.output_validation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.output_validation_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        output_path_layout.addWidget(self.output_validation_label)
+        output_path_layout.setStretch(0, 1)
+        output_path_layout.setStretch(1, 0)
+        output_path_layout.setStretch(2, 0)
         form_layout.addRow("Output Path:", output_path_layout)
 
         layout.addLayout(form_layout)
@@ -477,16 +540,30 @@ class ModernMainWindow(QMainWindow):
         input_group = QGroupBox("Input Sequence")
         input_layout = QFormLayout(input_group)
         input_layout.setSpacing(10)
+        self._set_form_growth_policy(input_layout)
         input_layout.setContentsMargins(12, 18, 12, 12)
 
         # Input pattern
         input_pattern_layout = QHBoxLayout()
-        self.input_pattern_edit = QLineEdit()
-        self.input_pattern_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
-        input_pattern_layout.addWidget(self.input_pattern_edit)
-        self.browse_input_btn = QPushButton("Browse...")
+        self.input_pattern_combo = NoWheelComboBox()
+        self.input_pattern_combo.setEditable(True)
+        insert_policy = getattr(QComboBox, "InsertPolicy", None)
+        if insert_policy is not None:
+            self.input_pattern_combo.setInsertPolicy(insert_policy.NoInsert)
+        else:
+            self.input_pattern_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.input_pattern_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("e.g., render.%04d.exr or render.####.exr")
+        self.input_pattern_combo.setToolTip("Enter a pattern or pick a recent one.")
+        self.input_pattern_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.input_pattern_combo.setMinimumWidth(0)
+        input_pattern_layout.addWidget(self.input_pattern_combo)
+        self.browse_input_btn = QPushButton("Browse")
         self.browse_input_btn.setMaximumWidth(100)
         input_pattern_layout.addWidget(self.browse_input_btn)
+        input_pattern_layout.setStretch(0, 1)
+        input_pattern_layout.setStretch(1, 0)
         input_layout.addRow("Pattern:", input_pattern_layout)
 
         # Frame Range
@@ -518,6 +595,8 @@ class ModernMainWindow(QMainWindow):
         # Layer Selection
         self.layer_combo = NoWheelComboBox()
         self.layer_combo.addItems(["RGBA"])
+        self.layer_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.layer_combo.setMinimumWidth(0)
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
         input_layout.addRow("Layer:", self.layer_combo)
@@ -528,9 +607,12 @@ class ModernMainWindow(QMainWindow):
         color_group = QGroupBox("Input Color Space")
         color_layout = QFormLayout(color_group)
         color_layout.setSpacing(10)
+        self._set_form_growth_policy(color_layout)
         color_layout.setContentsMargins(12, 18, 12, 12)
 
         self.color_space_combo = NoWheelComboBox()
+        self.color_space_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.color_space_combo.setMinimumWidth(0)
         self.color_space_combo.setEditable(True)  # Allow custom input space names
         self.color_space_combo.setEditable(False)
         self._populate_color_space_combo(self.color_space_combo)
@@ -559,16 +641,21 @@ class ModernMainWindow(QMainWindow):
         output_group = QGroupBox("Output File")
         output_layout = QFormLayout(output_group)
         output_layout.setSpacing(10)
+        self._set_form_growth_policy(output_layout)
         output_layout.setContentsMargins(12, 18, 12, 12)
 
         # Output path
         output_path_layout = QHBoxLayout()
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setPlaceholderText("Select output video file...")
+        self.output_path_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.output_path_edit.setMinimumWidth(0)
         output_path_layout.addWidget(self.output_path_edit)
-        self.browse_output_btn = QPushButton("Browse...")
+        self.browse_output_btn = QPushButton("Browse")
         self.browse_output_btn.setMaximumWidth(100)
         output_path_layout.addWidget(self.browse_output_btn)
+        output_path_layout.setStretch(0, 1)
+        output_path_layout.setStretch(1, 0)
         output_layout.addRow("Output Path:", output_path_layout)
 
         layout.addWidget(output_group)
@@ -577,6 +664,7 @@ class ModernMainWindow(QMainWindow):
         video_group = QGroupBox("Video Settings")
         video_layout = QFormLayout(video_group)
         video_layout.setSpacing(10)
+        self._set_form_growth_policy(video_layout)
         video_layout.setContentsMargins(12, 18, 12, 12)
 
         # FPS
@@ -589,6 +677,11 @@ class ModernMainWindow(QMainWindow):
 
         # Resolution
         resolution_layout = QHBoxLayout()
+        self.keep_resolution_check = QCheckBox("Keep source resolution")
+        self.keep_resolution_check.setChecked(True)
+        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
+        resolution_layout.addWidget(self.keep_resolution_check)
+
         self.width_spin = NoWheelSpinBox()
         self.width_spin.setMinimum(1)
         self.width_spin.setMaximum(7680)
@@ -605,10 +698,6 @@ class ModernMainWindow(QMainWindow):
         resolution_layout.addWidget(QLabel("Height:"))
         resolution_layout.addWidget(self.height_spin)
 
-        self.keep_resolution_check = QCheckBox("Keep source resolution")
-        self.keep_resolution_check.setChecked(True)
-        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
-        resolution_layout.addWidget(self.keep_resolution_check)
         resolution_layout.addStretch()
         video_layout.addRow("Resolution:", resolution_layout)
 
@@ -631,6 +720,8 @@ class ModernMainWindow(QMainWindow):
 
         quality_layout.addWidget(self.quality_slider)
         quality_layout.addWidget(self.quality_label)
+        quality_layout.setStretch(0, 1)
+        quality_layout.setStretch(1, 0)
         video_layout.addRow("Visual Quality:", quality_layout)
 
         # Contact Sheet Mode Toggle
@@ -701,6 +792,7 @@ class ModernMainWindow(QMainWindow):
         grid_group = QGroupBox("Grid Layout")
         grid_layout = QFormLayout(grid_group)
         grid_layout.setSpacing(10)
+        self._set_form_growth_policy(grid_layout)
 
         self.cs_enable_check = QCheckBox("Enable Contact Sheet")
         self.cs_enable_check.setToolTip("Enable or disable contact sheet generation")
@@ -730,6 +822,7 @@ class ModernMainWindow(QMainWindow):
         # Labels Group
         labels_group = QGroupBox("Labels")
         labels_layout = QFormLayout(labels_group)
+        self._set_form_growth_policy(labels_layout)
 
         self.cs_show_labels_check = QCheckBox("Show filename labels")
         self.cs_show_labels_check.setChecked(True)
@@ -755,6 +848,7 @@ class ModernMainWindow(QMainWindow):
         perf_group = QGroupBox("Performance")
         perf_layout = QFormLayout(perf_group)
         perf_layout.setSpacing(10)
+        self._set_form_growth_policy(perf_layout)
 
         self.multiprocessing_check = QCheckBox("Enable multiprocessing")
         self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
@@ -943,13 +1037,18 @@ class ModernMainWindow(QMainWindow):
         self.browse_input_btn.clicked.connect(self._browse_input_pattern)
         self.browse_output_btn.clicked.connect(self._browse_output_path)
         self.cancel_btn.clicked.connect(self._cancel_conversion)
-        self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
-        self.input_pattern_edit.editingFinished.connect(self._detect_sequence)
+        line_edit = self.input_pattern_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.textChanged.connect(self._on_pattern_changed)
+            line_edit.editingFinished.connect(self._detect_sequence)
+        self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
+        self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         self._set_convert_button_state(False)
+        self._update_output_path_validation()
 
         # Keyboard shortcuts
         self.convert_btn.setShortcut("Ctrl+Return")
@@ -959,21 +1058,167 @@ class ModernMainWindow(QMainWindow):
             self.convert_btn.setText("Cancel")
             self.convert_btn.setIcon(icon_manager.get_icon("close"))
             self.convert_btn.setToolTip("Cancel the running conversion.")
-            try:
-                self.convert_btn.clicked.disconnect(self._start_conversion)
-            except TypeError:
-                pass
-            self.convert_btn.clicked.connect(self._cancel_conversion)
+            if self._convert_btn_handler != "cancel":
+                if self._convert_btn_handler == "start":
+                    try:
+                        self.convert_btn.clicked.disconnect(self._start_conversion)
+                    except TypeError:
+                        pass
+                self.convert_btn.clicked.connect(self._cancel_conversion)
+                self._convert_btn_handler = "cancel"
             return
 
         self.convert_btn.setText("Convert")
         self.convert_btn.setIcon(icon_manager.get_icon("convert"))
         self.convert_btn.setToolTip("Start conversion.")
-        try:
-            self.convert_btn.clicked.disconnect(self._cancel_conversion)
-        except TypeError:
-            pass
-        self.convert_btn.clicked.connect(self._start_conversion)
+        if self._convert_btn_handler != "start":
+            if self._convert_btn_handler == "cancel":
+                try:
+                    self.convert_btn.clicked.disconnect(self._cancel_conversion)
+                except TypeError:
+                    pass
+            self.convert_btn.clicked.connect(self._start_conversion)
+            self._convert_btn_handler = "start"
+
+    def _load_recent_patterns(self) -> None:
+        recent = self.settings.value(RECENT_PATTERNS_KEY, [], type=list)
+        if recent is None:
+            recent_list = []
+        elif isinstance(recent, str):
+            recent_list = [recent]
+        else:
+            recent_list = list(recent)
+
+        self._recent_patterns = [
+            pattern.strip()
+            for pattern in recent_list
+            if isinstance(pattern, str) and pattern.strip()
+        ]
+        self._refresh_recent_patterns_combo()
+
+    def _save_recent_patterns(self) -> None:
+        self.settings.setValue(RECENT_PATTERNS_KEY, self._recent_patterns)
+
+    def _refresh_recent_patterns_combo(self) -> None:
+        if not hasattr(self, "input_pattern_combo"):
+            return
+
+        current_text = self.input_pattern_combo.currentText()
+        self.input_pattern_combo.blockSignals(True)
+        self.input_pattern_combo.clear()
+
+        for pattern in self._recent_patterns:
+            self.input_pattern_combo.addItem(pattern)
+
+        if self._recent_patterns:
+            self.input_pattern_combo.addItem(RECENT_PATTERNS_CLEAR_LABEL)
+
+        self.input_pattern_combo.setCurrentIndex(-1)
+        self.input_pattern_combo.setEditText(current_text)
+        self.input_pattern_combo.blockSignals(False)
+
+    def _add_recent_pattern(self, pattern: str) -> None:
+        cleaned = pattern.strip()
+        if not cleaned:
+            return
+
+        if cleaned in self._recent_patterns:
+            self._recent_patterns.remove(cleaned)
+        self._recent_patterns.insert(0, cleaned)
+        self._recent_patterns = self._recent_patterns[:RECENT_PATTERNS_LIMIT]
+        self._save_recent_patterns()
+        self._refresh_recent_patterns_combo()
+
+    def _clear_recent_patterns(self) -> None:
+        self._recent_patterns = []
+        self._save_recent_patterns()
+        self._refresh_recent_patterns_combo()
+        self.statusBar().showMessage("Recent patterns cleared", 3000)
+
+    def _on_recent_pattern_selected(self, index_or_text) -> None:
+        if isinstance(index_or_text, str):
+            pattern = index_or_text.strip()
+        else:
+            index = int(index_or_text)
+            if index < 0:
+                return
+            pattern = self.input_pattern_combo.itemText(index).strip()
+        if not pattern:
+            return
+        if pattern == RECENT_PATTERNS_CLEAR_LABEL:
+            self._clear_recent_patterns()
+            self.input_pattern_combo.setEditText(self._last_pattern_text)
+            return
+
+        self.input_pattern_combo.setEditText(pattern)
+        self._detect_sequence()
+
+    def _set_output_validation_state(self, is_valid: Optional[bool], message: str) -> None:
+        if is_valid is None:
+            self.output_validation_label.setText("")
+            self.output_validation_label.setStyleSheet("")
+            self.output_validation_label.setToolTip("")
+            return
+
+        if is_valid:
+            self.output_validation_label.setText("OK")
+            self.output_validation_label.setStyleSheet("color: #4CAF50;")
+            self.output_validation_label.setToolTip(message or "Output path looks valid.")
+            return
+
+        self.output_validation_label.setText("Error")
+        self.output_validation_label.setStyleSheet("color: #f44336;")
+        self.output_validation_label.setToolTip(message)
+
+    def _update_output_path_validation(self) -> None:
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            self._set_output_validation_state(None, "")
+            return
+
+        is_valid, error_msg = FileUtils.validate_output_filename(output_path)
+        if is_valid:
+            self._set_output_validation_state(True, "Output path looks valid.")
+        else:
+            self._set_output_validation_state(False, error_msg)
+
+    def _reset_settings_to_defaults(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Reset to Defaults",
+            "Reset settings panels to their default values?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.fps_spin.setValue(24)
+        self.width_spin.setValue(1920)
+        self.height_spin.setValue(1080)
+        self.codec_combo.setCurrentIndex(0)
+        self.keep_resolution_check.setChecked(True)
+        self.quality_slider.setValue(10)
+        self.multiprocessing_check.setChecked(False)
+        self.num_workers_spin.setValue(4)
+
+        self.burnin_enable_check.setChecked(False)
+        self.burnin_frame_check.setChecked(False)
+        self.burnin_layer_check.setChecked(False)
+        self.burnin_fps_check.setChecked(False)
+        self.burnin_opacity_spin.setValue(30)
+
+        self.cs_enable_check.setChecked(False)
+        self.cs_columns_spin.setValue(4)
+        self.cs_thumb_width_spin.setValue(512)
+        self.cs_padding_spin.setValue(10)
+        self.cs_show_labels_check.setChecked(True)
+        self.cs_font_size_spin.setValue(12)
+        self.cs_mode_check.setChecked(False)
+        if hasattr(self, "overwrite_check"):
+            self.overwrite_check.setChecked(True)
+
+        self._save_settings()
+        self.statusBar().showMessage("Settings reset to defaults", 3000)
 
     def _on_keep_resolution_toggled(self, checked: bool) -> None:
         """Handle keep resolution checkbox toggle."""
@@ -1029,6 +1274,7 @@ class ModernMainWindow(QMainWindow):
 
     def _update_play_button_state(self) -> None:
         """Enable or disable play button based on output file existence."""
+        self._update_output_path_validation()
         output_path = self.output_path_edit.text().strip()
         if not output_path:
             self.play_btn.setEnabled(False)
@@ -1044,6 +1290,7 @@ class ModernMainWindow(QMainWindow):
         """Handle input pattern text change."""
         # Clear preview when pattern changes
         self.preview_widget.clear_preview()
+        self._last_pattern_text = self.input_pattern_combo.currentText()
 
     def _on_color_space_changed(self) -> None:
         """Handle color space change."""
@@ -1058,7 +1305,7 @@ class ModernMainWindow(QMainWindow):
 
     def _load_preview(self) -> None:
         """Load preview of first frame."""
-        pattern = self.input_pattern_edit.text().strip()
+        pattern = self.input_pattern_combo.currentText().strip()
         if not pattern:
             QMessageBox.warning(self, "No Pattern", "Please specify an input pattern first.")
             return
@@ -1128,11 +1375,11 @@ class ModernMainWindow(QMainWindow):
                 pattern_filename = pattern_name + ext
                 full_pattern = str(path_obj.parent / pattern_filename)
 
-                self.input_pattern_edit.setText(full_pattern)
+                self.input_pattern_combo.setEditText(full_pattern)
                 self._detect_sequence()
             else:
                 # No digits found, just use the filename as-is
-                self.input_pattern_edit.setText(str(file_path))
+                self.input_pattern_combo.setEditText(str(file_path))
                 QMessageBox.information(
                     self,
                     "No Frame Number",
@@ -1157,7 +1404,7 @@ class ModernMainWindow(QMainWindow):
 
     def _detect_sequence(self) -> None:
         """Detect and display sequence information."""
-        pattern = self.input_pattern_edit.text().strip()
+        pattern = self.input_pattern_combo.currentText().strip()
         if not pattern:
             self.sequence_info_label.setText("No pattern specified")
             return
@@ -1168,6 +1415,7 @@ class ModernMainWindow(QMainWindow):
             sequence = SequenceDetector.detect_sequence(pattern)
             frame_count = len(sequence)
             frame_range = f"{sequence.frame_numbers[0]}-{sequence.frame_numbers[-1]}"
+            self._add_recent_pattern(pattern)
 
             info_text = (
                 f"✓ Detected {frame_count} frames\n"
@@ -1290,7 +1538,7 @@ class ModernMainWindow(QMainWindow):
     def _start_conversion(self) -> None:
         """Start the conversion process."""
         # Validate inputs
-        if not self.input_pattern_edit.text().strip():
+        if not self.input_pattern_combo.currentText().strip():
             QMessageBox.warning(self, "Validation Error", "Please specify an input pattern.")
             return
 
@@ -1316,7 +1564,7 @@ class ModernMainWindow(QMainWindow):
         try:
             config_builder = (
                 ConversionConfigBuilder()
-                .with_input_pattern(self.input_pattern_edit.text().strip())
+                .with_input_pattern(self.input_pattern_combo.currentText().strip())
                 .with_output_path(str(output_path))
                 .with_fps(float(self.fps_spin.value()))
                 .with_quality(self.quality_slider.value())
@@ -1679,6 +1927,7 @@ class ModernMainWindow(QMainWindow):
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
         self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
+        self._load_recent_patterns()
 
     def _create_burnin_content(self) -> QVBoxLayout:
         """Create content for burn-in overlays section."""
@@ -1725,6 +1974,7 @@ class ModernMainWindow(QMainWindow):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        self._set_form_growth_policy(form_layout)
 
         self.cs_enable_check = QCheckBox("Enable Contact Sheet")
         self.cs_enable_check.setToolTip("Enable or disable contact sheet generation")
@@ -1770,6 +2020,7 @@ class ModernMainWindow(QMainWindow):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
+        self._set_form_growth_policy(form_layout)
 
         # Video Encoding Settings (merged from separate section)
         # FPS
@@ -1824,6 +2075,8 @@ class ModernMainWindow(QMainWindow):
 
         quality_layout.addWidget(self.quality_slider)
         quality_layout.addWidget(self.quality_label)
+        quality_layout.setStretch(0, 1)
+        quality_layout.setStretch(1, 0)
         form_layout.addRow("Visual Quality:", quality_layout)
 
         # Contact Sheet Mode Toggle
