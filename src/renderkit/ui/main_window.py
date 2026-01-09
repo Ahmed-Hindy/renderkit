@@ -936,6 +936,7 @@ class ModernMainWindow(QMainWindow):
         self.convert_btn.clicked.connect(self._start_conversion)
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
+        self.input_pattern_edit.editingFinished.connect(self._detect_sequence)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
