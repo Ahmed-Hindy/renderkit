@@ -61,6 +61,71 @@ from renderkit.ui.widgets import PreviewWidget
 logger = logging.getLogger(__name__)
 
 
+class NoWheelSpinBox(QSpinBox):
+    """Spin box that ignores wheel events unless focused."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        line_edit = self.lineEdit()
+        if line_edit is not None:
+            line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+
+class NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """Double spin box that ignores wheel events unless focused."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        line_edit = self.lineEdit()
+        if line_edit is not None:
+            line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+
+class NoWheelComboBox(QComboBox):
+    """Combo box that ignores wheel events unless focused."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        line_edit = self.lineEdit()
+        if line_edit is not None:
+            line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+
+class NoWheelSlider(QSlider):
+    """Slider that ignores wheel events unless focused."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+
 class UiLogForwarder(QObject):
     """Signal-based forwarder for log messages."""
 
@@ -299,7 +364,7 @@ class ModernMainWindow(QMainWindow):
 
         # Frame Range
         frame_range_layout = QHBoxLayout()
-        self.start_frame_spin = QSpinBox()
+        self.start_frame_spin = NoWheelSpinBox()
         self.start_frame_spin.setMinimum(0)
         self.start_frame_spin.setMaximum(999999)
         self.start_frame_spin.setSpecialValueText("Auto")
@@ -307,7 +372,7 @@ class ModernMainWindow(QMainWindow):
         frame_range_layout.addWidget(QLabel("Start:"))
         frame_range_layout.addWidget(self.start_frame_spin)
 
-        self.end_frame_spin = QSpinBox()
+        self.end_frame_spin = NoWheelSpinBox()
         self.end_frame_spin.setMinimum(0)
         self.end_frame_spin.setMaximum(999999)
         self.end_frame_spin.setSpecialValueText("Auto")
@@ -324,7 +389,7 @@ class ModernMainWindow(QMainWindow):
         form_layout.addRow("Info:", self.sequence_info_label)
 
         # Layer Selection
-        self.layer_combo = QComboBox()
+        self.layer_combo = NoWheelComboBox()
         self.layer_combo.addItems(["RGBA"])
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
@@ -336,7 +401,7 @@ class ModernMainWindow(QMainWindow):
         color_form = QFormLayout()
         color_form.setSpacing(10)
 
-        self.color_space_combo = QComboBox()
+        self.color_space_combo = NoWheelComboBox()
         self.color_space_combo.setEditable(True)
         self.color_space_combo.setEditable(False)
         self._populate_color_space_combo(self.color_space_combo)
@@ -410,7 +475,7 @@ class ModernMainWindow(QMainWindow):
 
         # Frame Range
         frame_range_layout = QHBoxLayout()
-        self.start_frame_spin = QSpinBox()
+        self.start_frame_spin = NoWheelSpinBox()
         self.start_frame_spin.setMinimum(0)
         self.start_frame_spin.setMaximum(999999)
         self.start_frame_spin.setSpecialValueText("Auto")
@@ -418,7 +483,7 @@ class ModernMainWindow(QMainWindow):
         frame_range_layout.addWidget(QLabel("Start:"))
         frame_range_layout.addWidget(self.start_frame_spin)
 
-        self.end_frame_spin = QSpinBox()
+        self.end_frame_spin = NoWheelSpinBox()
         self.end_frame_spin.setMinimum(0)
         self.end_frame_spin.setMaximum(999999)
         self.end_frame_spin.setSpecialValueText("Auto")
@@ -435,7 +500,7 @@ class ModernMainWindow(QMainWindow):
         input_layout.addRow("Info:", self.sequence_info_label)
 
         # Layer Selection
-        self.layer_combo = QComboBox()
+        self.layer_combo = NoWheelComboBox()
         self.layer_combo.addItems(["RGBA"])
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
@@ -449,7 +514,7 @@ class ModernMainWindow(QMainWindow):
         color_layout.setSpacing(10)
         color_layout.setContentsMargins(12, 18, 12, 12)
 
-        self.color_space_combo = QComboBox()
+        self.color_space_combo = NoWheelComboBox()
         self.color_space_combo.setEditable(True)  # Allow custom input space names
         self.color_space_combo.setEditable(False)
         self._populate_color_space_combo(self.color_space_combo)
@@ -499,7 +564,7 @@ class ModernMainWindow(QMainWindow):
         video_layout.setContentsMargins(12, 18, 12, 12)
 
         # FPS
-        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin = NoWheelDoubleSpinBox()
         self.fps_spin.setRange(0.01, 120.0)
         self.fps_spin.setDecimals(3)
         self.fps_spin.setValue(24.0)
@@ -508,7 +573,7 @@ class ModernMainWindow(QMainWindow):
 
         # Resolution
         resolution_layout = QHBoxLayout()
-        self.width_spin = QSpinBox()
+        self.width_spin = NoWheelSpinBox()
         self.width_spin.setMinimum(1)
         self.width_spin.setMaximum(7680)
         self.width_spin.setValue(1920)
@@ -516,7 +581,7 @@ class ModernMainWindow(QMainWindow):
         resolution_layout.addWidget(QLabel("Width:"))
         resolution_layout.addWidget(self.width_spin)
 
-        self.height_spin = QSpinBox()
+        self.height_spin = NoWheelSpinBox()
         self.height_spin.setMinimum(1)
         self.height_spin.setMaximum(4320)
         self.height_spin.setValue(1080)
@@ -532,13 +597,13 @@ class ModernMainWindow(QMainWindow):
         video_layout.addRow("Resolution:", resolution_layout)
 
         # Codec - detect available codecs
-        self.codec_combo = QComboBox()
+        self.codec_combo = NoWheelComboBox()
         self._populate_codecs()
         video_layout.addRow("Codec:", self.codec_combo)
 
         # Quality Slider
         quality_layout = QHBoxLayout()
-        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self.quality_slider = NoWheelSlider(Qt.Orientation.Horizontal)
         self.quality_slider.setRange(0, 10)
         self.quality_slider.setValue(10)
         self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
@@ -597,7 +662,7 @@ class ModernMainWindow(QMainWindow):
         # Opacity
         self.burnin_opacity_layout = QHBoxLayout()
         self.burnin_opacity_layout.addWidget(QLabel("Background Opacity:"))
-        self.burnin_opacity_spin = QSpinBox()
+        self.burnin_opacity_spin = NoWheelSpinBox()
         self.burnin_opacity_spin.setRange(0, 100)
         self.burnin_opacity_spin.setValue(30)
         self.burnin_opacity_spin.setSuffix("%")
@@ -627,18 +692,18 @@ class ModernMainWindow(QMainWindow):
         self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
         grid_layout.addRow(self.cs_enable_check)
 
-        self.cs_columns_spin = QSpinBox()
+        self.cs_columns_spin = NoWheelSpinBox()
         self.cs_columns_spin.setRange(1, 20)
         self.cs_columns_spin.setValue(4)
         grid_layout.addRow("Columns:", self.cs_columns_spin)
 
-        self.cs_thumb_width_spin = QSpinBox()
+        self.cs_thumb_width_spin = NoWheelSpinBox()
         self.cs_thumb_width_spin.setRange(128, 4096)
         self.cs_thumb_width_spin.setValue(512)
         self.cs_thumb_width_spin.setSuffix(" px")
         grid_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
 
-        self.cs_padding_spin = QSpinBox()
+        self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
         self.cs_padding_spin.setValue(10)
         self.cs_padding_spin.setSuffix(" px")
@@ -654,7 +719,7 @@ class ModernMainWindow(QMainWindow):
         self.cs_show_labels_check.setChecked(True)
         labels_layout.addRow("Enable Labels:", self.cs_show_labels_check)
 
-        self.cs_font_size_spin = QSpinBox()
+        self.cs_font_size_spin = NoWheelSpinBox()
         self.cs_font_size_spin.setRange(6, 48)
         self.cs_font_size_spin.setValue(12)
         labels_layout.addRow("Font Size:", self.cs_font_size_spin)
@@ -679,7 +744,7 @@ class ModernMainWindow(QMainWindow):
         self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
         perf_layout.addRow("Multiprocessing:", self.multiprocessing_check)
 
-        self.num_workers_spin = QSpinBox()
+        self.num_workers_spin = NoWheelSpinBox()
         self.num_workers_spin.setMinimum(1)
         self.num_workers_spin.setMaximum(32)
         self.num_workers_spin.setValue(4)
@@ -1607,7 +1672,7 @@ class ModernMainWindow(QMainWindow):
         # Opacity
         opacity_layout = QHBoxLayout()
         opacity_layout.addWidget(QLabel("Background Opacity:"))
-        self.burnin_opacity_spin = QSpinBox()
+        self.burnin_opacity_spin = NoWheelSpinBox()
         self.burnin_opacity_spin.setRange(0, 100)
         self.burnin_opacity_spin.setValue(30)
         self.burnin_opacity_spin.setSuffix("%")
@@ -1632,18 +1697,18 @@ class ModernMainWindow(QMainWindow):
         self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
         form_layout.addRow(self.cs_enable_check)
 
-        self.cs_columns_spin = QSpinBox()
+        self.cs_columns_spin = NoWheelSpinBox()
         self.cs_columns_spin.setRange(1, 20)
         self.cs_columns_spin.setValue(4)
         form_layout.addRow("Columns:", self.cs_columns_spin)
 
-        self.cs_thumb_width_spin = QSpinBox()
+        self.cs_thumb_width_spin = NoWheelSpinBox()
         self.cs_thumb_width_spin.setRange(128, 4096)
         self.cs_thumb_width_spin.setValue(512)
         self.cs_thumb_width_spin.setSuffix(" px")
         form_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
 
-        self.cs_padding_spin = QSpinBox()
+        self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
         self.cs_padding_spin.setValue(10)
         self.cs_padding_spin.setSuffix(" px")
@@ -1653,7 +1718,7 @@ class ModernMainWindow(QMainWindow):
         self.cs_show_labels_check.setChecked(True)
         form_layout.addRow(self.cs_show_labels_check)
 
-        self.cs_font_size_spin = QSpinBox()
+        self.cs_font_size_spin = NoWheelSpinBox()
         self.cs_font_size_spin.setRange(6, 72)
         self.cs_font_size_spin.setValue(12)
         self.cs_font_size_spin.setSuffix(" pt")
@@ -1673,7 +1738,7 @@ class ModernMainWindow(QMainWindow):
 
         # Video Encoding Settings (merged from separate section)
         # FPS
-        self.fps_spin = QDoubleSpinBox()
+        self.fps_spin = NoWheelDoubleSpinBox()
         self.fps_spin.setRange(0.01, 120.0)
         self.fps_spin.setDecimals(3)
         self.fps_spin.setValue(24.0)
@@ -1682,7 +1747,7 @@ class ModernMainWindow(QMainWindow):
 
         # Resolution
         resolution_layout = QHBoxLayout()
-        self.width_spin = QSpinBox()
+        self.width_spin = NoWheelSpinBox()
         self.width_spin.setMinimum(1)
         self.width_spin.setMaximum(7680)
         self.width_spin.setValue(1920)
@@ -1690,7 +1755,7 @@ class ModernMainWindow(QMainWindow):
         resolution_layout.addWidget(QLabel("Width:"))
         resolution_layout.addWidget(self.width_spin)
 
-        self.height_spin = QSpinBox()
+        self.height_spin = NoWheelSpinBox()
         self.height_spin.setMinimum(1)
         self.height_spin.setMaximum(4320)
         self.height_spin.setValue(1080)
@@ -1706,13 +1771,13 @@ class ModernMainWindow(QMainWindow):
         form_layout.addRow("Resolution:", resolution_layout)
 
         # Codec
-        self.codec_combo = QComboBox()
+        self.codec_combo = NoWheelComboBox()
         self._populate_codecs()
         form_layout.addRow("Codec:", self.codec_combo)
 
         # Quality Slider
         quality_layout = QHBoxLayout()
-        self.quality_slider = QSlider(Qt.Orientation.Horizontal)
+        self.quality_slider = NoWheelSlider(Qt.Orientation.Horizontal)
         self.quality_slider.setRange(0, 10)
         self.quality_slider.setValue(10)
         self.quality_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
@@ -1739,7 +1804,7 @@ class ModernMainWindow(QMainWindow):
         self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
         form_layout.addRow(self.multiprocessing_check)
 
-        self.num_workers_spin = QSpinBox()
+        self.num_workers_spin = NoWheelSpinBox()
         self.num_workers_spin.setRange(1, 32)
         self.num_workers_spin.setValue(4)
         self.num_workers_spin.setToolTip("Number of worker processes")
