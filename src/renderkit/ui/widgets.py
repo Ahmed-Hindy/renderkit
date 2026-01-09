@@ -118,6 +118,7 @@ class PreviewWidget(QWidget):
         """Initialize preview widget."""
         super().__init__()
         self._setup_ui()
+        self._original_pixmap: Optional[QPixmap] = None
         self.worker: Optional[PreviewWorker] = None
 
     def _setup_ui(self) -> None:
@@ -127,7 +128,8 @@ class PreviewWidget(QWidget):
 
         self.preview_label = QLabel("No preview")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setMinimumSize(400, 300)
+        self.preview_label.setMinimumSize(240, 180)
+        self.preview_label.setMaximumHeight(360)
         self.preview_label.setStyleSheet("""
             QLabel {
                 background-color: #2b2b2b;
@@ -138,6 +140,11 @@ class PreviewWidget(QWidget):
         """)
         self.preview_label.setScaledContents(False)
         layout.addWidget(self.preview_label)
+
+    def resizeEvent(self, event) -> None:
+        """Scale preview pixmap to the current label size."""
+        super().resizeEvent(event)
+        self._update_scaled_pixmap()
 
     def load_preview(
         self,
@@ -159,6 +166,7 @@ class PreviewWidget(QWidget):
             self.worker.terminate()
             self.worker.wait()
 
+        self._original_pixmap = None
         self.preview_label.setText("Loading preview...")
         self.preview_label.setStyleSheet("""
             QLabel {
@@ -176,11 +184,13 @@ class PreviewWidget(QWidget):
 
     def _on_preview_ready(self, pixmap: QPixmap) -> None:
         """Handle preview ready."""
-        self.preview_label.setPixmap(pixmap)
+        self._original_pixmap = pixmap
         self.preview_label.setText("")
+        self._update_scaled_pixmap()
 
     def _on_preview_error(self, error: str) -> None:
         """Handle preview error."""
+        self._original_pixmap = None
         self.preview_label.setText(f"Preview error:\n{error}")
         self.preview_label.setStyleSheet("""
             QLabel {
@@ -193,6 +203,7 @@ class PreviewWidget(QWidget):
 
     def clear_preview(self) -> None:
         """Clear the preview."""
+        self._original_pixmap = None
         self.preview_label.clear()
         self.preview_label.setText("No preview")
         self.preview_label.setStyleSheet("""
@@ -203,3 +214,19 @@ class PreviewWidget(QWidget):
                 border-radius: 4px;
             }
         """)
+
+    def _update_scaled_pixmap(self) -> None:
+        """Scale stored pixmap to the label size, keeping aspect ratio."""
+        if not self._original_pixmap:
+            return
+
+        target_size = self.preview_label.size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return
+
+        scaled = self._original_pixmap.scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.preview_label.setPixmap(scaled)

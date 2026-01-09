@@ -248,7 +248,7 @@ class ModernMainWindow(QMainWindow):
         self.preview_panel = self._create_preview_panel()
         self.preview_panel.setObjectName("Card")
         self.left_splitter.addWidget(self.preview_panel)
-        self.left_splitter.setSizes([400, 300])
+        self.left_splitter.setSizes([400, 180])
 
         self.main_splitter.addWidget(self.left_splitter)
 
@@ -318,7 +318,7 @@ class ModernMainWindow(QMainWindow):
         if self.main_splitter:
             self.main_splitter.setSizes([700, 300])
         if self.left_splitter:
-            self.left_splitter.setSizes([400, 300])
+            self.left_splitter.setSizes([400, 180])
 
     def _apply_comfortable_mode(self):
         """Apply comfortable layout for large windows (>1100px)."""
@@ -717,14 +717,6 @@ class ModernMainWindow(QMainWindow):
         quality_layout.setStretch(1, 0)
         video_layout.addRow("Visual Quality:", quality_layout)
 
-        # Contact Sheet Mode Toggle
-        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
-        self.cs_mode_check.setToolTip(
-            "Creates a video where each frame is a grid of all available AOVs."
-        )
-        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
-        video_layout.addRow("Contact Sheet:", self.cs_mode_check)
-
         layout.addWidget(video_group)
         layout.addStretch()
 
@@ -948,6 +940,8 @@ class ModernMainWindow(QMainWindow):
     def _create_preview_panel(self) -> QWidget:
         """Create preview panel."""
         panel = QWidget()
+        panel.setMinimumHeight(180)
+        panel.setMaximumHeight(360)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -1340,7 +1334,6 @@ class ModernMainWindow(QMainWindow):
         self.cs_padding_spin.setValue(4)
         self.cs_show_labels_check.setChecked(True)
         self.cs_font_size_spin.setValue(12)
-        self.cs_mode_check.setChecked(False)
         if hasattr(self, "overwrite_check"):
             self.overwrite_check.setChecked(True)
 
@@ -1366,21 +1359,6 @@ class ModernMainWindow(QMainWindow):
         self.cs_padding_spin.setEnabled(checked)
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
-
-        # Sync with Output tab toggle
-        if self.cs_mode_check.isChecked() != checked:
-            self.cs_mode_check.blockSignals(True)
-            self.cs_mode_check.setChecked(checked)
-            self.cs_mode_check.blockSignals(False)
-
-    def _on_cs_mode_toggled(self, checked: bool) -> None:
-        """Handle contact sheet mode toggle in Output tab."""
-        if self.cs_enable_check.isChecked() != checked:
-            self.cs_enable_check.blockSignals(True)
-            self.cs_enable_check.setChecked(checked)
-            self.cs_enable_check.blockSignals(False)
-            # Ensure the CS tab widgets are also updated
-            self._on_cs_enable_toggled(checked)
 
     def _on_quality_changed(self, value: int) -> None:
         """Handle quality slider change."""
@@ -2103,7 +2081,6 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("cs_padding", self.cs_padding_spin.value())
         self.settings.setValue("cs_show_labels", self.cs_show_labels_check.isChecked())
         self.settings.setValue("cs_font_size", self.cs_font_size_spin.value())
-        self.settings.setValue("cs_mode", self.cs_mode_check.isChecked())
 
     def _on_progress_update(self, current: int, total: int) -> None:
         """Handle progress update from worker.
@@ -2162,8 +2139,6 @@ class ModernMainWindow(QMainWindow):
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
-        self.cs_mode_check.setChecked(self.settings.value("cs_mode", False, type=bool))
-
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
         self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
@@ -2322,14 +2297,6 @@ class ModernMainWindow(QMainWindow):
         quality_layout.setStretch(0, 1)
         quality_layout.setStretch(1, 0)
         form_layout.addRow("Visual Quality:", quality_layout)
-
-        # Contact Sheet Mode Toggle
-        self.cs_mode_check = QCheckBox("Render all AOVs as a Contact Sheet grid")
-        self.cs_mode_check.setToolTip(
-            "Creates a video where each frame is a grid of all available AOVs."
-        )
-        self.cs_mode_check.toggled.connect(self._on_cs_mode_toggled)
-        form_layout.addRow("Contact Sheet:", self.cs_mode_check)
 
         # Multiprocessing Options
         self.multiprocessing_check = QCheckBox("Enable Multiprocessing")
