@@ -143,7 +143,7 @@ class SequenceDetector:
                     detected_pattern = filename
 
         if not frame_numbers:
-            raise SequenceDetectionError(f"Could not detect frame sequence from pattern: {pattern}")
+            raise SequenceDetectionError("Could not detect frame sequence.")
 
         return FrameSequence(base_path, detected_pattern or filename, frame_numbers, padding)
 

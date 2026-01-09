@@ -161,6 +161,8 @@ class ModernMainWindow(QMainWindow):
         self._recent_patterns: list[str] = []
         self._last_pattern_text = ""
         self._convert_btn_handler: Optional[str] = None
+        self._input_pattern_valid = False
+        self._input_pattern_validated = False
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -507,14 +509,8 @@ class ModernMainWindow(QMainWindow):
         self.browse_output_btn.setMaximumWidth(100)
         self.browse_output_btn.setIcon(icon_manager.get_icon("browse"))
         output_path_layout.addWidget(self.browse_output_btn)
-        self.output_validation_label = QLabel("")
-        self.output_validation_label.setMinimumWidth(70)
-        self.output_validation_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.output_validation_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        output_path_layout.addWidget(self.output_validation_label)
         output_path_layout.setStretch(0, 1)
         output_path_layout.setStretch(1, 0)
-        output_path_layout.setStretch(2, 0)
         form_layout.addRow("Output Path:", output_path_layout)
 
         layout.addLayout(form_layout)
@@ -962,6 +958,12 @@ class ModernMainWindow(QMainWindow):
 
         layout.addStretch()
 
+        self.convert_hint_label = QLabel("")
+        self.convert_hint_label.setObjectName("InlineHint")
+        self.convert_hint_label.setStyleSheet("color: #9aa4ad; font-size: 11px;")
+        self.convert_hint_label.setVisible(False)
+        layout.addWidget(self.convert_hint_label)
+
         # Convert button
         self.convert_btn = QPushButton("Convert")
         self.convert_btn.setMinimumWidth(150)
@@ -1079,6 +1081,7 @@ class ModernMainWindow(QMainWindow):
                     pass
             self.convert_btn.clicked.connect(self._start_conversion)
             self._convert_btn_handler = "start"
+        self._update_convert_gate()
 
     def _load_recent_patterns(self) -> None:
         recent = self.settings.value(RECENT_PATTERNS_KEY, [], type=list)
@@ -1154,26 +1157,31 @@ class ModernMainWindow(QMainWindow):
         self._detect_sequence()
 
     def _set_output_validation_state(self, is_valid: Optional[bool], message: str) -> None:
+        if not hasattr(self, "output_path_edit"):
+            return
+
         if is_valid is None:
-            self.output_validation_label.setText("")
-            self.output_validation_label.setStyleSheet("")
-            self.output_validation_label.setToolTip("")
+            self.output_path_edit.setStyleSheet("")
+            self.output_path_edit.setToolTip("")
             return
 
         if is_valid:
-            self.output_validation_label.setText("OK")
-            self.output_validation_label.setStyleSheet("color: #4CAF50;")
-            self.output_validation_label.setToolTip(message or "Output path looks valid.")
+            self.output_path_edit.setStyleSheet(
+                "border: 1px solid #4CAF50; padding: 6px 10px; border-radius: 6px;"
+            )
+            self.output_path_edit.setToolTip(message or "Output path looks valid.")
             return
 
-        self.output_validation_label.setText("Error")
-        self.output_validation_label.setStyleSheet("color: #f44336;")
-        self.output_validation_label.setToolTip(message)
+        self.output_path_edit.setStyleSheet(
+            "border: 1px solid #f44336; padding: 6px 10px; border-radius: 6px;"
+        )
+        self.output_path_edit.setToolTip(message)
 
     def _update_output_path_validation(self) -> None:
         output_path = self.output_path_edit.text().strip()
         if not output_path:
             self._set_output_validation_state(None, "")
+            self._update_convert_gate()
             return
 
         is_valid, error_msg = FileUtils.validate_output_filename(output_path)
@@ -1181,6 +1189,46 @@ class ModernMainWindow(QMainWindow):
             self._set_output_validation_state(True, "Output path looks valid.")
         else:
             self._set_output_validation_state(False, error_msg)
+        self._update_convert_gate()
+
+    def _is_output_path_valid(self) -> bool:
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            return False
+        is_valid, _ = FileUtils.validate_output_filename(output_path)
+        return is_valid
+
+    def _update_convert_gate(self) -> None:
+        if not hasattr(self, "convert_btn"):
+            return
+
+        if self._convert_btn_handler == "cancel":
+            self.convert_btn.setEnabled(True)
+            if hasattr(self, "convert_hint_label"):
+                self.convert_hint_label.setVisible(False)
+            return
+
+        input_valid = self._input_pattern_valid
+        output_valid = self._is_output_path_valid()
+        enabled = input_valid and output_valid
+        self.convert_btn.setEnabled(enabled)
+
+        if not hasattr(self, "convert_hint_label"):
+            return
+
+        if enabled:
+            self.convert_hint_label.setVisible(False)
+            self.convert_hint_label.setText("")
+            return
+
+        missing = []
+        if not output_valid:
+            missing.append("output path")
+        if self._input_pattern_validated and not input_valid:
+            missing.append("input pattern")
+        hint = "Enter a valid " + " and ".join(missing) + " to enable Convert."
+        self.convert_hint_label.setText(hint)
+        self.convert_hint_label.setVisible(bool(missing))
 
     def _reset_settings_to_defaults(self) -> None:
         reply = QMessageBox.question(
@@ -1286,11 +1334,63 @@ class ModernMainWindow(QMainWindow):
         except Exception:
             self.play_btn.setEnabled(False)
 
+    def _pattern_has_frame_token(self, filename: str) -> bool:
+        if "%" in filename:
+            percent_index = filename.find("%")
+            i = percent_index + 1
+            while i < len(filename) and filename[i].isdigit():
+                i += 1
+            if i < len(filename) and filename[i] == "d":
+                return True
+
+        if "$F" in filename:
+            return True
+
+        if "#" in filename:
+            return True
+
+        stem = Path(filename).stem
+        if not stem:
+            return False
+        i = len(stem) - 1
+        while i >= 0 and stem[i].isdigit():
+            i -= 1
+        return i < len(stem) - 1
+
+    def _validate_input_pattern(self, pattern: str) -> tuple[bool, str]:
+        if not pattern:
+            return False, "No pattern specified."
+
+        pattern_path = Path(pattern)
+        if pattern_path.exists() and pattern_path.is_dir():
+            return False, "Pattern must include a filename, not just a folder."
+
+        filename = pattern_path.name
+        if not filename:
+            return False, "Pattern must include a filename."
+
+        suffix = pattern_path.suffix.lower().lstrip(".")
+        if not suffix:
+            return False, "Pattern must include an image extension (e.g., .exr)."
+        if suffix not in constants.OIIO_SUPPORTED_EXTENSIONS:
+            return False, f"Unsupported image extension: .{suffix}"
+
+        if not self._pattern_has_frame_token(filename):
+            return (
+                False,
+                "Pattern must include a frame token (e.g., %04d, ####, $F4) or frame number.",
+            )
+
+        return True, ""
+
     def _on_pattern_changed(self) -> None:
         """Handle input pattern text change."""
         # Clear preview when pattern changes
         self.preview_widget.clear_preview()
         self._last_pattern_text = self.input_pattern_combo.currentText()
+        self._input_pattern_valid = False
+        self._input_pattern_validated = False
+        self._update_convert_gate()
 
     def _on_color_space_changed(self) -> None:
         """Handle color space change."""
@@ -1407,6 +1507,18 @@ class ModernMainWindow(QMainWindow):
         pattern = self.input_pattern_combo.currentText().strip()
         if not pattern:
             self.sequence_info_label.setText("No pattern specified")
+            self._input_pattern_valid = False
+            self._input_pattern_validated = True
+            self._update_convert_gate()
+            return
+
+        self._input_pattern_validated = True
+        is_valid, message = self._validate_input_pattern(pattern)
+        if not is_valid:
+            self.sequence_info_label.setText(message)
+            self.statusBar().showMessage(message, 3000)
+            self._input_pattern_valid = False
+            self._update_convert_gate()
             return
 
         try:
@@ -1415,7 +1527,6 @@ class ModernMainWindow(QMainWindow):
             sequence = SequenceDetector.detect_sequence(pattern)
             frame_count = len(sequence)
             frame_range = f"{sequence.frame_numbers[0]}-{sequence.frame_numbers[-1]}"
-            self._add_recent_pattern(pattern)
 
             info_text = (
                 f"✓ Detected {frame_count} frames\n"
@@ -1504,12 +1615,17 @@ class ModernMainWindow(QMainWindow):
             self.log_text.appendPlainText(f"Sequence detected: {frame_count} frames")
             self.log_text.appendPlainText(f"Auto-detected output: {output_path.name}")
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
+            self._add_recent_pattern(pattern)
+            self._input_pattern_valid = True
+            self._update_convert_gate()
         except Exception as e:
             error_text = f"✗ Error: {str(e)}"
             self.sequence_info_label.setText(error_text)
             # self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
             self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
+            self._input_pattern_valid = False
+            self._update_convert_gate()
 
     def _get_current_color_space_config(self) -> tuple[ColorSpacePreset, Optional[str]]:
         """Determine color space preset and input space name from UI.
