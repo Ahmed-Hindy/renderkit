@@ -156,6 +156,22 @@ class ModernMainWindow(QMainWindow):
         self._load_settings()
         self._setup_connections()
 
+    def keyPressEvent(self, event) -> None:
+        """Handle global key presses for the main window."""
+        escape_key = getattr(Qt, "Key_Escape", None)
+        if escape_key is None:
+            key_enum = getattr(Qt, "Key", None)
+            if key_enum is not None:
+                escape_key = getattr(key_enum, "Key_Escape", None)
+
+        if escape_key is not None and event.key() == escape_key:
+            if self.worker and self.worker.isRunning():
+                self._cancel_conversion()
+                event.accept()
+                return
+
+        super().keyPressEvent(event)
+
     def _setup_logging(self) -> None:
         """Route renderkit logs into the UI log widget."""
         if self._log_forwarder is not None:
@@ -850,12 +866,6 @@ class ModernMainWindow(QMainWindow):
         layout.setContentsMargins(10, 5, 10, 5)  # Reduced vertical margins
         layout.setSpacing(10)
 
-        # Detect sequence button
-        self.detect_btn = QPushButton("Detect Sequence")
-        self.detect_btn.setToolTip("Detect frame sequence from pattern")
-        self.detect_btn.setIcon(icon_manager.get_icon("detect"))
-        layout.addWidget(self.detect_btn)
-
         layout.addStretch()
 
         # Convert button
@@ -932,8 +942,6 @@ class ModernMainWindow(QMainWindow):
         """Set up signal connections."""
         self.browse_input_btn.clicked.connect(self._browse_input_pattern)
         self.browse_output_btn.clicked.connect(self._browse_output_path)
-        self.detect_btn.clicked.connect(self._detect_sequence)
-        self.convert_btn.clicked.connect(self._start_conversion)
         self.cancel_btn.clicked.connect(self._cancel_conversion)
         self.input_pattern_edit.textChanged.connect(self._on_pattern_changed)
         self.input_pattern_edit.editingFinished.connect(self._detect_sequence)
@@ -941,10 +949,31 @@ class ModernMainWindow(QMainWindow):
         self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
+        self._set_convert_button_state(False)
 
         # Keyboard shortcuts
         self.convert_btn.setShortcut("Ctrl+Return")
-        self.detect_btn.setShortcut("Ctrl+D")
+
+    def _set_convert_button_state(self, is_converting: bool) -> None:
+        if is_converting:
+            self.convert_btn.setText("Cancel")
+            self.convert_btn.setIcon(icon_manager.get_icon("close"))
+            self.convert_btn.setToolTip("Cancel the running conversion.")
+            try:
+                self.convert_btn.clicked.disconnect(self._start_conversion)
+            except TypeError:
+                pass
+            self.convert_btn.clicked.connect(self._cancel_conversion)
+            return
+
+        self.convert_btn.setText("Convert")
+        self.convert_btn.setIcon(icon_manager.get_icon("convert"))
+        self.convert_btn.setToolTip("Start conversion.")
+        try:
+            self.convert_btn.clicked.disconnect(self._cancel_conversion)
+        except TypeError:
+            pass
+        self.convert_btn.clicked.connect(self._start_conversion)
 
     def _on_keep_resolution_toggled(self, checked: bool) -> None:
         """Handle keep resolution checkbox toggle."""
@@ -1408,7 +1437,8 @@ class ModernMainWindow(QMainWindow):
             return
 
         # Update UI
-        self.convert_btn.setEnabled(False)
+        self._set_convert_button_state(True)
+        self.convert_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)  # Indeterminate
@@ -1432,21 +1462,6 @@ class ModernMainWindow(QMainWindow):
         self.worker.start()
 
         self._save_settings()
-
-    def _on_conversion_finished(self) -> None:
-        """Handle conversion completion."""
-        self._conversion_finished_flag = True
-        self.convert_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(True)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(100)
-        self.progress_label.setText("Conversion finished!")
-        self.statusBar().showMessage("Conversion finished!", 5000)
-        self.log_text.appendPlainText("=" * 50)
-        self.log_text.appendPlainText("Conversion finished successfully.")
-
-        if self.play_btn:
-            self.play_btn.setEnabled(True)
 
     def _cancel_conversion(self) -> None:
         """Cancel the current conversion or quit the application."""
@@ -1483,6 +1498,7 @@ class ModernMainWindow(QMainWindow):
                 self.progress_label.setText("Conversion cancelled")
                 self.statusBar().showMessage("Conversion cancelled", 3000)
                 self.log_text.appendPlainText("Conversion cancelled by user")
+                self._set_convert_button_state(False)
         else:
             QApplication.instance().quit()
 
@@ -1502,6 +1518,7 @@ class ModernMainWindow(QMainWindow):
                 pass  # Already disconnected
 
         self.convert_btn.setEnabled(True)
+        self._set_convert_button_state(False)
         # Cancel button remains enabled (for quit)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
@@ -1509,15 +1526,31 @@ class ModernMainWindow(QMainWindow):
         self.statusBar().showMessage("Conversion completed successfully!", 5000)
         self.play_btn.setEnabled(True)
 
-        QMessageBox.information(
-            self,
-            "Success",
-            f"Conversion completed successfully!\n\nOutput: {self.output_path_edit.text()}",
-        )
+        output_path = Path(self.output_path_edit.text().strip()).absolute()
+        message_box = QMessageBox(self)
+        message_box.setWindowTitle("Success")
+        icon_enum = getattr(QMessageBox, "Icon", None)
+        info_icon = icon_enum.Information if icon_enum is not None else QMessageBox.Information
+        message_box.setIcon(info_icon)
+        message_box.setText("Conversion completed successfully!")
+        message_box.setInformativeText(f"Output: {output_path}")
+        role_enum = getattr(QMessageBox, "ButtonRole", None)
+        action_role = role_enum.ActionRole if role_enum is not None else QMessageBox.ActionRole
+        open_folder_btn = message_box.addButton("Open output folder", action_role)
+        copy_path_btn = message_box.addButton("Copy output path", action_role)
+        message_box.addButton(QMessageBox.StandardButton.Ok)
+        message_box.exec()
+
+        clicked_button = message_box.clickedButton()
+        if clicked_button == open_folder_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_path.parent)))
+        elif clicked_button == copy_path_btn:
+            QApplication.clipboard().setText(str(output_path))
 
     def _on_conversion_cancelled(self) -> None:
         """Handle conversion cancellation."""
         self.convert_btn.setEnabled(True)
+        self._set_convert_button_state(False)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_label.setText("Conversion cancelled")
@@ -1527,6 +1560,7 @@ class ModernMainWindow(QMainWindow):
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
         self.convert_btn.setEnabled(True)
+        self._set_convert_button_state(False)
         # Cancel button remains enabled (for quit)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
