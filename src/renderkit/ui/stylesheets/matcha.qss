@@ -191,10 +191,17 @@ QProgressBar {
     color: #e6edf3;
 }
 
+[theme="light"] QPushButton#PrimaryButton:disabled {
+    background-color: transparent;
+    border-color: rgba(9, 105, 218, 128);
+    color: rgba(9, 105, 218, 128);
+}
+
 [theme="light"] QPushButton:disabled {
     background-color: transparent;
     border-color: #d0d7deb3;
     color: #656d76;
+    opacity: 0.5;
 }
 
 [theme="light"] QLineEdit, [theme="light"] QTextEdit, [theme="light"] QPlainTextEdit, 
@@ -218,6 +225,28 @@ QProgressBar {
 [theme="light"] QSpinBox:disabled, [theme="light"] QDoubleSpinBox:disabled, [theme="light"] QComboBox:disabled {
     background-color: #f6f8fa;
     color: #656d76;
+    opacity: 0.5;
+}
+
+[theme="light"] QComboBox[validationState="valid"] {
+    border: 1px solid #4CAF50;
+}
+
+[theme="light"] QComboBox[validationState="invalid"] {
+    border: 1px solid #f44336;
+}
+
+[theme="light"] QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    color: #1f2328;
+    selection-background-color: #0969da;
+    selection-color: #e6edf3;
+    border: 1px solid #d0d7deb3;
+}
+
+[theme="light"] QCheckBox:disabled, [theme="light"] QRadioButton:disabled, [theme="light"] QSlider:disabled {
+    color: #656d76;
+    opacity: 0.5;
 }
 
 [theme="light"] QTabWidget::pane {
@@ -345,10 +374,17 @@ QProgressBar {
     color: #e6edf3;
 }
 
+[theme="dark"] QPushButton#PrimaryButton:disabled {
+    background-color: transparent;
+    border-color: rgba(68, 147, 248, 128);
+    color: rgba(68, 147, 248, 128);
+}
+
 [theme="dark"] QPushButton:disabled {
     background-color: transparent;
     border-color: #30363db3;
     color: #848d97;
+    opacity: 0.5;
 }
 
 [theme="dark"] QLineEdit, [theme="dark"] QTextEdit, [theme="dark"] QPlainTextEdit, 
@@ -372,6 +408,28 @@ QProgressBar {
 [theme="dark"] QSpinBox:disabled, [theme="dark"] QDoubleSpinBox:disabled, [theme="dark"] QComboBox:disabled {
     background-color: #161b22;
     color: #848d97;
+    opacity: 0.5;
+}
+
+[theme="dark"] QComboBox[validationState="valid"] {
+    border: 1px solid #4CAF50;
+}
+
+[theme="dark"] QComboBox[validationState="invalid"] {
+    border: 1px solid #f44336;
+}
+
+[theme="dark"] QComboBox QAbstractItemView {
+    background-color: #0d1117;
+    color: #e6edf3;
+    selection-background-color: #4493f8;
+    selection-color: #e6edf3;
+    border: 1px solid #30363db3;
+}
+
+[theme="dark"] QCheckBox:disabled, [theme="dark"] QRadioButton:disabled, [theme="dark"] QSlider:disabled {
+    color: #848d97;
+    opacity: 0.5;
 }
 
 [theme="dark"] QTabWidget::pane {

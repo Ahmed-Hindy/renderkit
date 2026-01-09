@@ -481,11 +481,6 @@ class ModernMainWindow(QMainWindow):
         layout.addLayout(color_form)
 
         # Preview button
-        if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
-            self.load_preview_btn = QPushButton("Load Preview")
-            self.load_preview_btn.clicked.connect(self._load_preview)
-            self.load_preview_btn.setIcon(icon_manager.get_icon("preview"))
-
         return layout
 
     def _create_output_content(self) -> QVBoxLayout:
@@ -933,19 +928,6 @@ class ModernMainWindow(QMainWindow):
         self.preview_widget = PreviewWidget()
         preview_layout.addWidget(self.preview_widget)
 
-        buttons_layout = QHBoxLayout()
-
-        if not hasattr(self, "load_preview_btn") or self.load_preview_btn is None:
-            self.load_preview_btn = QPushButton("Load Preview")
-            self.load_preview_btn.clicked.connect(self._load_preview)
-            self.load_preview_btn.setIcon(icon_manager.get_icon("preview"))
-        buttons_layout.addWidget(self.load_preview_btn)
-
-        buttons_layout.addStretch()
-
-        # Flipbook button
-        preview_layout.addLayout(buttons_layout)
-
         layout.addWidget(preview_group)
         return panel
 
@@ -1177,6 +1159,30 @@ class ModernMainWindow(QMainWindow):
         )
         self.output_path_edit.setToolTip(message)
 
+    def _set_input_validation_state(self, is_valid: Optional[bool], message: str) -> None:
+        if not hasattr(self, "input_pattern_combo"):
+            return
+
+        if is_valid is None:
+            self.input_pattern_combo.setProperty("validationState", "")
+            self.input_pattern_combo.setToolTip("")
+            line_edit = self.input_pattern_combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setToolTip("")
+            self.input_pattern_combo.style().unpolish(self.input_pattern_combo)
+            self.input_pattern_combo.style().polish(self.input_pattern_combo)
+            return
+
+        state = "valid" if is_valid else "invalid"
+        self.input_pattern_combo.setProperty("validationState", state)
+        tooltip = message or "Input pattern looks valid."
+        self.input_pattern_combo.setToolTip(tooltip)
+        line_edit = self.input_pattern_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setToolTip(tooltip)
+        self.input_pattern_combo.style().unpolish(self.input_pattern_combo)
+        self.input_pattern_combo.style().polish(self.input_pattern_combo)
+
     def _update_output_path_validation(self) -> None:
         output_path = self.output_path_edit.text().strip()
         if not output_path:
@@ -1390,6 +1396,7 @@ class ModernMainWindow(QMainWindow):
         self._last_pattern_text = self.input_pattern_combo.currentText()
         self._input_pattern_valid = False
         self._input_pattern_validated = False
+        self._set_input_validation_state(None, "")
         self._update_convert_gate()
 
     def _on_color_space_changed(self) -> None:
@@ -1415,27 +1422,23 @@ class ModernMainWindow(QMainWindow):
 
             sequence = SequenceDetector.detect_sequence(pattern)
             first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
-
-            if not first_frame_path.exists():
-                QMessageBox.warning(
-                    self, "File Not Found", f"Frame file not found:\n{first_frame_path}"
-                )
-                return
-
-            # Get color space
-            preset, input_space = self._get_current_color_space_config()
-            layer = self.layer_combo.currentText()
-
-            self._last_preview_path = first_frame_path
-            self.preview_widget.load_preview(
-                first_frame_path, preset, input_space=input_space, layer=layer
-            )
-            self.log_text.appendPlainText(
-                f"Loading preview: {first_frame_path.name} (Layer: {layer})"
-            )
+            self._load_preview_from_path(first_frame_path)
         except Exception as e:
             QMessageBox.warning(self, "Preview Error", f"Could not load preview:\n{e}")
             self.log_text.appendPlainText(f"Preview error: {str(e)}")
+
+    def _load_preview_from_path(self, sample_path: Path) -> None:
+        """Load preview using an already resolved frame path."""
+        if not sample_path.exists():
+            QMessageBox.warning(self, "File Not Found", f"Frame file not found:\n{sample_path}")
+            return
+
+        preset, input_space = self._get_current_color_space_config()
+        layer = self.layer_combo.currentText()
+
+        self._last_preview_path = sample_path
+        self.preview_widget.load_preview(sample_path, preset, input_space=input_space, layer=layer)
+        self.log_text.appendPlainText(f"Loading preview: {sample_path.name} (Layer: {layer})")
 
     def _browse_input_pattern(self) -> None:
         """Browse for input file pattern."""
@@ -1507,8 +1510,10 @@ class ModernMainWindow(QMainWindow):
         pattern = self.input_pattern_combo.currentText().strip()
         if not pattern:
             self.sequence_info_label.setText("No pattern specified")
+            self.preview_widget.clear_preview()
             self._input_pattern_valid = False
             self._input_pattern_validated = True
+            self._set_input_validation_state(None, "")
             self._update_convert_gate()
             return
 
@@ -1517,7 +1522,9 @@ class ModernMainWindow(QMainWindow):
         if not is_valid:
             self.sequence_info_label.setText(message)
             self.statusBar().showMessage(message, 3000)
+            self.preview_widget.clear_preview()
             self._input_pattern_valid = False
+            self._set_input_validation_state(False, message)
             self._update_convert_gate()
             return
 
@@ -1529,7 +1536,7 @@ class ModernMainWindow(QMainWindow):
             frame_range = f"{sequence.frame_numbers[0]}-{sequence.frame_numbers[-1]}"
 
             info_text = (
-                f"✓ Detected {frame_count} frames\n"
+                f"Detected {frame_count} frames\n"
                 f"Frame range: {frame_range}\n"
                 f"Pattern: {Path(pattern).name}"
             )
@@ -1592,7 +1599,10 @@ class ModernMainWindow(QMainWindow):
             self.layer_combo.blockSignals(False)
 
             if len(layers) > 1:
-                self.log_text.appendPlainText(f"Found {len(layers)} layers: {', '.join(layers)}")
+                self.log_text.appendPlainText(f"Found {len(layers)} layers.")
+                logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
+
+            self._load_preview_from_path(sample_path)
 
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
@@ -1617,14 +1627,17 @@ class ModernMainWindow(QMainWindow):
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
             self._add_recent_pattern(pattern)
             self._input_pattern_valid = True
+            self._set_input_validation_state(True, "Input pattern looks valid.")
             self._update_convert_gate()
         except Exception as e:
-            error_text = f"✗ Error: {str(e)}"
+            error_text = f"Error: {str(e)}"
             self.sequence_info_label.setText(error_text)
             # self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
             self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
+            self.preview_widget.clear_preview()
             self._input_pattern_valid = False
+            self._set_input_validation_state(False, error_text)
             self._update_convert_gate()
 
     def _get_current_color_space_config(self) -> tuple[ColorSpacePreset, Optional[str]]:
