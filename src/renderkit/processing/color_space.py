@@ -1,8 +1,9 @@
 """Color space conversion using Strategy pattern."""
 
 import logging
+import re
 from enum import Enum
-from typing import Protocol
+from typing import Optional, Protocol
 
 import numpy as np
 
@@ -22,7 +23,7 @@ _OIIO_REC709_CANDIDATES = [
     "Output - Rec.709",
     "Output - Rec709",
 ]
-_OIIO_COLOR_SPACE_CACHE: dict[str, str] | None = None
+_OIIO_COLOR_SPACE_CACHE: Optional[dict[str, str]] = None
 
 
 def _get_oiio_color_space_map(oiio) -> dict[str, str]:
@@ -108,6 +109,11 @@ def _oiio_colorconvert(
             for to_space in to_candidates:
                 if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
                     pixels = dst_buf.get_pixels(oiio.FLOAT)
+                    if pixels is None:
+                        err = dst_buf.geterror()
+                        if err:
+                            errors.append(err)
+                        continue
                     if pixels.ndim == 1:
                         return pixels.reshape((height, width, channels))
                     return pixels
@@ -125,6 +131,94 @@ def _oiio_colorconvert(
     raise ColorSpaceError(f"OIIO color conversion failed for '{from_spaces}' -> '{to_spaces}'.")
 
 
+def _normalize_colorspace_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
+def get_ocio_role_space_map() -> dict[str, str]:
+    try:
+        import PyOpenColorIO as OCIO
+    except Exception:
+        return {}
+
+    try:
+        config = OCIO.GetCurrentConfig()
+        roles = list(config.getRoleNames())
+    except Exception:
+        return {}
+
+    role_map: dict[str, str] = {}
+    for role in roles:
+        try:
+            space = config.getRoleColorSpace(role)
+        except Exception:
+            space = None
+        if space:
+            role_map[role] = space
+
+    return role_map
+
+
+def get_ocio_role_display_options() -> list[tuple[str, str]]:
+    role_map = get_ocio_role_space_map()
+    if not role_map:
+        return []
+
+    options: list[tuple[str, str]] = []
+    for role in sorted(role_map):
+        options.append((f"{role} ({role_map[role]})", role))
+
+    return options
+
+
+def get_ocio_colorspace_label(name: str) -> Optional[str]:
+    try:
+        import PyOpenColorIO as OCIO
+    except Exception:
+        return None
+
+    try:
+        config = OCIO.GetCurrentConfig()
+        spaces = set(config.getColorSpaceNames())
+    except Exception:
+        return None
+
+    if name in spaces:
+        return name
+
+    lowered = {space.lower(): space for space in spaces}
+    return lowered.get(name.lower())
+
+
+def resolve_ocio_role_label_for_colorspace(
+    colorspace_name: str,
+    preferred_roles: Optional[list[str]] = None,
+) -> Optional[str]:
+    if not colorspace_name:
+        return None
+
+    role_map = get_ocio_role_space_map()
+    if not role_map:
+        return None
+
+    target_key = _normalize_colorspace_key(colorspace_name)
+    matching_roles = [
+        role for role, space in role_map.items() if _normalize_colorspace_key(space) == target_key
+    ]
+    if not matching_roles:
+        return None
+
+    if preferred_roles:
+        preferred_lower = [role.lower() for role in preferred_roles]
+        for pref in preferred_lower:
+            for role in matching_roles:
+                if role.lower() == pref:
+                    return f"{role} ({role_map[role]})"
+
+    role = sorted(matching_roles)[0]
+    return f"{role} ({role_map[role]})"
+
+
 class ColorSpacePreset(Enum):
     """Color space conversion presets."""
 
@@ -138,7 +232,7 @@ class ColorSpacePreset(Enum):
 class ColorSpaceStrategy(Protocol):
     """Protocol for color space conversion strategies."""
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert image color space.
 
         Args:
@@ -167,7 +261,50 @@ class OCIOColorSpaceStrategy:
         except Exception as e:
             raise ColorSpaceError(f"Failed to get OCIO config: {e}") from e
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def _resolve_input_space(self, input_space: str) -> str:
+        if not input_space or not self.config:
+            return input_space
+
+        try:
+            spaces = set(self.config.getColorSpaceNames())
+        except Exception:
+            spaces = set()
+
+        if input_space in spaces:
+            return input_space
+
+        if spaces:
+            lowered = {name.lower(): name for name in spaces}
+            match = lowered.get(input_space.lower())
+            if match:
+                return match
+
+        # Resolve role names (e.g., "scene_linear") to their colorspace.
+        try:
+            if hasattr(self.config, "hasRole") and self.config.hasRole(input_space):
+                resolved = self.config.getRoleColorSpace(input_space)
+                if resolved:
+                    return resolved
+            if hasattr(self.config, "getRoleNames"):
+                for role in self.config.getRoleNames():
+                    if role.lower() == input_space.lower():
+                        resolved = self.config.getRoleColorSpace(role)
+                        if resolved:
+                            return resolved
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self.config, "getColorSpaceNameByRole"):
+                resolved = self.config.getColorSpaceNameByRole(input_space)
+                if resolved:
+                    return resolved
+        except Exception:
+            pass
+
+        return input_space
+
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert image using OCIO.
 
         Args:
@@ -183,6 +320,7 @@ class OCIOColorSpaceStrategy:
             raise ColorSpaceError("OCIO input color space is required.")
 
         try:
+            input_space = self._resolve_input_space(input_space)
             # Determine output space (assume sRGB for now, could be configurable)
             # Determine output space (assume sRGB for now, could be configurable)
             # Common display spaces in OCIO configs
@@ -264,7 +402,7 @@ class LinearToSRGBStrategy:
 
         return np.clip(srgb, 0.0, 1.0)
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert linear image to sRGB.
 
         Args:
@@ -314,7 +452,7 @@ class LinearToRec709Strategy:
 
         return np.clip(rec709, 0.0, 1.0)
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert linear image to Rec.709.
 
         Args:
@@ -364,7 +502,7 @@ class SRGBToLinearStrategy:
 
         return linear
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert sRGB image to linear.
 
         Args:
@@ -389,7 +527,7 @@ class SRGBToLinearStrategy:
 class NoConversionStrategy:
     """Strategy for no color space conversion (passthrough)."""
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Return image unchanged.
 
         Args:
@@ -426,7 +564,7 @@ class ColorSpaceConverter:
         self._strategy = strategy_class()
         self._preset = preset
 
-    def convert(self, image: np.ndarray, input_space: str = None) -> np.ndarray:
+    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert image color space.
 
         Args:

@@ -16,7 +16,12 @@ from renderkit.core.config import (
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.io.file_utils import FileUtils
 from renderkit.logging_utils import setup_logging
-from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.processing.color_space import (
+    ColorSpacePreset,
+    get_ocio_colorspace_label,
+    get_ocio_role_display_options,
+    resolve_ocio_role_label_for_colorspace,
+)
 from renderkit.processing.video_encoder import get_available_encoders, select_available_encoder
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.icons import icon_manager
@@ -72,6 +77,7 @@ class ModernMainWindow(QMainWindow):
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
         self._log_forwarder: Optional[UiLogForwarder] = None
+        self._ocio_role_display_map: dict[str, str] = {}
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -333,7 +339,7 @@ class ModernMainWindow(QMainWindow):
         self.color_space_combo = QComboBox()
         self.color_space_combo.setEditable(True)
         self.color_space_combo.setEditable(False)
-        self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
+        self._populate_color_space_combo(self.color_space_combo)
         self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
         color_form.addRow("Color Space:", self.color_space_combo)
 
@@ -446,7 +452,7 @@ class ModernMainWindow(QMainWindow):
         self.color_space_combo = QComboBox()
         self.color_space_combo.setEditable(True)  # Allow custom input space names
         self.color_space_combo.setEditable(False)
-        self.color_space_combo.addItems(constants.COLOR_SPACE_UI_OPTIONS)
+        self._populate_color_space_combo(self.color_space_combo)
         self.color_space_combo.setToolTip("Select input color space. Output is always sRGB.")
         color_layout.addRow("Input Space:", self.color_space_combo)
 
@@ -1102,14 +1108,23 @@ class ModernMainWindow(QMainWindow):
             if detected_color_space:
                 self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
 
-                # Attempt to find closest match in combo box or add it
-                index = self.color_space_combo.findText(
-                    detected_color_space, Qt.MatchFlag.MatchContains
+                preferred_label = resolve_ocio_role_label_for_colorspace(
+                    detected_color_space,
+                    preferred_roles=["rendering", "scene_linear", "compositing_linear"],
                 )
+                if preferred_label:
+                    index = self.color_space_combo.findText(
+                        preferred_label, Qt.MatchFlag.MatchExactly
+                    )
+                else:
+                    index = self.color_space_combo.findText(
+                        detected_color_space, Qt.MatchFlag.MatchContains
+                    )
+
                 if index >= 0:
                     self.color_space_combo.setCurrentIndex(index)
                 else:
-                    # If exact match not found (e.g. ACES - ACEScg vs ACEScg), try setting text directly since it's editable
+                    # If exact match not found, try setting text directly since it's editable
                     self.color_space_combo.setEditText(detected_color_space)
             else:
                 self.log_text.appendPlainText("No specific Color Space metadata found.")
@@ -1160,23 +1175,22 @@ class ModernMainWindow(QMainWindow):
             Tuple of (ColorSpacePreset, input_space_str)
         """
         selected_text = self.color_space_combo.currentText()
-        preset = ColorSpacePreset.LINEAR_TO_SRGB
-        input_space = None
+        role_name = self._ocio_role_display_map.get(selected_text)
+        return ColorSpacePreset.OCIO_CONVERSION, role_name or selected_text
 
-        if selected_text == constants.COLOR_SPACE_UI_LINEAR:
-            preset = ColorSpacePreset.LINEAR_TO_SRGB
-        elif selected_text == constants.COLOR_SPACE_UI_SRGB:
-            preset = ColorSpacePreset.NO_CONVERSION
-        elif selected_text == constants.COLOR_SPACE_UI_REC709:
-            preset = ColorSpacePreset.LINEAR_TO_REC709
-        elif selected_text == constants.COLOR_SPACE_UI_RAW:
-            preset = ColorSpacePreset.NO_CONVERSION
+    def _populate_color_space_combo(self, combo: QComboBox) -> None:
+        combo.clear()
+        role_options = get_ocio_role_display_options()
+        utility_linear = get_ocio_colorspace_label("Utility - Linear - sRGB")
+
+        if utility_linear:
+            combo.addItem(utility_linear)
+
+        if role_options:
+            combo.addItems([label for label, _ in role_options])
+            self._ocio_role_display_map = dict(role_options)
         else:
-            # Assume OCIO for ACES or custom strings
-            preset = ColorSpacePreset.OCIO_CONVERSION
-            input_space = selected_text
-
-        return preset, input_space
+            self._ocio_role_display_map = {}
 
     def _start_conversion(self) -> None:
         """Start the conversion process."""
@@ -1485,7 +1499,6 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("fps", self.fps_spin.value())
         self.settings.setValue("width", self.width_spin.value())
         self.settings.setValue("height", self.height_spin.value())
-        self.settings.setValue("color_space_text", self.color_space_combo.currentText())
         self.settings.setValue("codec_text", self.codec_combo.currentText())
         self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
         self.settings.setValue("quality", self.quality_slider.value())
@@ -1529,9 +1542,8 @@ class ModernMainWindow(QMainWindow):
         self.height_spin.setValue(self.settings.value("height", 1080, type=int))
 
         # Use string-based settings for better robustness across UI changes
-        self.color_space_combo.setCurrentText(
-            self.settings.value("color_space_text", constants.COLOR_SPACE_UI_LINEAR, type=str)
-        )
+        if self.color_space_combo.count() > 0:
+            self.color_space_combo.setCurrentIndex(0)
         self.codec_combo.setCurrentText(self.settings.value("codec_text", "", type=str))
 
         self.keep_resolution_check.setChecked(
