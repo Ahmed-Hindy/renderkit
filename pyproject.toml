@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "renderkit"
-version = "0.3.0"
+version = "0.4.0"
 description = "A high-performance image and video processor for VFX workflows"
 
 readme = "README.md"

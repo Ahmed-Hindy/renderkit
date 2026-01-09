@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-09
+
+### Changed
+- Preview now scales to the panel size while preserving aspect ratio, with a tighter default footprint.
+- Contact Sheet UI simplified by removing the duplicate toggle (single "Enable Contact Sheet" control).
+
+### Fixed
+- Large empty padding around previews when the panel grew beyond the pixmap size.
+
 ## [0.3.0] - 2026-01-01
 
 ### Added

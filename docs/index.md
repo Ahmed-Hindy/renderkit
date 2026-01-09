@@ -12,6 +12,10 @@ A high-performance image and video processor for VFX workflows, built with Pytho
 - **Modern UI**: Dark-themed, studio-grade interface using PySide6.
 - **CLI Support**: Fully functional command-line interface for headless automation.
 
+## Latest Release
+
+- **v0.4.0 (2026-01-09)**: Preview scales to the panel size with a tighter default footprint, and the Contact Sheet toggle is consolidated into a single control.
+
 ## Install
 
 ### Prebuilt App
