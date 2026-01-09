@@ -47,6 +47,7 @@ from renderkit.ui.qt_compat import (
     QProgressBar,
     QPushButton,
     QSettings,
+    QSize,
     QSizePolicy,
     QSlider,
     QSpinBox,
@@ -163,6 +164,7 @@ class ModernMainWindow(QMainWindow):
         self._convert_btn_handler: Optional[str] = None
         self._input_pattern_valid = False
         self._input_pattern_validated = False
+        self._is_cancelling = False
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
@@ -804,7 +806,7 @@ class ModernMainWindow(QMainWindow):
 
         self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
-        self.cs_padding_spin.setValue(10)
+        self.cs_padding_spin.setValue(4)
         self.cs_padding_spin.setSuffix(" px")
         grid_layout.addRow("Padding:", self.cs_padding_spin)
 
@@ -877,9 +879,20 @@ class ModernMainWindow(QMainWindow):
         layout.setSpacing(10)
 
         # Progress Group
-        progress_group = QGroupBox("Progress")
+        progress_group = QGroupBox()
         progress_layout = QVBoxLayout(progress_group)
         progress_layout.setSpacing(10)
+
+        progress_header = QHBoxLayout()
+        self.progress_status_icon = QLabel()
+        self.progress_status_icon.setFixedSize(16, 16)
+        self.progress_status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        progress_title = QLabel("Progress")
+        progress_title.setStyleSheet("font-weight: 600;")
+        progress_header.addWidget(self.progress_status_icon)
+        progress_header.addWidget(progress_title)
+        progress_header.addStretch()
+        progress_layout.addLayout(progress_header)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
@@ -889,7 +902,22 @@ class ModernMainWindow(QMainWindow):
 
         self.progress_label = QLabel("Ready")
         self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        progress_layout.addWidget(self.progress_label)
+        self.progress_play_btn = QPushButton()
+        self.progress_play_btn.setFixedSize(22, 22)
+        self.progress_play_btn.setIcon(icon_manager.get_icon("play"))
+        self.progress_play_btn.setIconSize(QSize(14, 14))
+        self.progress_play_btn.setToolTip("Play output")
+        self.progress_play_btn.setVisible(False)
+        self.progress_play_btn.clicked.connect(self._play_output)
+
+        status_layout = QHBoxLayout()
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(6)
+        status_layout.addStretch()
+        status_layout.addWidget(self.progress_label)
+        status_layout.addWidget(self.progress_play_btn)
+        status_layout.addStretch()
+        progress_layout.addLayout(status_layout)
 
         layout.addWidget(progress_group)
 
@@ -912,6 +940,8 @@ class ModernMainWindow(QMainWindow):
         log_layout.addWidget(clear_log_btn)
 
         layout.addWidget(log_group)
+
+        self._set_status_icons("idle")
 
         return panel
 
@@ -1183,6 +1213,49 @@ class ModernMainWindow(QMainWindow):
         self.input_pattern_combo.style().unpolish(self.input_pattern_combo)
         self.input_pattern_combo.style().polish(self.input_pattern_combo)
 
+    def _get_theme_name(self) -> str:
+        theme = self.property("theme")
+        if isinstance(theme, str) and theme:
+            return theme
+        return "dark"
+
+    def _get_status_color(self, status: str) -> str:
+        theme = self._get_theme_name()
+        if theme == "light":
+            colors = {
+                "idle": "#656d76",
+                "running": "#0969da",
+                "success": "#1a7f37",
+                "error": "#d1242f",
+                "cancelled": "#9a6700",
+            }
+        else:
+            colors = {
+                "idle": "#848d97",
+                "running": "#4493f8",
+                "success": "#3fb950",
+                "error": "#f85149",
+                "cancelled": "#d29922",
+            }
+        return colors.get(status, colors["idle"])
+
+    def _set_status_icons(self, status: str) -> None:
+        if not hasattr(self, "progress_status_icon"):
+            return
+
+        icon_map = {
+            "idle": "info",
+            "running": "loader",
+            "success": "check",
+            "error": "error",
+            "cancelled": "warning",
+        }
+        icon_name = icon_map.get(status, "info")
+        color = self._get_status_color(status)
+        icon = icon_manager.get_icon(icon_name, color=color, size=16)
+        pixmap = icon.pixmap(16, 16)
+        self.progress_status_icon.setPixmap(pixmap)
+
     def _update_output_path_validation(self) -> None:
         output_path = self.output_path_edit.text().strip()
         if not output_path:
@@ -1255,16 +1328,16 @@ class ModernMainWindow(QMainWindow):
         self.multiprocessing_check.setChecked(False)
         self.num_workers_spin.setValue(4)
 
-        self.burnin_enable_check.setChecked(False)
-        self.burnin_frame_check.setChecked(False)
-        self.burnin_layer_check.setChecked(False)
-        self.burnin_fps_check.setChecked(False)
+        self.burnin_enable_check.setChecked(True)
+        self.burnin_frame_check.setChecked(True)
+        self.burnin_layer_check.setChecked(True)
+        self.burnin_fps_check.setChecked(True)
         self.burnin_opacity_spin.setValue(30)
 
         self.cs_enable_check.setChecked(False)
         self.cs_columns_spin.setValue(4)
         self.cs_thumb_width_spin.setValue(512)
-        self.cs_padding_spin.setValue(10)
+        self.cs_padding_spin.setValue(4)
         self.cs_show_labels_check.setChecked(True)
         self.cs_font_size_spin.setValue(12)
         self.cs_mode_check.setChecked(False)
@@ -1332,13 +1405,20 @@ class ModernMainWindow(QMainWindow):
         output_path = self.output_path_edit.text().strip()
         if not output_path:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "progress_play_btn"):
+                self.progress_play_btn.setEnabled(False)
             return
 
         try:
             path = Path(output_path)
-            self.play_btn.setEnabled(path.exists() and path.is_file())
+            enabled = path.exists() and path.is_file()
+            self.play_btn.setEnabled(enabled)
+            if hasattr(self, "progress_play_btn"):
+                self.progress_play_btn.setEnabled(enabled)
         except Exception:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "progress_play_btn"):
+                self.progress_play_btn.setEnabled(False)
 
     def _pattern_has_frame_token(self, filename: str) -> bool:
         if "%" in filename:
@@ -1397,6 +1477,7 @@ class ModernMainWindow(QMainWindow):
         self._input_pattern_valid = False
         self._input_pattern_validated = False
         self._set_input_validation_state(None, "")
+        self.sequence_info_label.setText("No sequence detected")
         self._update_convert_gate()
 
     def _on_color_space_changed(self) -> None:
@@ -1817,6 +1898,10 @@ class ModernMainWindow(QMainWindow):
         self._set_convert_button_state(True)
         self.convert_btn.setEnabled(True)
         self.cancel_btn.setEnabled(True)
+        self._set_status_icons("running")
+        self._is_cancelling = False
+        if hasattr(self, "progress_play_btn"):
+            self.progress_play_btn.setVisible(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_label.setText("Starting conversion...")
@@ -1860,6 +1945,8 @@ class ModernMainWindow(QMainWindow):
                     pass  # Already disconnected
 
                 # Request graceful cancel
+                self._is_cancelling = True
+                self.progress_label.setText("Cancelling conversion...")
                 self.worker.request_cancel()
 
                 # If it doesn't stop in 2 seconds, terminate
@@ -1876,6 +1963,9 @@ class ModernMainWindow(QMainWindow):
                 self.statusBar().showMessage("Conversion cancelled", 3000)
                 self.log_text.appendPlainText("Conversion cancelled by user")
                 self._set_convert_button_state(False)
+                self._set_status_icons("cancelled")
+                if hasattr(self, "progress_play_btn"):
+                    self.progress_play_btn.setVisible(False)
         else:
             QApplication.instance().quit()
 
@@ -1885,6 +1975,7 @@ class ModernMainWindow(QMainWindow):
         if self._conversion_finished_flag:
             return
         self._conversion_finished_flag = True
+        self._is_cancelling = False
 
         # Disconnect signals to prevent multiple calls
         if self.worker:
@@ -1902,13 +1993,23 @@ class ModernMainWindow(QMainWindow):
         self.progress_label.setText("Conversion completed!")
         self.statusBar().showMessage("Conversion completed successfully!", 5000)
         self.play_btn.setEnabled(True)
+        self._set_status_icons("success")
+        if hasattr(self, "progress_play_btn"):
+            self.progress_play_btn.setVisible(True)
+            self._update_play_button_state()
 
         output_path = Path(self.output_path_edit.text().strip()).absolute()
         message_box = QMessageBox(self)
         message_box.setWindowTitle("Success")
         icon_enum = getattr(QMessageBox, "Icon", None)
-        info_icon = icon_enum.Information if icon_enum is not None else QMessageBox.Information
+        info_icon = icon_enum.NoIcon if icon_enum is not None else QMessageBox.NoIcon
         message_box.setIcon(info_icon)
+        theme = self.property("theme")
+        if not isinstance(theme, str) or not theme:
+            theme = "dark"
+        check_color = "#1a7f37" if theme == "light" else "#3fb950"
+        check_icon = icon_manager.get_icon("check", color=check_color, size=48)
+        message_box.setIconPixmap(check_icon.pixmap(48, 48))
         message_box.setText("Conversion completed successfully!")
         message_box.setInformativeText(f"Output: {output_path}")
         role_enum = getattr(QMessageBox, "ButtonRole", None)
@@ -1926,6 +2027,7 @@ class ModernMainWindow(QMainWindow):
 
     def _on_conversion_cancelled(self) -> None:
         """Handle conversion cancellation."""
+        self._is_cancelling = False
         self.convert_btn.setEnabled(True)
         self._set_convert_button_state(False)
         self.progress_bar.setRange(0, 100)
@@ -1933,9 +2035,13 @@ class ModernMainWindow(QMainWindow):
         self.progress_label.setText("Conversion cancelled")
         self.statusBar().showMessage("Conversion cancelled", 5000)
         self.log_text.appendPlainText("Conversion cancelled")
+        self._set_status_icons("cancelled")
+        if hasattr(self, "progress_play_btn"):
+            self.progress_play_btn.setVisible(False)
 
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
+        self._is_cancelling = False
         self.convert_btn.setEnabled(True)
         self._set_convert_button_state(False)
         # Cancel button remains enabled (for quit)
@@ -1945,6 +2051,9 @@ class ModernMainWindow(QMainWindow):
         self.statusBar().showMessage("Conversion failed", 5000)
         # Cancel button remains enabled (for quit)
         self.log_text.appendPlainText(f"ERROR: {error_msg}")
+        self._set_status_icons("error")
+        if hasattr(self, "progress_play_btn"):
+            self.progress_play_btn.setVisible(False)
 
         # Determine error type for better messaging if possible
         full_msg = f"Conversion failed:\n\n{error_msg}"
@@ -2003,6 +2112,8 @@ class ModernMainWindow(QMainWindow):
             current: Current frame number (0-indexed)
             total: Total number of frames
         """
+        if self._is_cancelling:
+            return
         if total > 0:
             if self.progress_bar.maximum() != total:
                 self.progress_bar.setRange(0, total)
@@ -2038,17 +2149,17 @@ class ModernMainWindow(QMainWindow):
 
         self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
 
-        self.burnin_enable_check.setChecked(self.settings.value("burnin_enable", False, type=bool))
-        self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", False, type=bool))
-        self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", False, type=bool))
-        self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", False, type=bool))
+        self.burnin_enable_check.setChecked(self.settings.value("burnin_enable", True, type=bool))
+        self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", True, type=bool))
+        self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", True, type=bool))
+        self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", True, type=bool))
         self.burnin_opacity_spin.setValue(self.settings.value("burnin_opacity", 30, type=int))
 
         # Contact Sheet settings
         self.cs_enable_check.setChecked(self.settings.value("cs_enable", False, type=bool))
         self.cs_columns_spin.setValue(self.settings.value("cs_columns", 4, type=int))
         self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
-        self.cs_padding_spin.setValue(self.settings.value("cs_padding", 10, type=int))
+        self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
         self.cs_mode_check.setChecked(self.settings.value("cs_mode", False, type=bool))
@@ -2067,19 +2178,23 @@ class ModernMainWindow(QMainWindow):
         self.burnin_enable_check = QCheckBox("Enable Burn-ins")
         self.burnin_enable_check.setToolTip("Enable or disable all burn-in overlays")
         self.burnin_enable_check.setStyleSheet("font-weight: bold;")
+        self.burnin_enable_check.setChecked(True)
         self.burnin_enable_check.toggled.connect(self._on_burnin_enable_toggled)
         layout.addWidget(self.burnin_enable_check)
 
         self.burnin_frame_check = QCheckBox("Frame Number")
         self.burnin_frame_check.setToolTip("Overlay the current frame number (top-left)")
+        self.burnin_frame_check.setChecked(True)
         layout.addWidget(self.burnin_frame_check)
 
         self.burnin_layer_check = QCheckBox("EXR Layer Name")
         self.burnin_layer_check.setToolTip("Overlay the active EXR layer name (top-left)")
+        self.burnin_layer_check.setChecked(True)
         layout.addWidget(self.burnin_layer_check)
 
         self.burnin_fps_check = QCheckBox("Frame Rate (FPS)")
         self.burnin_fps_check.setToolTip("Overlay the video frame rate (top-left)")
+        self.burnin_fps_check.setChecked(True)
         layout.addWidget(self.burnin_fps_check)
 
         # Opacity
@@ -2124,7 +2239,7 @@ class ModernMainWindow(QMainWindow):
 
         self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
-        self.cs_padding_spin.setValue(10)
+        self.cs_padding_spin.setValue(4)
         self.cs_padding_spin.setSuffix(" px")
         form_layout.addRow("Padding:", self.cs_padding_spin)
 
@@ -2229,6 +2344,7 @@ class ModernMainWindow(QMainWindow):
 
         self.overwrite_check = QCheckBox("Overwrite existing files")
         self.overwrite_check.setToolTip("Automatically overwrite output files if they exist")
+        self.overwrite_check.setChecked(True)
         form_layout.addRow(self.overwrite_check)
 
         layout.addLayout(form_layout)

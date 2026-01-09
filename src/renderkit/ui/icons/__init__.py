@@ -37,6 +37,8 @@ class IconManager:
             "error": "circle-alert.svg",
             "info": "info.svg",
             "ban": "ban.svg",
+            "check": "check.svg",
+            "loader": "loader.svg",
         }
 
     def get_icon(self, name: str, color: Optional[str] = None, size: int = 16) -> QIcon:
