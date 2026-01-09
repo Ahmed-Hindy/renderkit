@@ -5,6 +5,8 @@ from typing import Optional
 
 from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
 from renderkit.core.converter import SequenceConverter
+from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
+from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
 logger = logging.getLogger(__name__)
@@ -15,7 +17,8 @@ class RenderKit:
 
     def __init__(self) -> None:
         """Initialize RenderKit."""
-        pass
+        ensure_ffmpeg_env()
+        setup_logging()
 
     def convert_exr_sequence_to_mp4(
         self,

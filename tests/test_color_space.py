@@ -1,9 +1,11 @@
 """Tests for color space conversion."""
 
 import numpy as np
+import pytest
 
 from renderkit.processing.color_space import (
     ColorSpaceConverter,
+    ColorSpaceError,
     ColorSpacePreset,
     LinearToSRGBStrategy,
     NoConversionStrategy,
@@ -53,8 +55,34 @@ class TestColorSpaceConverter:
         for preset in ColorSpacePreset:
             converter = ColorSpaceConverter(preset)
             test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-            result = converter.convert(test_image)
-            assert result.shape == test_image.shape
+            if preset == ColorSpacePreset.OCIO_CONVERSION:
+                with pytest.raises(ColorSpaceError):
+                    converter.convert(test_image)
+            elif preset == ColorSpacePreset.LINEAR_TO_REC709:
+                if not _has_oiio_colorspace_candidates(
+                    [
+                        "Rec709",
+                        "Rec.709",
+                        "rec709",
+                        "BT.709",
+                        "bt709",
+                        "Output - Rec.709",
+                        "Output - Rec709",
+                    ]
+                ):
+                    pytest.skip("Rec.709 colorspace not available in OCIO config.")
+                result = converter.convert(test_image)
+                assert result.shape == test_image.shape
+            else:
+                result = converter.convert(test_image)
+                assert result.shape == test_image.shape
+
+    def test_ocio_requires_input_space(self) -> None:
+        """Test OCIO conversion requires an input space."""
+        converter = ColorSpaceConverter(ColorSpacePreset.OCIO_CONVERSION)
+        test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
+        with pytest.raises(ColorSpaceError):
+            converter.convert(test_image)
 
 
 class TestLinearToSRGBStrategy:
@@ -86,3 +114,30 @@ class TestNoConversionStrategy:
         result = strategy.convert(test_image)
 
         np.testing.assert_array_equal(test_image, result)
+
+
+def _has_oiio_colorspace_candidates(candidates: list[str]) -> bool:
+    try:
+        import OpenImageIO as oiio
+    except ImportError:
+        return False
+
+    try:
+        config = oiio.ColorConfig()
+        names = config.getColorSpaceNames()
+    except Exception:
+        return False
+
+    if not names:
+        return False
+
+    lowered = {name.lower() for name in names}
+    normalized = {name.replace("-", "_").replace(" ", "_") for name in lowered}
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in lowered:
+            return True
+        if key.replace("-", "_").replace(" ", "_") in normalized:
+            return True
+
+    return False

@@ -89,3 +89,7 @@ htmlcov/
 ui_test_errors.txt
 
 /.kiro
+
+# Bundled FFmpeg (local build)
+/vendor/ffmpeg/
+/_ffmpeg_build/

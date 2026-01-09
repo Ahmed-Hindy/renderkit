@@ -164,7 +164,7 @@ class SequenceConverter:
         self.encoder.initialize(output_width, output_height)
 
         # Step 8: Process frames
-        logger.info(f"Processing {len(frame_numbers)} frames...")
+        logger.debug(f"Processing {len(frame_numbers)} frames...")
         scaler = ImageScaler()
         success_count = 0
 
@@ -178,7 +178,7 @@ class SequenceConverter:
                         logger.info("Conversion cancelled by progress callback")
                         raise ConversionCancelledError("Conversion cancelled by user")
 
-                    self._process_single_frame(
+                    wrote_frame = self._process_single_frame(
                         frame_num,
                         output_width,
                         output_height,
@@ -188,7 +188,8 @@ class SequenceConverter:
                         input_space,
                         self.contact_sheet_generator if self.config.contact_sheet_mode else None,
                     )
-                    success_count += 1
+                    if wrote_frame:
+                        success_count += 1
                 # Final progress update
                 progress_callback(total_frames, total_frames)
             else:
@@ -196,7 +197,7 @@ class SequenceConverter:
                 from tqdm import tqdm
 
                 for frame_num in tqdm(frame_numbers, desc="Converting frames"):
-                    self._process_single_frame(
+                    wrote_frame = self._process_single_frame(
                         frame_num,
                         output_width,
                         output_height,
@@ -206,7 +207,8 @@ class SequenceConverter:
                         input_space,
                         self.contact_sheet_generator if self.config.contact_sheet_mode else None,
                     )
-                    success_count += 1
+                    if wrote_frame:
+                        success_count += 1
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -214,7 +216,8 @@ class SequenceConverter:
                     "Check logs for reading or conversion errors."
                 )
 
-            logger.info(f"Conversion completed successfully: {success_count} frames written")
+            logger.info("Conversion completed successfully.")
+            logger.info(f"{success_count} frames written")
 
         finally:
             # Clean up
@@ -231,7 +234,7 @@ class SequenceConverter:
         scaler: "ImageScaler",
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
-    ) -> None:
+    ) -> bool:
         """Process a single frame.
 
         Args:
@@ -242,6 +245,8 @@ class SequenceConverter:
             height: Source height
             scaler: Image scaler instance
             input_space: Explicit input color space
+        Returns:
+            True if a frame was written successfully.
         """
         frame_path = self.sequence.get_file_path(frame_num)
 
@@ -262,14 +267,14 @@ class SequenceConverter:
                 image = self.reader.read(frame_path, layer=self.config.layer)
         except (ImageReadError, Exception) as e:
             logger.warning(f"Failed to process frame {frame_num}: {e}")
-            return
+            return False
 
         # Convert color space
         try:
             image = self.color_converter.convert(image, input_space=input_space)
         except ColorSpaceError as e:
             logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-            return
+            return False
 
         if output_width != width or output_height != height:
             image = scaler.scale_image(image, output_width, output_height)
@@ -307,3 +312,4 @@ class SequenceConverter:
         except VideoEncodingError as e:
             logger.error(f"Failed to write frame {frame_num}: {e}")
             raise
+        return True

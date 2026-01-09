@@ -14,20 +14,19 @@ from renderkit.core.config import (
     ContactSheetConfigBuilder,
     ConversionConfigBuilder,
 )
+from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
+from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
 @click.group()
-@click.version_option(version="0.3.0")
+@click.version_option(version="0.4.0")
 def main() -> None:
     """RenderKit - VFX workflow tools."""
+    ensure_ffmpeg_env()
+    setup_logging()
     pass
 
 

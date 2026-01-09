@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FFMPEG_VERSION: "8.0.1"
+
 jobs:
   build:
     name: Build (${{ matrix.os }})
@@ -64,7 +67,107 @@ jobs:
             libopenexr-dev libilmbase-dev \
             libegl1 libopengl0 libxkbcommon-x11-0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 \
+            ffmpeg
+
+      - name: Detect FFmpeg version (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        id: ffmpeg-version-linux
+        shell: bash
+        run: |
+          version="$(ffmpeg -version | head -n1 | awk '{print $3}')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache bundled FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        id: cache-ffmpeg-linux
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg/linux
+          key: ffmpeg-${{ matrix.os }}-${{ runner.image_version }}-${{ steps.ffmpeg-version-linux.outputs.version }}-bundle
+
+      - name: Bundle FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest' && steps.cache-ffmpeg-linux.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p vendor/ffmpeg/linux
+          cp "$(command -v ffmpeg)" vendor/ffmpeg/linux/ffmpeg
+          chmod +x vendor/ffmpeg/linux/ffmpeg
+
+      - name: Cache bundled FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg/windows
+          key: ffmpeg-${{ matrix.os }}-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh', 'scripts/build_ffmpeg_windows_msys2_bootstrap.sh') }}
+
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          cache: true
+          install: >-
+            base-devel git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-yasm
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-x264
+            mingw-w64-ucrt-x86_64-x265
+            mingw-w64-ucrt-x86_64-aom
+
+      - name: Build FFmpeg (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        env:
+          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
+        run: |
+          set -euo pipefail
+          repo_root="$(cygpath -u "$GITHUB_WORKSPACE")"
+          cd "$repo_root"
+          ./scripts/build_ffmpeg_windows_msys2.sh
+
+      - name: Detect FFmpeg version (macOS)
+        if: matrix.os == 'macos-latest'
+        id: ffmpeg-version-macos
+        shell: bash
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
+          export HOMEBREW_NO_ENV_HINTS=1
+          brew_info="$(brew info --json=v2 ffmpeg 2>/dev/null || true)"
+          version="$(BREW_INFO="$brew_info" python - <<'PY'
+          import json
+          import os
+          data = os.environ.get("BREW_INFO", "").strip()
+          if not data:
+              print("unknown")
+          else:
+              try:
+                  parsed = json.loads(data)
+                  print(parsed["formulae"][0]["versions"]["stable"])
+              except Exception:
+                  print("unknown")
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache bundled FFmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        id: cache-ffmpeg-macos
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg/macos
+          key: ffmpeg-${{ matrix.os }}-${{ runner.image_version }}-${{ steps.ffmpeg-version-macos.outputs.version }}-bundle
+
+      - name: Bundle FFmpeg (macOS)
+        if: matrix.os == 'macos-latest' && steps.cache-ffmpeg-macos.outputs.cache-hit != 'true'
+        run: |
+          brew install ffmpeg
+          mkdir -p vendor/ffmpeg/macos
+          cp "$(brew --prefix)/bin/ffmpeg" vendor/ffmpeg/macos/ffmpeg
+          chmod +x vendor/ffmpeg/macos/ffmpeg
 
       - name: Install dependencies
         run: uv pip install --system -e . pyinstaller

@@ -14,7 +14,7 @@ A high-performance Python package and CLI tool for converting image sequences (E
 - **VFX-Standard I/O**: High-performance image reading and scaling powered by **OpenImageIO**.
 - **Broad Format Support**: Native support for **EXR, DPX, TIFF, PNG, and JPEG**.
 - **Quality-First Video**: 0-10 Quality Slider using **Constant Rate Factor (CRF)** for professional results.
-- **AV1 & HEVC**: Support for modern codecs including **AV1** and **H.265 (HEVC)**.
+- **H.264 Default + AV1/HEVC**: Support for **H.264 (AVC)** by default, with **AV1** and **H.265 (HEVC)** options.
 - **Smart Detection**: Automatically handles `%04d`, `$F4`, `####` and numeric sequences.
 - **Multi-AOV Contact Sheets**: Generate a video grid of all AOVs (layers) for every frame.
 - **Color Space**: Professional color management including **Linear-to-sRGB** and **Rec.709** presets.
@@ -64,6 +64,9 @@ python -m renderkit.ui.main_window
 
 - `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
 - `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, for offline systems).
+- `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
+- `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
+- `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
 - `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).
 
 ### Python API

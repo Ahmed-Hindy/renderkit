@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-09
+
+### Added
+- Recent patterns dropdown with history and a reset-to-defaults action in settings panels.
+- Inline output path validation and UI log forwarding.
+- Conversion completion quick actions and status icons (including a success check) in the UI.
+- Centralized logging module to unify app logging output.
+- Color space role names with Utility Linear sRGB as the default role.
+- Encoder preflight popup and an MSYS2 wrapper for Windows FFmpeg builds.
+- Caching for FFmpeg build artifacts and minimal Windows FFmpeg build support in CI.
+
+### Changed
+- Preview now scales to the panel size while preserving aspect ratio, with a tighter default footprint.
+- Preview panel height is capped for a more balanced UI layout.
+- Preview auto-load behavior and flow refined in the UI.
+- Convert swaps to Cancel during runs, with refined cancel UX and preview flow.
+- Sequence detection runs after typing completes; removed the manual Detect button.
+- Color conversion now requires OCIO configuration and uses OIIO/OCIO exclusively.
+- Default codec/build defaults updated (H.264 default, x264 build, trimmed output extensions).
+- UI labels and styling refined (Matcha QSS, validation presentation, icons, defaults).
+- Contact Sheet UI simplified by removing the duplicate toggle (single "Enable Contact Sheet" control).
+- CI now caches platform FFmpeg bundles for faster Linux/macOS builds.
+
+### Fixed
+- Large empty padding around previews when the panel grew beyond the pixmap size.
+- Pattern validation edge cases in the main window.
+- Accidental value changes from mouse-wheel scrolling without focus.
+- Windows FFmpeg build issues (stdin/report handling, libaom AV1 encoder, dependency updates).
+
 ## [0.3.0] - 2026-01-01
 
 ### Added

@@ -34,7 +34,7 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burni
 | `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, `no_conversion` | `linear_to_srgb` |
 | `--width` | Output width | Source width |
 | `--height` | Output height | Source height |
-| `--codec` | Video codec (`libx264`, `libaom-av1`, `libx265`, etc.) | `libx264` |
+| `--codec` | Video codec (`libx264`, `libx265`, `libaom-av1`) | `libx264` |
 | `--layer` | EXR layer/AOV to extract | None |
 | `--start-frame` | Start frame number | First frame |
 | `--end-frame` | End frame number | Last frame |
@@ -83,7 +83,7 @@ config = (
     .with_color_space_preset(ColorSpacePreset.OCIO_CONVERSION)
     .with_explicit_input_color_space("ACES - ACEScg")
     .with_resolution(3840, 2160)
-    .with_codec("avc1")
+    .with_codec("libx264")
     .with_contact_sheet(
         True,
         ContactSheetConfig(columns=4, thumbnail_width=512, padding=10, show_labels=True),
@@ -123,4 +123,7 @@ $env:QT_BACKEND = "pyside6"
 
 - `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
 - `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, for offline systems).
+- `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
+- `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
+- `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
 - `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).

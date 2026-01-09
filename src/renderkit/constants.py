@@ -30,12 +30,12 @@ OCIO_OUTPUT_CANDIDATES = [
 ]
 
 # UI Options
-COLOR_SPACE_UI_LINEAR = "Linear (Default)"
+COLOR_SPACE_UI_LINEAR = "Utility - Linear - sRGB"
 COLOR_SPACE_UI_ACES_CG = "ACES - ACEScg"
 COLOR_SPACE_UI_ACES_2065_1 = "ACES - ACES2065-1"
-COLOR_SPACE_UI_SRGB = "sRGB"
+COLOR_SPACE_UI_SRGB = "Utility - sRGB - Texture"
 COLOR_SPACE_UI_REC709 = "Rec.709"
-COLOR_SPACE_UI_RAW = "Raw (No Conversion)"
+COLOR_SPACE_UI_RAW = "Utility - Raw"
 
 COLOR_SPACE_UI_OPTIONS = [
     COLOR_SPACE_UI_LINEAR,
@@ -48,4 +48,4 @@ COLOR_SPACE_UI_OPTIONS = [
 
 # Supported Formats
 OIIO_SUPPORTED_EXTENSIONS = {"exr", "png", "jpg", "jpeg", "tif", "tiff", "dpx"}
-SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mkv", "mov", "avi"}
+SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mov"}
