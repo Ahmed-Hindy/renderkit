@@ -1,0 +1,165 @@
+/* Modern Dual-Theme QSS (Light & Dark) */
+
+/* Default / Shared Styles */
+QWidget {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    background: transparent;
+}
+
+QPushButton {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 500;
+}
+
+#Card, #IssueItem {
+    border-radius: 10px;
+    padding: 12px;
+}
+
+#NavItem {
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-align: left;
+}
+
+/* ============================================================================
+   LIGHT THEME (Zinc-based)
+   ============================================================================ */
+
+[theme="light"] {
+    background: #ffffff;
+    color: #0a0a0a;
+}
+
+[theme="light"] #Sidebar {
+    background: #fafafa;
+    border-right: 1px solid #e5e5e5;
+}
+
+[theme="light"] #SidebarTitle {
+    color: #030213;
+}
+
+[theme="light"] #NavItem {
+    color: #717182;
+}
+
+[theme="light"] #NavItem:hover {
+    background: #f5f5f5;
+    color: #030213;
+}
+
+[theme="light"] #NavActive {
+    background: #eceef2;
+    color: #030213;
+}
+
+[theme="light"] #Card {
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[theme="light"] QPushButton#PrimaryButton {
+    background: #030213;
+    color: #ffffff;
+}
+
+[theme="light"] QPushButton#PrimaryButton:hover {
+    background: #1a1a2e;
+}
+
+[theme="light"] QPushButton#SecondaryButton {
+    background: #eceef2;
+    color: #030213;
+}
+
+[theme="light"] QLineEdit, [theme="light"] QSpinBox, [theme="light"] QComboBox {
+    background: #f3f3f5;
+    border: 1px solid #e5e5e5;
+    color: #0a0a0a;
+}
+
+/* ============================================================================
+   DARK THEME (Zinc-based Refined)
+   ============================================================================ */
+
+[theme="dark"] {
+    background: #09090b; /* Zinc-950 */
+    color: #fafafa;
+}
+
+[theme="dark"] #Sidebar {
+    background: #0f0f11;
+    border-right: 1px solid #27272a;
+}
+
+[theme="dark"] #SidebarTitle {
+    color: #fafafa;
+}
+
+[theme="dark"] #NavItem {
+    color: #a1a1a1;
+}
+
+[theme="dark"] #NavItem:hover {
+    background: #27272a;
+    color: #fafafa;
+}
+
+[theme="dark"] #NavActive {
+    background: #27272a;
+    color: #fafafa;
+}
+
+[theme="dark"] #Card {
+    background: #18181b; /* Zinc-900 - Lifts from background */
+    border: 1px solid #27272a; /* Zinc-800 */
+}
+
+[theme="dark"] QPushButton#PrimaryButton {
+    background: #fafafa;
+    color: #18181b;
+}
+
+[theme="dark"] QPushButton#PrimaryButton:hover {
+    background: #e5e5e5;
+}
+
+[theme="dark"] QPushButton#SecondaryButton {
+    background: #3f3f46; /* Zinc-700 */
+    color: #fafafa;
+}
+
+[theme="dark"] QLineEdit, [theme="dark"] QSpinBox, [theme="dark"] QComboBox {
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    color: #fafafa;
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 6px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3f3f46;
+    min-height: 20px;
+    border-radius: 3px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: transparent;
+    height: 6px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #3f3f46;
+    min-width: 20px;
+    border-radius: 3px;
+}

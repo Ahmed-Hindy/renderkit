@@ -4,7 +4,7 @@ import sys
 
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
-datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/stylesheets', 'renderkit/ui/stylesheets')]
+datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/stylesheets', 'renderkit/ui/stylesheets'), ('src/renderkit/data/ocio', 'renderkit/data/ocio')]
 binaries = []
 hiddenimports = []
 # Rely on PyInstaller's built-in PySide6 hook to avoid duplicate Qt frameworks on macOS.

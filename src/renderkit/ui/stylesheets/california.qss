@@ -1,0 +1,155 @@
+/* California QSS Theme - Inspired by casscss/california */
+
+/* Default / Shared Styles */
+QWidget {
+    font-family: "Helvetica Neue", -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    font-size: 13px;
+    background: transparent;
+}
+
+QPushButton {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-weight: bold;
+}
+
+#Card {
+    border-radius: 6px;
+}
+
+/* ============================================================================
+   LIGHT THEME (Warm California Day)
+   ============================================================================ */
+
+[theme="light"] {
+    background-color: #fffcf5; /* Warm White */
+    color: #1a1917; /* Warm Black */
+}
+
+[theme="light"] #Sidebar {
+    background-color: #f7f3eb;
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[theme="light"] #Card {
+    background-color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[theme="light"] QPushButton#PrimaryButton {
+    background-color: #e09f2a;
+    color: #ffffff;
+}
+
+[theme="light"] QPushButton#PrimaryButton:hover {
+    background-color: #cf8e19;
+}
+
+[theme="light"] QPushButton#SecondaryButton {
+    background-color: #ececf0;
+    color: #1a1917;
+}
+
+[theme="light"] QLineEdit, [theme="light"] QSpinBox, [theme="light"] QComboBox {
+    background-color: #fdfbf7;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    color: #1a1917;
+}
+
+/* ============================================================================
+   DARK THEME (California Sunset/Night)
+   ============================================================================ */
+
+[theme="dark"] {
+    background-color: #1a1917; /* Warm Black */
+    color: #fffcf5; /* Warm White */
+}
+
+[theme="dark"] #Sidebar {
+    background-color: #121110;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[theme="dark"] #Card {
+    background-color: #242321;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[theme="dark"] QPushButton#PrimaryButton {
+    background-color: #f5a623; /* Brighter gold for dark mode */
+    color: #1a1917;
+}
+
+[theme="dark"] QPushButton#PrimaryButton:hover {
+    background-color: #ffb84d;
+}
+
+[theme="dark"] QPushButton#SecondaryButton {
+    background-color: #33312e;
+    color: #fffcf5;
+}
+
+[theme="dark"] QLineEdit, [theme="dark"] QSpinBox, [theme="dark"] QComboBox {
+    background-color: #242321;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fffcf5;
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 10px;
+}
+
+[theme="light"] QScrollBar::handle:vertical {
+    background: #d4cfc7;
+    border-radius: 5px;
+}
+
+[theme="dark"] QScrollBar::handle:vertical {
+    background: #4a4845;
+    border-radius: 5px;
+}
+
+/* Tabs */
+QTabWidget::pane {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+}
+
+[theme="dark"] QTabWidget::pane {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+QTabBar::tab {
+    padding: 8px 16px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-right: 2px;
+}
+
+[theme="light"] QTabBar::tab {
+    background: #ececf0;
+    color: #717182;
+}
+
+[theme="light"] QTabBar::tab:selected {
+    background: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom-color: #ffffff;
+}
+
+[theme="dark"] QTabBar::tab {
+    background: #33312e;
+    color: #a1a1a1;
+}
+
+[theme="dark"] QTabBar::tab:selected {
+    background: #242321;
+    color: #fffcf5;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom-color: #242321;
+}

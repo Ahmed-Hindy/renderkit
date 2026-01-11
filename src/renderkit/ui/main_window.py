@@ -1,6 +1,7 @@
 """Modern main window for RenderKit using the qt_compat abstraction."""
 
 import logging
+import os
 import sys
 from importlib import resources
 from pathlib import Path
@@ -166,6 +167,8 @@ class ModernMainWindow(QMainWindow):
         self._input_pattern_validated = False
         self._is_cancelling = False
 
+        self._ensure_ocio_env()
+
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None
         self.left_splitter: Optional[QSplitter] = None
@@ -177,6 +180,35 @@ class ModernMainWindow(QMainWindow):
         self._setup_logging()
         self._load_settings()
         self._setup_connections()
+
+    def _ensure_ocio_env(self) -> None:
+        """Ensure OCIO environment variable is set, using bundled config if needed."""
+        if os.environ.get("OCIO"):
+            logger.info(f"Using existing OCIO environment variable: {os.environ['OCIO']}")
+            return
+
+        # Look for bundled config
+        # In PyInstaller, sys._MEIPASS is the root. We added it to 'renderkit/data/ocio/config.ocio'
+        bundled_config = None
+
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            candidate = Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio"
+            if candidate.exists():
+                bundled_config = candidate
+        else:
+            # Dev mode: assuming this file is in src/renderkit/ui/main_window.py
+            # Config is in src/renderkit/data/ocio/config.ocio
+            # ../../data/ocio/config.ocio
+            current_dir = Path(__file__).parent
+            candidate = current_dir.parent / "data" / "ocio" / "config.ocio"
+            if candidate.exists():
+                bundled_config = candidate
+
+        if bundled_config:
+            logger.info(f"Setting OCIO environment variable to bundled config: {bundled_config}")
+            os.environ["OCIO"] = str(bundled_config.resolve())
+        else:
+            logger.warning("Could not find bundled ocio/config.ocio and OCIO env var is not set.")
 
     def keyPressEvent(self, event) -> None:
         """Handle global key presses for the main window."""

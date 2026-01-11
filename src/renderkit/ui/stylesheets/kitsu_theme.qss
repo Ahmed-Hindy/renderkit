@@ -1,0 +1,170 @@
+
+/* "Real Kitsu" Light Theme for RenderKit */
+/* Inspired by CGWire's Kitsu Web UI (Soft Light + Teal) */
+
+QMainWindow { 
+    background: #f8f9fa; 
+    color: #333333; 
+    font-family: 'Inter', 'Segoe UI', sans-serif; 
+}
+
+/* Header & Sidebar mimicking the Kitsu top nav */
+#Header { 
+    background: #2c3e50; 
+    border-bottom: 3px solid #44d9e8; 
+}
+
+#HeaderTitle { 
+    color: #ffffff; 
+    font-weight: 700; 
+    font-size: 18px; 
+}
+
+/* Dashboard Cards - Clean White and Soft Borders */
+#Card { 
+    background: #ffffff; 
+    border: 1px solid #e9ecef; 
+    border-radius: 8px; 
+}
+
+#CardTitle { 
+    color: #6c757d; 
+    font-size: 11px; 
+    font-weight: 700; 
+    text-transform: uppercase; 
+}
+
+#CardHeaderBig { 
+    color: #2c3e50; 
+    font-size: 15px; 
+    font-weight: 700; 
+}
+
+/* Primary Action Blue/Teal */
+#PrimaryButton { 
+    background: #44d9e8; 
+    color: #ffffff; 
+    border: none; 
+    padding: 10px 20px; 
+    border-radius: 6px; 
+    font-weight: 700; 
+    text-transform: uppercase;
+}
+
+#PrimaryButton:hover { 
+    background: #3bc4d2; 
+}
+
+#PrimaryButton:disabled { 
+    background: #dae0e5; 
+    color: #adb5bd; 
+}
+
+/* Secondary/Ghost Buttons */
+QPushButton { 
+    background: #ffffff; 
+    color: #495057; 
+    border: 1px solid #ced4da; 
+    padding: 8px 16px; 
+    border-radius: 4px; 
+    font-weight: 500;
+}
+
+QPushButton:hover { 
+    background: #f1f3f5; 
+    border-color: #adb5bd; 
+}
+
+#IconButton { 
+    background: transparent; 
+    border: 1px solid transparent; 
+    color: #6c757d; 
+}
+
+#IconButton:hover { 
+    background: #e9ecef; 
+    color: #212529; 
+    border-color: #dee2e6;
+}
+
+/* Form Styling - Very clean, light grey borders */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: #495057;
+}
+
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border-color: #44d9e8;
+    background: #ffffff;
+}
+
+#FieldLabel { 
+    color: #6c757d; 
+    font-weight: 600; 
+    font-size: 11px; 
+    text-transform: uppercase;
+}
+
+/* Tabs - Matching Kitsu's top-row navigation style */
+QTabWidget::pane { 
+    border: 1px solid #e9ecef; 
+    background: #ffffff; 
+    border-radius: 6px; 
+    top: -1px; 
+}
+
+QTabBar::tab {
+    background: #f1f3f5;
+    color: #6c757d;
+    padding: 12px 24px;
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background: #ffffff;
+    color: #44d9e8;
+    border-top: 3px solid #44d9e8;
+    font-weight: 700;
+}
+
+QTabBar::tab:hover {
+    background: #e9ecef;
+}
+
+/* Log View - Softer console style */
+#LogBox { 
+    background: #212529; 
+    color: #44d9e8; 
+    border: 1px solid #212529; 
+    border-radius: 4px;
+    font-family: 'Consolas', monospace; 
+}
+
+/* Progress bar inside a light container */
+QProgressBar {
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    text-align: center;
+    color: #212529;
+    font-weight: 700;
+}
+
+QProgressBar::chunk {
+    background-color: #44d9e8;
+    border-radius: 11px;
+}
+
+/* Tooltip */
+QToolTip {
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    padding: 5px;
+    border-radius: 4px;
+}
