@@ -166,7 +166,9 @@ class ModernMainWindow(QMainWindow):
         self._input_pattern_valid = False
         self._input_pattern_validated = False
         self._is_cancelling = False
+        self._startup_logs: list[str] = []
 
+        self._setup_logging()
         self._ensure_ocio_env()
 
         # UI element references for responsive layout
@@ -177,7 +179,6 @@ class ModernMainWindow(QMainWindow):
 
         self._apply_theme()
         self._setup_ui()
-        self._setup_logging()
         self._load_settings()
         self._setup_connections()
 
@@ -303,6 +304,12 @@ class ModernMainWindow(QMainWindow):
 
         # Status bar
         self.statusBar().showMessage("Ready")
+
+        # Flush startup logs
+        if self._startup_logs:
+            for msg in self._startup_logs:
+                self.log_text.appendPlainText(msg)
+            self._startup_logs.clear()
 
     def _set_form_growth_policy(self, form_layout: QFormLayout) -> None:
         policy_enum = getattr(QFormLayout, "FieldGrowthPolicy", None)
@@ -2088,7 +2095,10 @@ class ModernMainWindow(QMainWindow):
 
     def _on_log_message(self, message: str) -> None:
         """Handle log message from worker."""
-        self.log_text.appendPlainText(message)
+        if hasattr(self, "log_text") and self.log_text is not None:
+            self.log_text.appendPlainText(message)
+        else:
+            self._startup_logs.append(message)
 
     def _save_settings(self) -> None:
         """Save current settings."""
