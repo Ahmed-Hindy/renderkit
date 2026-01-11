@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "renderkit"
-version = "0.4.0"
+dynamic = ["version"]
 description = "A high-performance image and video processor for VFX workflows"
 
 readme = "README.md"
@@ -119,3 +119,5 @@ module = [
 ]
 ignore_missing_imports = true
 
+[tool.hatch.version]
+path = "src/renderkit/__init__.py"

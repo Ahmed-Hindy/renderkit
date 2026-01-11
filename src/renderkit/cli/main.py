@@ -7,6 +7,7 @@ from typing import Optional
 
 import click
 
+from renderkit import __version__
 from renderkit.api.processor import RenderKit
 from renderkit.core.config import (
     BurnInConfig,
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-@click.version_option(version="0.4.0")
+@click.version_option(__version__)
 def main() -> None:
     """RenderKit - VFX workflow tools."""
     ensure_ffmpeg_env()

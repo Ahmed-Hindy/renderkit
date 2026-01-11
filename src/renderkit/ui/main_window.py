@@ -255,7 +255,7 @@ class ModernMainWindow(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Set up the user interface."""
-        self.setWindowTitle("RenderKit")
+        self.setWindowTitle(f"RenderKit v{__version__}")
         self.setMinimumSize(500, 450)
         self.resize(1400, 950)
         self._last_preview_path: Optional[Path] = None

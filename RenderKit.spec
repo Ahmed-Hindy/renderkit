@@ -1,8 +1,20 @@
-# -*- mode: python ; coding: utf-8 -*-
+import re
 from pathlib import Path
 import sys
 
 from PyInstaller.utils.hooks import collect_all, copy_metadata
+
+def get_version():
+    init_path = Path("src") / "renderkit" / "__init__.py"
+    if init_path.exists():
+        content = init_path.read_text()
+        match = re.search(r'__version__\s*=\s*[\'"]([^\'"]+)[\'"]', content)
+        if match:
+            return match.group(1)
+    return "0.0.0"
+
+version = get_version()
+app_name = f'RenderKit_{version}'
 
 datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/stylesheets', 'renderkit/ui/stylesheets'), ('src/renderkit/data/ocio', 'renderkit/data/ocio')]
 binaries = []
@@ -205,7 +217,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='RenderKit',
+    name=app_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=strip_binaries,
@@ -224,5 +236,5 @@ coll = COLLECT(
     strip=strip_binaries,
     upx=True,
     upx_exclude=[],
-    name='RenderKit',
+    name=app_name,
 )
