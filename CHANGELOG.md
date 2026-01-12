@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Moved Contact Sheet toggle to Input Sequence section for better visibility.
+- Enforced mutual exclusivity between Contact Sheet mode and single Layer selection.
+
 ## [0.4.0] - 2026-01-09
 
 ### Added

@@ -504,7 +504,19 @@ class ModernMainWindow(QMainWindow):
         self.layer_combo.setMinimumWidth(0)
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
-        form_layout.addRow("Layer:", self.layer_combo)
+
+        # Mutual exclusivity: Contact Sheet toggle next to layer
+        layer_layout = QHBoxLayout()
+        layer_layout.addWidget(self.layer_combo)
+
+        self.cs_enable_check = QCheckBox("Contact Sheet")
+        self.cs_enable_check.setToolTip(
+            "Enable contact sheet mode (disables single layer selection)"
+        )
+        self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
+        layer_layout.addWidget(self.cs_enable_check)
+
+        form_layout.addRow("Layer:", layer_layout)
 
         layout.addLayout(form_layout)
 
@@ -1403,6 +1415,21 @@ class ModernMainWindow(QMainWindow):
 
     def _on_cs_enable_toggled(self, checked: bool) -> None:
         """Handle contact sheet enable checkbox toggle."""
+        # Mutual exclusivity
+        if checked:
+            self.layer_combo.setEnabled(False)
+            self.layer_combo.setToolTip("Layer selection disabled in Contact Sheet mode.")
+        else:
+            # Re-enable if we have layers (more than 1 or not just RGBA)
+            should_enable = False
+            if self.layer_combo.count() > 1:
+                should_enable = True
+            elif self.layer_combo.count() == 1 and self.layer_combo.itemText(0) != "RGBA":
+                should_enable = True
+
+            self.layer_combo.setEnabled(should_enable)
+            self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
+
         self.cs_columns_spin.setEnabled(checked)
         self.cs_thumb_width_spin.setEnabled(checked)
         self.cs_padding_spin.setEnabled(checked)
@@ -1781,7 +1808,13 @@ class ModernMainWindow(QMainWindow):
             self.layer_combo.blockSignals(True)
             self.layer_combo.clear()
             self.layer_combo.addItems(layers)
-            self.layer_combo.setEnabled(len(layers) > 1 or layers[0] != "RGBA")
+
+            should_enable = len(layers) > 1 or layers[0] != "RGBA"
+            if self.cs_enable_check.isChecked():
+                self.layer_combo.setEnabled(False)
+            else:
+                self.layer_combo.setEnabled(should_enable)
+
             self.layer_combo.blockSignals(False)
 
             if len(layers) > 1:
@@ -2337,12 +2370,6 @@ class ModernMainWindow(QMainWindow):
         form_layout = QFormLayout()
         form_layout.setSpacing(10)
         self._set_form_growth_policy(form_layout)
-
-        self.cs_enable_check = QCheckBox("Enable Contact Sheet")
-        self.cs_enable_check.setToolTip("Enable or disable contact sheet generation")
-        self.cs_enable_check.setStyleSheet("font-weight: bold;")
-        self.cs_enable_check.toggled.connect(self._on_cs_enable_toggled)
-        form_layout.addRow(self.cs_enable_check)
 
         self.cs_columns_spin = NoWheelSpinBox()
         self.cs_columns_spin.setRange(1, 20)
