@@ -5,9 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-01-12
+
+### Added
+- **Asynchronous Metadata Loading**: Heavy EXR sequences on network paths no longer hang the UI during detection.
+- **Log Buffering**: Early startup logs are now buffered and flushed to the UI console once initialized.
+- **Pruned OCIO Config**: Bundled a minimal ACES 1.2 OCIO configuration, reducing distribution size while maintaining color accuracy.
+- **PR Template**: Standardized contribution workflow with a comprehensive GitHub Pull Request template.
 
 ### Changed
+- **Modern UI Refresh**: Switched to OKLCH-based color system for more perceptually uniform styling.
+- **Enhanced Task Control**: Added master toggles for burn-in and contact sheet sections with improved visual hierarchy.
+- **Video Encoding Improvements**: Added BT.709 color tags for SDR deliverables and made video macro-block size configurable.
+- **Thread Management**: Centralized worker pooling for more robust background operations and crash prevention.
+- **Consolidated Versioning**: Unified version definition across the API, CLI, and UI title bar.
 - Moved Contact Sheet toggle to Input Sequence section for better visibility.
 - Enforced mutual exclusivity between Contact Sheet mode and single Layer selection with visual cues.
 - Auto-expand Contact Sheet settings when mode is enabled.
@@ -18,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Offloaded contact sheet preview generation to a background thread to prevent UI hangs.
 - Implemented robust thread management with worker pooling to prevent crashes during rapid UI interactions.
 - Added real-time configuration updates for the contact sheet preview with debouncing.
+
+## [Unreleased]
+
 
 ## [0.4.0] - 2026-01-09
 

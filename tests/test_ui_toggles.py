@@ -42,7 +42,7 @@ def test_burnin_toggle(qtbot, qapp):
 
 
 def test_contact_sheet_toggle_sync(qtbot, qapp):
-    """Test that contact sheet toggle syncs with the Output tab."""
+    """Test that contact sheet toggle correctly enables/disables related settings."""
     from renderkit.ui.main_window import ModernMainWindow
 
     window = ModernMainWindow()
@@ -50,20 +50,15 @@ def test_contact_sheet_toggle_sync(qtbot, qapp):
 
     # Initially disabled
     window.cs_enable_check.setChecked(False)
-    assert window.cs_mode_check.isChecked() is False
     assert window.cs_columns_spin.isEnabled() is False
+    assert window.cs_thumb_width_spin.isEnabled() is False
 
-    # Enable in CS tab
+    # Enable
     window.cs_enable_check.setChecked(True)
-    assert window.cs_mode_check.isChecked() is True
     assert window.cs_columns_spin.isEnabled() is True
+    assert window.cs_thumb_width_spin.isEnabled() is True
+    assert window.layer_combo.isEnabled() is False
 
-    # Disable in Output tab
-    window.cs_mode_check.setChecked(False)
-    assert window.cs_enable_check.isChecked() is False
+    # Disable again
+    window.cs_enable_check.setChecked(False)
     assert window.cs_columns_spin.isEnabled() is False
-
-    # Enable in Output tab
-    window.cs_mode_check.setChecked(True)
-    assert window.cs_enable_check.isChecked() is True
-    assert window.cs_columns_spin.isEnabled() is True
