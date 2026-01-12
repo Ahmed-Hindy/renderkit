@@ -12,8 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enforced mutual exclusivity between Contact Sheet mode and single Layer selection with visual cues.
 - Auto-expand Contact Sheet settings when mode is enabled.
 - Preview window now displays a contact sheet grid when in Contact Sheet mode.
+- Added Fullscreen Preview window with interactive zooming (mouse wheel) and panning (middle mouse).
+- Implemented "Zoom to Mouse" behavior and 1000% maximum zoom cap for high-detail inspection.
+- Added configurable Preview Scale percentage (Advanced settings) for optimized performance (default 25%).
 - Offloaded contact sheet preview generation to a background thread to prevent UI hangs.
 - Implemented robust thread management with worker pooling to prevent crashes during rapid UI interactions.
+- Added real-time configuration updates for the contact sheet preview with debouncing.
 
 ## [0.4.0] - 2026-01-09
 

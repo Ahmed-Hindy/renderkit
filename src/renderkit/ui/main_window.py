@@ -55,6 +55,7 @@ from renderkit.ui.qt_compat import (
     QSpinBox,
     QSplitter,
     Qt,
+    QTimer,
     QUrl,
     QVBoxLayout,
     QWidget,
@@ -170,6 +171,11 @@ class ModernMainWindow(QMainWindow):
         self._startup_logs: list[str] = []
         self._file_info_worker: Optional[FileInfoWorker] = None
         self._last_detected_pattern = ""
+
+        # Debounce timer for real-time contact sheet preview updates
+        self._cs_preview_timer = QTimer(self)
+        self._cs_preview_timer.setSingleShot(True)
+        self._cs_preview_timer.timeout.connect(self._load_preview)
 
         self._setup_logging()
         self._ensure_ocio_env()
@@ -1105,8 +1111,16 @@ class ModernMainWindow(QMainWindow):
             line_edit.editingFinished.connect(self._detect_sequence)
         self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
-        self.color_space_combo.currentIndexChanged.connect(self._on_color_space_changed)
-        self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
+
+        # Contact sheet real-time updates
+        self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.cs_thumb_width_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.cs_padding_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.cs_show_labels_check.toggled.connect(self._on_cs_setting_changed)
+        self.cs_font_size_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.preview_scale_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.color_space_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
+        self.layer_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         self.convert_btn.clicked.connect(self._start_conversion)
@@ -1448,11 +1462,10 @@ class ModernMainWindow(QMainWindow):
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
 
-        # Trigger preview update when settings change
-        if checked:
-            if hasattr(self, "_last_preview_path") and self._last_preview_path:
-                # We can just define a slot for these spins to reload preview
-                pass
+    def _on_cs_setting_changed(self, *args) -> None:
+        """Handle contact sheet or preview setting changes with debouncing."""
+        # Trigger preview update after a short delay to avoid thread churning
+        self._cs_preview_timer.start(300)  # 300ms debounce
 
     def _on_quality_changed(self, value: int) -> None:
         """Handle quality slider change."""
@@ -1553,17 +1566,6 @@ class ModernMainWindow(QMainWindow):
         self.sequence_info_label.setText("No sequence detected")
         self._update_convert_gate()
 
-    def _on_color_space_changed(self) -> None:
-        """Handle color space change."""
-        # Reload preview with new color space if available
-        if hasattr(self, "_last_preview_path") and self._last_preview_path:
-            self._load_preview()
-
-    def _on_layer_changed(self) -> None:
-        """Handle layer selection change."""
-        if hasattr(self, "_last_preview_path") and self._last_preview_path:
-            self._load_preview()
-
     def _load_preview(self) -> None:
         """Load preview of first frame."""
         pattern = self.input_pattern_combo.currentText().strip()
@@ -1606,8 +1608,14 @@ class ModernMainWindow(QMainWindow):
             layer = None
 
         self._last_preview_path = sample_path
+        preview_scale = self.preview_scale_spin.value() / 100.0
         self.preview_widget.load_preview(
-            sample_path, preset, input_space=input_space, layer=layer, cs_config=cs_config
+            sample_path,
+            preset,
+            input_space=input_space,
+            layer=layer,
+            cs_config=cs_config,
+            preview_scale=preview_scale,
         )
 
         if cs_config:
@@ -2297,6 +2305,7 @@ class ModernMainWindow(QMainWindow):
         self.settings.setValue("cs_padding", self.cs_padding_spin.value())
         self.settings.setValue("cs_show_labels", self.cs_show_labels_check.isChecked())
         self.settings.setValue("cs_font_size", self.cs_font_size_spin.value())
+        self.settings.setValue("preview_scale", self.preview_scale_spin.value())
 
     def _on_progress_update(self, current: int, total: int) -> None:
         """Handle progress update from worker.
@@ -2355,6 +2364,7 @@ class ModernMainWindow(QMainWindow):
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
+        self.preview_scale_spin.setValue(self.settings.value("preview_scale", 25, type=int))
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
 
@@ -2533,6 +2543,16 @@ class ModernMainWindow(QMainWindow):
         self.overwrite_check.setToolTip("Automatically overwrite output files if they exist")
         self.overwrite_check.setChecked(True)
         form_layout.addRow(self.overwrite_check)
+
+        # Preview Scale
+        self.preview_scale_spin = NoWheelSpinBox()
+        self.preview_scale_spin.setRange(5, 100)
+        self.preview_scale_spin.setValue(25)
+        self.preview_scale_spin.setSuffix("%")
+        self.preview_scale_spin.setToolTip(
+            "Scale down the preview resolution to improve performance (5-100%)"
+        )
+        form_layout.addRow("Preview Scale:", self.preview_scale_spin)
 
         layout.addLayout(form_layout)
         return layout
