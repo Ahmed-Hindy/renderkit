@@ -236,5 +236,5 @@ coll = COLLECT(
     strip=strip_binaries,
     upx=True,
     upx_exclude=[],
-    name=app_name,
+    name='RenderKit',
 )
