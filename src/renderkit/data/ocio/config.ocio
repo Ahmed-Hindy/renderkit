@@ -9,9 +9,11 @@ description: Pruned ACES 1.2 Config for RenderKit
 
 roles:
   color_picking: Output - sRGB
-  default: ACES - ACES2065-1
+  default: Utility - Linear - sRGB
   rendering: ACES - ACEScg
   scene_linear: ACES - ACEScg
+  matte_paint: Utility - sRGB - Texture
+  data: Utility - Raw
 
 file_rules:
   - !<Rule> {name: Default, colorspace: default}
