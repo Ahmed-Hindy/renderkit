@@ -4,14 +4,62 @@ Note: UI tests require pytest-qt and a display server (Xvfb on Linux).
 Run with: pytest tests/test_ui.py -v
 """
 
+from pathlib import Path
+
 import pytest
 
 # Skip UI tests if pytest-qt is not available
 from renderkit.ui.qt_compat import (
     QApplication,
-    Qt,
     get_qt_backend,
 )
+
+
+def test_frame_range_updates(qtbot, tmp_path, monkeypatch):
+    """Test that start/end frame range updates when pattern changes."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    # Mock SequenceDetector
+    class MockSequence:
+        def __init__(self, frame_numbers):
+            self.frame_numbers = frame_numbers
+
+        def __len__(self):
+            return len(self.frame_numbers)
+
+        def get_file_path(self, frame):
+            return Path(f"render.{frame:04d}.exr")
+
+    def mock_detect(pattern):
+        if "seq1" in pattern:
+            return MockSequence([101, 102, 103])
+        elif "seq2" in pattern:
+            return MockSequence([1, 2, 3, 4, 5])
+        return MockSequence([1])
+
+    monkeypatch.setattr("renderkit.core.sequence.SequenceDetector.detect_sequence", mock_detect)
+    # Mock FileInfoWorker to avoid async metadata issues
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    # 1. Detect Sequence 1
+    window.input_pattern_combo.lineEdit().setText("render_seq1.%04d.exr")
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    qtbot.waitUntil(lambda: window.start_frame_spin.value() == 101, timeout=1000)
+    assert window.start_frame_spin.value() == 101
+    assert window.end_frame_spin.value() == 103
+
+    # 2. Switch to Sequence 2
+    window.input_pattern_combo.lineEdit().setText("render_seq2.%04d.exr")
+    window.input_pattern_combo.lineEdit().textChanged.emit("render_seq2.%04d.exr")  # Trigger reset
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    qtbot.waitUntil(lambda: window.start_frame_spin.value() == 1, timeout=1000)
+    assert window.start_frame_spin.value() == 1
+    assert window.end_frame_spin.value() == 5
 
 
 @pytest.fixture(scope="session")
@@ -151,11 +199,17 @@ def test_convert_button_validation(qtbot, qapp, monkeypatch):
     # Ensure it's empty
     window.input_pattern_combo.lineEdit().setText("")
     window.input_pattern_combo.setCurrentText("")
+    window._update_convert_gate()  # Force update
 
-    # Try to convert without inputs - should show warning
-    qtbot.mouseClick(window.convert_btn, Qt.LeftButton)
+    # The convert button should be disabled when no inputs are present
+    assert window.convert_btn.isEnabled() is False
 
-    assert warning_called
+    # Mock inputs to enable it
+    window.input_pattern_combo.lineEdit().setText("render.%04d.exr")
+    window._input_pattern_valid = True
+    window.output_path_edit.setText("output.mp4")
+    window._update_convert_gate()
+
     assert window.convert_btn.isEnabled() is True
 
 

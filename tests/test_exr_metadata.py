@@ -29,30 +29,35 @@ def test_exr_metadata_fps_detection():
             assert fps == 24.0
 
             # Case 2: Arnold-style fps (Float)
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["arnold/fps"] = 23.976
             fps = reader.get_metadata_fps(mock_path)
             assert fps == 23.976
 
             # Case 3: Karma-style fps (Float)
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["exr/FramesPerSecond"] = 24.0
             fps = reader.get_metadata_fps(mock_path)
             assert fps == 24.0
 
             # Case 4: Rational as tuple
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["fps"] = (30000, 1001)
             fps = reader.get_metadata_fps(mock_path)
             assert abs(fps - 29.97) < 0.01
 
             # Case 5: String metadata (float)
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["exr/FramesPerSecond"] = "24.0"
             fps = reader.get_metadata_fps(mock_path)
             assert fps == 24.0
 
             # Case 6: Bytes metadata
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["fps"] = b"23.976"
             fps = reader.get_metadata_fps(mock_path)
@@ -60,18 +65,21 @@ def test_exr_metadata_fps_detection():
 
             # Case 7: Case-insensitive match (Note: OIIO keys are case sensitive in implementation,
             # but our Reader uses constants which should match the typical case)
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["exr/FramesPerSecond"] = 24.0
             fps = reader.get_metadata_fps(mock_path)
             assert fps == 24.0
 
             # Case 8: Rational string
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["framesPerSecond"] = "24000/1001"
             fps = reader.get_metadata_fps(mock_path)
             assert abs(fps - 23.976) < 0.001
 
             # Case 9: Invalid string
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["fps"] = "invalid"
             fps = reader.get_metadata_fps(mock_path)
@@ -99,24 +107,28 @@ def test_exr_metadata_color_space_detection():
             assert cs == "ACES - ACEScg"
 
             # Case 2: colorSpace
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["colorSpace"] = "Linear"
             cs = reader.get_metadata_color_space(mock_path)
             assert cs == "Linear"
 
             # Case 3: interchange/color_space
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["interchange/color_space"] = "Rec.709"
             cs = reader.get_metadata_color_space(mock_path)
             assert cs == "Rec.709"
 
             # Case 4: OIIO key match
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["oiio:ColorSpace"] = "ACEScg"
             cs = reader.get_metadata_color_space(mock_path)
             assert cs == "ACEScg"
 
             # Case 5: Bytes
+            reader._file_info_cache.clear()
             metadata.clear()
             metadata["colorSpace"] = b"sRGB"
             cs = reader.get_metadata_color_space(mock_path)

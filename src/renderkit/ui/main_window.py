@@ -1157,6 +1157,9 @@ class ModernMainWindow(QMainWindow):
 
         current_text = self.input_pattern_combo.currentText()
         self.input_pattern_combo.blockSignals(True)
+        if self.input_pattern_combo.lineEdit():
+            self.input_pattern_combo.lineEdit().blockSignals(True)
+
         self.input_pattern_combo.clear()
 
         for pattern in self._recent_patterns:
@@ -1167,6 +1170,9 @@ class ModernMainWindow(QMainWindow):
 
         self.input_pattern_combo.setCurrentIndex(-1)
         self.input_pattern_combo.setEditText(current_text)
+
+        if self.input_pattern_combo.lineEdit():
+            self.input_pattern_combo.lineEdit().blockSignals(False)
         self.input_pattern_combo.blockSignals(False)
 
     def _add_recent_pattern(self, pattern: str) -> None:
@@ -1495,6 +1501,7 @@ class ModernMainWindow(QMainWindow):
         # Clear preview when pattern changes
         self.preview_widget.clear_preview()
         self._last_pattern_text = self.input_pattern_combo.currentText()
+        self._last_detected_pattern = ""  # Force re-detection
         self._input_pattern_valid = False
         self._input_pattern_validated = False
         self._set_input_validation_state(None, "")
@@ -1648,43 +1655,26 @@ class ModernMainWindow(QMainWindow):
             self.sequence_info_label.setText(info_text)
             # self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
 
-            # Auto-set frame range if not set
-            if self.start_frame_spin.value() == 0:
-                self.start_frame_spin.setValue(sequence.frame_numbers[0])
-            if self.end_frame_spin.value() == 0:
-                self.end_frame_spin.setValue(sequence.frame_numbers[-1])
+            # Auto-set frame range
+            self.start_frame_spin.setValue(sequence.frame_numbers[0])
+            self.end_frame_spin.setValue(sequence.frame_numbers[-1])
 
-            # Auto-detect FPS from metadata
-            sample_path = sequence.get_file_path(sequence.frame_numbers[0])
-            logger.info(f"Checking metadata for FPS: {sample_path.name}")
-            QApplication.processEvents()
+            # Create a loading state in the UI immediately
+            self.sequence_info_label.setText(f"Detected {frame_count} frames (Loading metadata...)")
 
-            detected_fps = SequenceDetector.auto_detect_fps(
-                sequence.frame_numbers, sample_path=sample_path
-            )
-            if detected_fps:
-                self.fps_spin.setValue(detected_fps)
-                logger.info(f"Auto-detected FPS from metadata: {detected_fps}")
-            else:
-                logger.info("No FPS metadata found in sequence.")
-            QApplication.processEvents()
+            # Disable Convert until valid metadata (FPS etc) is loaded
+            self._input_pattern_valid = False
+            self._input_pattern_validated = True  # We have validated the pattern string itself
+            self._set_input_validation_state(None, "Loading metadata...")
+            self._update_convert_gate()
 
-            # Show loading indicator while discovering metadata from potentially slow network files
-            self.sequence_info_label.setText(
-                f"Detected {frame_count} frames (discovering metadata...)"
-            )
-            # Block signals to prevent "Loading..." from triggering preview or being used as layer
-            self.layer_combo.blockSignals(True)
-            self.layer_combo.setEnabled(False)
-            self.layer_combo.clear()
-            self.layer_combo.addItem("Loading...")
-            self.layer_combo.blockSignals(False)
-
-            # Start async file info discovery
+            # Start async file info discovery (FPS, Color Space, Layers)
             sample_path = sequence.get_file_path(sequence.frame_numbers[0])
             self._start_file_info_discovery(
                 sample_path, sequence, frame_count, frame_range, pattern
             )
+
+            # Auto-detect output path in same folder as input
 
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
@@ -1710,8 +1700,9 @@ class ModernMainWindow(QMainWindow):
             QApplication.processEvents()
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
             self._add_recent_pattern(pattern)
-            self._input_pattern_valid = True
-            self._set_input_validation_state(True, "Input pattern looks valid.")
+            # DO NOT set _input_pattern_valid = True yet, wait for metadata worker
+            # self._input_pattern_valid = True
+            # self._set_input_validation_state(True, "Input pattern looks valid.")
             self._update_convert_gate()
         except Exception as e:
             error_text = f"Error: {str(e)}"
@@ -1726,10 +1717,18 @@ class ModernMainWindow(QMainWindow):
 
     def _start_file_info_discovery(self, sample_path, sequence, frame_count, frame_range, pattern):
         """Start async file info discovery to avoid blocking UI."""
-        # Stop any existing worker
-        if self._file_info_worker and self._file_info_worker.isRunning():
-            self._file_info_worker.stop()
-            self._file_info_worker.wait(500)
+        # Stop any existing worker and DISCONNECT signals to prevent stale updates
+        if self._file_info_worker:
+            try:
+                self._file_info_worker.file_info_ready.disconnect()
+                self._file_info_worker.error_occurred.disconnect()
+            except RuntimeError:
+                # Signals might already be disconnected
+                pass
+
+            if self._file_info_worker.isRunning():
+                self._file_info_worker.stop()
+                # Do NOT wait() here, as it blocks the UI. Let it die in background.
 
         # Create and start new worker
         self._file_info_worker = FileInfoWorker(sample_path, self)
@@ -1789,6 +1788,13 @@ class ModernMainWindow(QMainWindow):
                 logger.info(f"Found {len(layers)} layers.")
                 logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
 
+            # Update FPS if available
+            if file_info.fps:
+                self.fps_spin.setValue(round(file_info.fps, 3))
+                logger.info(f"Auto-detected FPS from metadata: {file_info.fps}")
+            else:
+                logger.info("No FPS information found in metadata.")
+
             # Update sequence info with final text
             info_text = (
                 f"Detected {frame_count} frames\n"
@@ -1800,8 +1806,18 @@ class ModernMainWindow(QMainWindow):
             # Load preview
             self._load_preview_from_path(sample_path)
 
+            # NOW enable the Convert button
+            self._input_pattern_valid = True
+            self._set_input_validation_state(True, "Input pattern and metadata valid.")
+            self._update_convert_gate()
+
         except Exception as e:
-            logger.error(f"Error processing file info: {e}")
+            # Handle error
+            self.sequence_info_label.setText(f"Error applying metadata: {e}")
+            self._input_pattern_valid = False
+            self._set_input_validation_state(False, f"Metadata Error: {e}")
+            self._update_convert_gate()
+            self._load_preview_from_path(sample_path)
 
     def _on_file_info_error(
         self, path_str, error, sample_path, sequence, frame_count, frame_range, pattern

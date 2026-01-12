@@ -1,0 +1,149 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.11, pytest-9.0.2, pluggy-1.6.0
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+PySide6 6.10.1 -- Qt runtime 6.10.1 -- Qt compiled 6.10.1
+rootdir: G:\Projects\Dev\Github\image_video_processor
+configfile: pyproject.toml
+plugins: benchmark-5.2.3, cov-7.0.0, qt-4.5.0
+collected 1 item
+
+tests\test_ui_repro.py DEBUG: Input Valid: False
+DEBUG: Output Text: 'render.mp4'
+DEBUG: Output Valid: True
+DEBUG: Button Enabled: False
+F
+
+================================== FAILURES ===================================
+________________________ test_relative_path_detection _________________________
+
+qtbot = <pytestqt.qtbot.QtBot object at 0x00000158C58F71F0>
+tmp_path = WindowsPath('C:/Users/Ahmed Hindy/AppData/Local/Temp/pytest-of-Ahmed Hindy/pytest-14/test_relative_path_detection0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000158C58F72E0>
+
+    def test_relative_path_detection(qtbot, tmp_path, monkeypatch):
+        """Test detection with relative path (simulating user needing to be in correct cwd)."""
+        # Create files in current directory (we have to be careful here)
+        # Instead, we will mock Path.exists or change CWD
+    
+        from renderkit.ui.main_window import ModernMainWindow
+    
+        # Switch CWD to tmp_path
+        cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            # Create files
+            for i in range(1, 6):
+                with open(f"render.{i:04d}.exr", "w") as f:
+                    f.write("mock exr content")
+    
+            # Mock ImageReaderFactory to avoid actual file read that might fail on mock content
+            # But we need basic metadata reading to work.
+            # Actually SequenceDetector uses globbing, which works on files.
+            # But FileInfoWorker uses ImageReader.
+    
+            # We'll mock FileInfoWorker to mimic successful metadata read
+            from renderkit.ui.main_window import FileInfoWorker
+            from renderkit.io.file_info import FileInfo
+    
+            # Create window
+            window = ModernMainWindow()
+            qtbot.addWidget(window)
+    
+            # Mock worker start to emit signal immediately
+            def mock_worker_start(self):
+                # Emit success signal
+                info = FileInfo(
+                    width=1920,
+                    height=1080,
+                    channels=4,
+                    layers=["RGBA", "C"],
+                    fps=24.0,
+                    color_space="ACES - ACEScg",
+                    subimages=1,
+                )
+                # Use 0 delay to simulate async but fast
+                QApplication.instance().processEvents()
+                self.file_info_ready.emit(str(self.file_path), info)
+    
+            monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", mock_worker_start)
+    
+            # Also mock _load_preview_from_path to avoid reading mock file
+            monkeypatch.setattr(window, "_load_preview_from_path", lambda path: None)
+    
+            # Set relative pattern
+            pattern = "render.%04d.exr"
+            window.input_pattern_combo.setEditText(pattern)
+    
+            # Trigger detection
+            window._detect_sequence()
+    
+            # Wait for events
+            qtbot.wait(100)
+    
+            # Check if button enabled
+            # _update_convert_gate checks input and output valid.
+            # Output should be "render.mp4" (relative)
+            # Input valid should be true.
+            print(f"DEBUG: Input Valid: {window._input_pattern_valid}")
+            print(f"DEBUG: Output Text: '{window.output_path_edit.text()}'")
+            print(f"DEBUG: Output Valid: {window._is_output_path_valid()}")
+            print(f"DEBUG: Button Enabled: {window.convert_btn.isEnabled()}")
+    
+>           assert window.convert_btn.isEnabled() is True
+E           assert False is True
+E            +  where False = <built-in method isEnabled of PySide6.QtWidgets.QPushButton object at 0x00000158C8BCCC40>()
+E            +    where <built-in method isEnabled of PySide6.QtWidgets.QPushButton object at 0x00000158C8BCCC40> = <PySide6.QtWidgets.QPushButton(0x158c57e36c0, name="PrimaryButton") at 0x00000158C8BCCC40>.isEnabled
+E            +      where <PySide6.QtWidgets.QPushButton(0x158c57e36c0, name="PrimaryButton") at 0x00000158C8BCCC40> = <renderkit.ui.main_window.ModernMainWindow(0x158c4f8ca90) at 0x00000158C64FFAC0>.convert_btn
+
+tests\test_ui_repro.py:76: AssertionError
+------------------------------ Captured log call ------------------------------
+INFO     renderkit:logging_utils.py:102 Logging to C:\Users\AHMEDH~1\AppData\Local\Temp\renderkit.log
+INFO     renderkit.ui.main_window:main_window.py:191 Using existing OCIO environment variable: C:\OCIOConfigs\configs\aces_1.2\config.ocio
+INFO     renderkit.ui.main_window:main_window.py:1752 Auto-detected Color Space: ACES - ACEScg
+INFO     renderkit.ui.main_window:main_window.py:1783 Found 2 layers.
+INFO     renderkit.ui.main_window:main_window.py:1789 Auto-detected FPS from metadata: 24.0
+INFO     renderkit.ui.main_window:main_window.py:1742 Checking metadata: render.0001.exr
+INFO     renderkit.ui.main_window:main_window.py:1692 Sequence detected: 5 frames
+INFO     renderkit.ui.main_window:main_window.py:1693 Auto-detected output: render.mp4
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.10.11-final-0 _______________
+
+Name                                        Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------
+src\renderkit\__init__.py                       3      0   100%
+src\renderkit\api\__init__.py                   2      0   100%
+src\renderkit\api\processor.py                 30     18    40%   20-21, 64-90, 108-109
+src\renderkit\cli\__init__.py                   0      0   100%
+src\renderkit\cli\main.py                     118    118     0%   3-328
+src\renderkit\constants.py                     11      0   100%
+src\renderkit\core\__init__.py                  3      0   100%
+src\renderkit\core\config.py                  160     88    45%   45-50, 58-63, 67-68, 72-73, 77-78, 82-84, 88, 125-135, 143-160, 164-165, 169-170, 174-175, 179-180, 184-185, 189-191, 195-196, 200-201, 205-206, 210-211, 215-217, 223-225, 229-230, 236-238, 242-247
+src\renderkit\core\converter.py               153    134    12%   36-44, 54-227, 253-317
+src\renderkit\core\ffmpeg_utils.py             43     34    21%   13-16, 20-32, 37-63
+src\renderkit\core\sequence.py                109     52    52%   56, 114-143, 146, 171-174, 187-188, 206-224, 243-256
+src\renderkit\exceptions.py                    14      0   100%
+src\renderkit\io\__init__.py                    3      0   100%
+src\renderkit\io\file_info.py                  18      0   100%
+src\renderkit\io\file_utils.py                 48     21    56%   21, 33, 45, 59-65, 77-79, 92-98, 108, 115, 118, 126
+src\renderkit\io\image_reader.py              219    177    19%   30, 35, 40, 45, 50, 55, 60, 72-74, 78-83, 99-200, 212-307, 314-318, 325-329, 336-340, 347-351, 358-362, 381-383, 388
+src\renderkit\logging_utils.py                 77     19    75%   25-26, 29-30, 47, 78, 107, 110-115, 120, 127, 134-138
+src\renderkit\processing\__init__.py            4      0   100%
+src\renderkit\processing\burnin.py             47     40    15%   12-17, 35-88, 100-107
+src\renderkit\processing\color_space.py       296    206    30%   31-61, 65-78, 84-131, 141-142, 147-148, 154-155, 165, 177-178, 183-184, 189-190, 198, 202, 209, 218-219, 252-262, 265-305, 317-376, 393-403, 415-427, 443-453, 465-477, 493-503, 515-524, 540, 560-565, 577, 589
+src\renderkit\processing\contact_sheet.py      58     46    21%   25, 36-106, 110-117
+src\renderkit\processing\scaler.py             47     38    19%   32-79, 89-103
+src\renderkit\processing\video_encoder.py     223    190    15%   22-24, 28-53, 57-72, 89-129, 132-137, 140-149, 175-188, 192-209, 212-218, 221-233, 246, 250, 254, 266-382, 390-423, 427-435, 439
+src\renderkit\ui\__init__.py                    0      0   100%
+src\renderkit\ui\collapsible_group.py          47      4    91%   75-77, 105
+src\renderkit\ui\conversion_worker.py          33     21    36%   25-27, 31, 35-55
+src\renderkit\ui\file_info_worker.py           28     14    50%   38-54, 58
+src\renderkit\ui\icons\__init__.py             59     15    75%   60, 68, 74-84, 90, 100-101, 112
+src\renderkit\ui\main_window.py              1646    768    53%   83-86, 100-103, 118, 122, 125-128, 141-144, 196-215, 219-231, 236, 253-255, 322, 326-345, 349-353, 357-363, 367-373, 458, 570-667, 671-765, 769-810, 814-866, 870-906, 1046-1063, 1109-1120, 1127-1130, 1138, 1140, 1156, 1175, 1185-1188, 1191-1206, 1210, 1224-1227, 1231, 1257, 1262, 1281, 1307, 1319, 1322-1325, 1333, 1350-1384, 1439-1442, 1453-1465, 1469, 1473, 1477, 1481, 1483, 1486, 1508, 1512-1513, 1517-1529, 1533-1542, 1547-1587, 1596-1607, 1615, 1617-1623, 1628-1634, 1688, 1702-1711, 1717-1725, 1763, 1770-1772, 1791, 1809-1815, 1821-1836, 1844-1846, 1860, 1865-2039, 2043-2083, 2088-2139, 2143-2153, 2157-2173, 2177-2188, 2201-2221, 2230-2239, 2461-2479, 2483
+src\renderkit\ui\qt_compat.py                  52     33    37%   13-16, 29-45, 48, 100-199, 284
+src\renderkit\ui\widgets.py                   102     65    36%   43-47, 51-111, 146-147, 165-183, 187-189, 193-195, 220-232
+-------------------------------------------------------------------------
+TOTAL                                        3653   2101    42%
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ===========================
+FAILED tests/test_ui_repro.py::test_relative_path_detection - assert False is...
+============================== 1 failed in 1.64s ==============================
