@@ -62,7 +62,7 @@ from renderkit.ui.qt_compat import (
 )
 from renderkit.ui.widgets import PreviewWidget
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("renderkit.ui.main_window")
 
 RECENT_PATTERNS_LIMIT = 10
 RECENT_PATTERNS_KEY = "recent_patterns"
@@ -169,6 +169,7 @@ class ModernMainWindow(QMainWindow):
         self._is_cancelling = False
         self._startup_logs: list[str] = []
         self._file_info_worker: Optional[FileInfoWorker] = None
+        self._last_detected_pattern = ""
 
         self._setup_logging()
         self._ensure_ocio_env()
@@ -1096,6 +1097,7 @@ class ModernMainWindow(QMainWindow):
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
+        self.convert_btn.clicked.connect(self._start_conversion)
         self._set_convert_button_state(False)
         self._update_output_path_validation()
 
@@ -1524,8 +1526,7 @@ class ModernMainWindow(QMainWindow):
             first_frame_path = sequence.get_file_path(sequence.frame_numbers[0])
             self._load_preview_from_path(first_frame_path)
         except Exception as e:
-            QMessageBox.warning(self, "Preview Error", f"Could not load preview:\n{e}")
-            self.log_text.appendPlainText(f"Preview error: {str(e)}")
+            logger.error(f"Preview error: {str(e)}")
 
     def _load_preview_from_path(self, sample_path: Path) -> None:
         """Load preview using an already resolved frame path."""
@@ -1538,7 +1539,7 @@ class ModernMainWindow(QMainWindow):
 
         self._last_preview_path = sample_path
         self.preview_widget.load_preview(sample_path, preset, input_space=input_space, layer=layer)
-        self.log_text.appendPlainText(f"Loading preview: {sample_path.name} (Layer: {layer})")
+        logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
 
     def _browse_input_pattern(self) -> None:
         """Browse for input file pattern."""
@@ -1608,6 +1609,10 @@ class ModernMainWindow(QMainWindow):
     def _detect_sequence(self) -> None:
         """Detect and display sequence information."""
         pattern = self.input_pattern_combo.currentText().strip()
+
+        # Skip if already detected the same pattern
+        if pattern == self._last_detected_pattern:
+            return
         if not pattern:
             self.sequence_info_label.setText("No pattern specified")
             self.preview_widget.clear_preview()
@@ -1651,15 +1656,18 @@ class ModernMainWindow(QMainWindow):
 
             # Auto-detect FPS from metadata
             sample_path = sequence.get_file_path(sequence.frame_numbers[0])
-            self.log_text.appendPlainText(f"Checking metadata for FPS: {sample_path.name}")
+            logger.info(f"Checking metadata for FPS: {sample_path.name}")
+            QApplication.processEvents()
+
             detected_fps = SequenceDetector.auto_detect_fps(
                 sequence.frame_numbers, sample_path=sample_path
             )
             if detected_fps:
                 self.fps_spin.setValue(detected_fps)
-                self.log_text.appendPlainText(f"Auto-detected FPS from metadata: {detected_fps}")
+                logger.info(f"Auto-detected FPS from metadata: {detected_fps}")
             else:
-                self.log_text.appendPlainText("No FPS metadata found in sequence.")
+                logger.info("No FPS metadata found in sequence.")
+            QApplication.processEvents()
 
             # Show loading indicator while discovering metadata from potentially slow network files
             self.sequence_info_label.setText(
@@ -1696,8 +1704,10 @@ class ModernMainWindow(QMainWindow):
             output_path = output_dir / f"{base_name}.mp4"
             self.output_path_edit.setText(str(output_path))
 
-            self.log_text.appendPlainText(f"Sequence detected: {frame_count} frames")
-            self.log_text.appendPlainText(f"Auto-detected output: {output_path.name}")
+            logger.info(f"Sequence detected: {frame_count} frames")
+            logger.info(f"Auto-detected output: {output_path.name}")
+            self._last_detected_pattern = pattern
+            QApplication.processEvents()
             self.statusBar().showMessage(f"Sequence detected: {frame_count} frames")
             self._add_recent_pattern(pattern)
             self._input_pattern_valid = True
@@ -1707,7 +1717,7 @@ class ModernMainWindow(QMainWindow):
             error_text = f"Error: {str(e)}"
             self.sequence_info_label.setText(error_text)
             # self.sequence_info_label.setStyleSheet("color: #f44336; font-style: normal;")
-            self.log_text.appendPlainText(f"Sequence detection failed: {str(e)}")
+            logger.error(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
             self.preview_widget.clear_preview()
             self._input_pattern_valid = False
@@ -1735,7 +1745,7 @@ class ModernMainWindow(QMainWindow):
         )
         self._file_info_worker.start()
 
-        self.log_text.appendPlainText(f"Checking metadata: {sample_path.name}")
+        logger.info(f"Checking metadata: {sample_path.name}")
 
     def _on_file_info_ready(
         self, path_str, file_info, sample_path, sequence, frame_count, frame_range, pattern
@@ -1745,7 +1755,7 @@ class ModernMainWindow(QMainWindow):
             # Update color space
             detected_color_space = file_info.color_space
             if detected_color_space:
-                self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
+                logger.info(f"Auto-detected Color Space: {detected_color_space}")
 
                 preferred_label = resolve_ocio_role_label_for_colorspace(
                     detected_color_space,
@@ -1765,7 +1775,7 @@ class ModernMainWindow(QMainWindow):
                 else:
                     self.color_space_combo.setEditText(detected_color_space)
             else:
-                self.log_text.appendPlainText("No specific Color Space metadata found.")
+                logger.info("No specific Color Space metadata found.")
 
             # Update layers
             layers = file_info.layers
@@ -1776,7 +1786,7 @@ class ModernMainWindow(QMainWindow):
             self.layer_combo.blockSignals(False)
 
             if len(layers) > 1:
-                self.log_text.appendPlainText(f"Found {len(layers)} layers.")
+                logger.info(f"Found {len(layers)} layers.")
                 logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
 
             # Update sequence info with final text
@@ -1792,14 +1802,12 @@ class ModernMainWindow(QMainWindow):
 
         except Exception as e:
             logger.error(f"Error processing file info: {e}")
-            self.log_text.appendPlainText(f"Error processing metadata: {e}")
 
     def _on_file_info_error(
         self, path_str, error, sample_path, sequence, frame_count, frame_range, pattern
     ):
         """Handle file info discovery error."""
         logger.warning(f"File info discovery failed: {error}")
-        self.log_text.appendPlainText(f"Metadata discovery failed: {error}")
 
         # Set default values
         self.layer_combo.blockSignals(True)
@@ -1911,7 +1919,7 @@ class ModernMainWindow(QMainWindow):
                     "Encoder Unavailable",
                     f"{fallback_warning}\n\nUsing '{resolved_codec}' for this conversion.",
                 )
-                self.log_text.appendPlainText(f"WARNING: {fallback_warning}")
+                logger.warning(fallback_warning)
                 for idx, mapped_codec in self._codec_map.items():
                     if mapped_codec == resolved_codec:
                         self.codec_combo.setCurrentIndex(idx)
@@ -1986,7 +1994,7 @@ class ModernMainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Configuration Error", f"Error building configuration:\n{e}")
-            self.log_text.appendPlainText(f"Configuration error: {str(e)}")
+            logger.error(f"Configuration error: {str(e)}")
             return
 
         # Update UI
@@ -2001,10 +2009,10 @@ class ModernMainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_label.setText("Starting conversion...")
         self.statusBar().showMessage("Starting conversion...")
-        self.log_text.appendPlainText("=" * 50)
-        self.log_text.appendPlainText("Starting conversion...")
-        self.log_text.appendPlainText(f"Input: {config.input_pattern}")
-        self.log_text.appendPlainText(f"Output: {config.output_path}")
+        logger.info("=" * 50)
+        logger.info("Starting conversion...")
+        logger.info(f"Input: {config.input_pattern}")
+        logger.info(f"Output: {config.output_path}")
 
         # Reset flag
         self._conversion_finished_flag = False
@@ -2014,7 +2022,6 @@ class ModernMainWindow(QMainWindow):
         self.worker.finished.connect(self._on_conversion_finished)
         self.worker.error.connect(self._on_conversion_error)
         self.worker.cancelled.connect(self._on_conversion_cancelled)
-        self.worker.log_message.connect(self._on_log_message)
         self.worker.progress.connect(self._on_progress_update)
         self.worker.start()
 
@@ -2056,7 +2063,7 @@ class ModernMainWindow(QMainWindow):
                 self.progress_bar.setValue(0)
                 self.progress_label.setText("Conversion cancelled")
                 self.statusBar().showMessage("Conversion cancelled", 3000)
-                self.log_text.appendPlainText("Conversion cancelled by user")
+                logger.info("Conversion cancelled by user")
                 self._set_convert_button_state(False)
                 self._set_status_icons("cancelled")
                 if hasattr(self, "progress_play_btn"):
@@ -2129,7 +2136,7 @@ class ModernMainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_label.setText("Conversion cancelled")
         self.statusBar().showMessage("Conversion cancelled", 5000)
-        self.log_text.appendPlainText("Conversion cancelled")
+        logger.info("Conversion cancelled")
         self._set_status_icons("cancelled")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
@@ -2145,7 +2152,7 @@ class ModernMainWindow(QMainWindow):
         self.progress_label.setText("Conversion failed")
         self.statusBar().showMessage("Conversion failed", 5000)
         # Cancel button remains enabled (for quit)
-        self.log_text.appendPlainText(f"ERROR: {error_msg}")
+        logger.error(f"Conversion error: {error_msg}")
         self._set_status_icons("error")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)

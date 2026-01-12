@@ -19,7 +19,7 @@ from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("renderkit.cli.main")
 
 
 @click.group()
@@ -142,7 +142,7 @@ def convert_exr_sequence(
 
     # Check if output exists
     if output_path_obj.exists() and not overwrite:
-        click.echo(f"Error: Output file already exists: {output_path}", err=True)
+        logger.error(f"Output file already exists: {output_path}")
         click.echo("Use --overwrite to overwrite it.", err=True)
         sys.exit(1)
 
@@ -236,6 +236,7 @@ def convert_exr_sequence(
         config = config_builder.build()
         processor = RenderKit()
         processor.convert_with_config(config)
+        logger.info(f"Successfully converted to: {output_path}")
         click.echo(f"Successfully converted to: {output_path}")
     except Exception as e:
         logger.exception("Conversion failed")
@@ -290,7 +291,7 @@ def contact_sheet(
 
     # Check if output exists
     if output_path_obj.exists() and not overwrite:
-        click.echo(f"Error: Output file already exists: {output_path}", err=True)
+        logger.error(f"Output file already exists: {output_path}")
         click.echo("Use --overwrite to overwrite it.", err=True)
         sys.exit(1)
 
@@ -315,6 +316,7 @@ def contact_sheet(
         config = config_builder.build()
         processor = RenderKit()
         processor.create_contact_sheet(config)
+        logger.info(f"Successfully created contact sheet: {output_path}")
         click.echo(f"Successfully created contact sheet: {output_path}")
     except Exception as e:
         logger.exception("Contact sheet generation failed")

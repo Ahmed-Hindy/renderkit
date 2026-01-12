@@ -51,28 +51,43 @@ def _log_path() -> Path:
 def setup_logging(
     ui_sink: Callable[[str], None] | None = None,
     enable_console: bool | None = None,
+    level: int | None = None,
 ) -> Path:
     """Configure RenderKit logging with optional UI forwarding.
+
+    Args:
+        ui_sink: Optional callback for UI logging.
+        enable_console: Whether to enable console logging.
+        level: Logging level (defaults to RENDERKIT_LOG_LEVEL env var or INFO).
 
     Returns:
         Path to the log file.
     """
-    # 1. Configure RenderKit logger specifically
-    # We want to see INFO+ from our own app by default
-    rk_logger = logging.getLogger(_LOGGER_NAME)
-    rk_logger.setLevel(_log_level())
-    rk_logger.propagate = True  # Ensure logs bubble up to root
+    log_level = level if level is not None else _log_level()
 
-    # 2. Configure Root logger
-    # We generally only want WARNING+ from third-party libs to avoid spam
+    # 1. Configure RenderKit logger
+    rk_logger = logging.getLogger(_LOGGER_NAME)
+    rk_logger.setLevel(log_level)
+    rk_logger.propagate = True
+
+    # 2. Configure Root logger for third-party libraries
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.WARNING)
+    # We keep root at WARNING to avoid third-party noise,
+    # but our file handler can still capture our INFO logs because they propagate.
+    if root_logger.level > logging.WARNING or root_logger.level == logging.NOTSET:
+        root_logger.setLevel(logging.WARNING)
 
     log_path = _log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    added_file = False
-    # Check handlers on ROOT logger now
+    # Formatter definitions
+    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    console_formatter = logging.Formatter("%(levelname)s: %(message)s")
+    ui_formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+    )
+
+    # 3. Manage File Handler
     if not _has_handler(root_logger, "file"):
         file_handler = RotatingFileHandler(
             log_path,
@@ -81,31 +96,45 @@ def setup_logging(
             encoding="utf-8",
         )
         file_handler.renderkit_handler = "file"
-        # File handler should capture everything (INFO from app, WARNING from libs)
-        # We set it to INFO so it *can* receive INFO logs that bubble up
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
-        )
+        file_handler.setLevel(logging.INFO)  # File captures INFO+
+        file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
-        added_file = True
+        rk_logger.info("Logging to %s", log_path)
 
+    # 4. Manage Console Handler
     if enable_console is None:
+        # Default: enable console if no UI sink and not already added
         enable_console = ui_sink is None
-    if enable_console and not _has_handler(root_logger, "console"):
-        console_handler = logging.StreamHandler()
-        console_handler.renderkit_handler = "console"
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
-        root_logger.addHandler(console_handler)
 
-    if ui_sink is not None and not _has_handler(root_logger, "ui"):
+    if enable_console:
+        if not _has_handler(root_logger, "console"):
+            console_handler = logging.StreamHandler()
+            console_handler.renderkit_handler = "console"
+            console_handler.setLevel(log_level)
+            console_handler.setFormatter(console_formatter)
+            root_logger.addHandler(console_handler)
+    else:
+        # Explicitly disabled - remove if exists
+        for h in list(root_logger.handlers):
+            if getattr(h, "renderkit_handler", None) == "console":
+                root_logger.removeHandler(h)
+
+    # 5. Manage UI Handler
+    if ui_sink is not None:
+        # Remove old UI handler if it exists to allow updating callback
+        for h in list(root_logger.handlers):
+            if getattr(h, "renderkit_handler", None) == "ui":
+                root_logger.removeHandler(h)
+
         ui_handler = CallbackHandler(ui_sink)
         ui_handler.renderkit_handler = "ui"
-        ui_handler.setLevel(logging.INFO)
-        ui_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        ui_handler.setLevel(log_level)
+        ui_handler.setFormatter(ui_formatter)
         root_logger.addHandler(ui_handler)
+    elif ui_sink is None:
+        # Explicitly removed
+        for h in list(root_logger.handlers):
+            if getattr(h, "renderkit_handler", None) == "ui":
+                root_logger.removeHandler(h)
 
-    if added_file:
-        rk_logger.info("Logging to %s", log_path)
     return log_path

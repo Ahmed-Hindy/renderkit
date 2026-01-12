@@ -15,7 +15,6 @@ class ConversionWorker(QThread):
     error = Signal(str)
     cancelled = Signal()
     progress = Signal(int, int)  # current, total
-    log_message = Signal(str)  # log messages
 
     def __init__(self, config: ConversionConfig) -> None:
         """Initialize worker.
@@ -37,7 +36,7 @@ class ConversionWorker(QThread):
             from renderkit.core.converter import SequenceConverter
             from renderkit.exceptions import ConversionCancelledError
 
-            self.log_message.emit("Starting conversion...")
+            logger.info("Starting conversion...")
             converter = SequenceConverter(self.config)
 
             def progress_callback(current, total):
@@ -46,10 +45,9 @@ class ConversionWorker(QThread):
                 return not self._is_cancelled
 
             converter.convert(progress_callback=progress_callback)
-            self.log_message.emit("Conversion completed successfully!")
             self.finished.emit()
         except ConversionCancelledError:
-            self.log_message.emit("Conversion cancelled by user.")
+            logger.info("Conversion cancelled by user.")
             self.cancelled.emit()
         except Exception as e:
             msg = f"Conversion failed: {e}"

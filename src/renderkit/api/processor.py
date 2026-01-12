@@ -9,7 +9,7 @@ from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("renderkit.api.processor")
 
 
 class RenderKit:

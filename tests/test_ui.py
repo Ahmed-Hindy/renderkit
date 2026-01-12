@@ -38,7 +38,7 @@ def test_main_window_creation(qtbot, qapp):
     qtbot.addWidget(window)
 
     assert window is not None
-    assert window.windowTitle() == "RenderKit"
+    assert window.windowTitle().startswith("RenderKit v")
 
 
 def test_input_pattern_edit(qtbot, qapp):
@@ -50,8 +50,8 @@ def test_input_pattern_edit(qtbot, qapp):
 
     # Test setting pattern
     test_pattern = "render.%04d.exr"
-    window.input_pattern_edit.setText(test_pattern)
-    assert window.input_pattern_edit.text() == test_pattern
+    window.input_pattern_combo.lineEdit().setText(test_pattern)
+    assert window.input_pattern_combo.currentText() == test_pattern
 
 
 def test_output_path_edit(qtbot, qapp):
@@ -120,10 +120,10 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
 
     # Set pattern
     pattern = str(tmp_path / "render.%04d.exr")
-    window.input_pattern_edit.setText(pattern)
+    window.input_pattern_combo.lineEdit().setText(pattern)
 
-    # Click detect button
-    qtbot.mouseClick(window.detect_btn, Qt.LeftButton)
+    # Trigger detection
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
 
     # Wait for detection
     qtbot.waitUntil(lambda: "Detected" in window.sequence_info_label.text(), timeout=2000)
@@ -136,7 +136,6 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
 def test_convert_button_validation(qtbot, qapp, monkeypatch):
     """Test that convert button validates inputs."""
     from renderkit.ui.main_window import ModernMainWindow
-    from renderkit.ui.qt_compat import QMessageBox
 
     # Mock QMessageBox.warning
     warning_called = False
@@ -145,10 +144,13 @@ def test_convert_button_validation(qtbot, qapp, monkeypatch):
         nonlocal warning_called
         warning_called = True
 
-    monkeypatch.setattr(QMessageBox, "warning", mock_warning)
+    monkeypatch.setattr("renderkit.ui.main_window.QMessageBox.warning", mock_warning)
 
     window = ModernMainWindow()
     qtbot.addWidget(window)
+    # Ensure it's empty
+    window.input_pattern_combo.lineEdit().setText("")
+    window.input_pattern_combo.setCurrentText("")
 
     # Try to convert without inputs - should show warning
     qtbot.mouseClick(window.convert_btn, Qt.LeftButton)
