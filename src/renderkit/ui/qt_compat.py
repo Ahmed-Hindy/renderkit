@@ -54,10 +54,12 @@ if _backend == "pyside6":
     from PySide6.QtCore import (
         QEvent,
         QObject,
+        QPoint,
         QSettings,
         QSize,
         Qt,
         QThread,
+        QTimer,
         QUrl,
         Signal,
     )
@@ -101,10 +103,12 @@ elif _backend == "pyside2":
     from PySide2.QtCore import (
         QEvent,
         QObject,
+        QPoint,
         QSettings,
         QSize,
         Qt,
         QThread,
+        QTimer,
         QUrl,
         Signal,
     )
@@ -145,7 +149,7 @@ elif _backend == "pyside2":
         QWidget,
     )
 elif _backend == "pyqt6":
-    from PyQt6.QtCore import QEvent, QObject, QSettings, QSize, Qt, QThread, QUrl
+    from PyQt6.QtCore import QEvent, QObject, QPoint, QSettings, QSize, Qt, QThread, QTimer, QUrl
     from PyQt6.QtCore import pyqtSignal as Signal
     from PyQt6.QtGui import (
         QColor,
@@ -184,7 +188,7 @@ elif _backend == "pyqt6":
         QWidget,
     )
 elif _backend == "pyqt5":
-    from PyQt5.QtCore import QEvent, QObject, QSettings, QSize, Qt, QThread, QUrl
+    from PyQt5.QtCore import QEvent, QObject, QPoint, QSettings, QSize, Qt, QThread, QTimer, QUrl
     from PyQt5.QtCore import pyqtSignal as Signal
     from PyQt5.QtGui import (
         QColor,
@@ -233,9 +237,11 @@ __all__ = [
     "QThread",
     "Signal",
     "Qt",
+    "QTimer",
     "QUrl",
     "QEvent",
     "QSize",
+    "QPoint",
     # Qt Gui
     "QFont",
     "QIcon",
