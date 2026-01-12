@@ -412,10 +412,10 @@ class ModernMainWindow(QMainWindow):
         container_layout.addWidget(burnin_section)
 
         # Contact Sheet Section
-        cs_section = CollapsibleGroupBox("Contact Sheet")
-        cs_section.set_content_layout(self._create_contact_sheet_content())
-        cs_section.set_collapsed(True)
-        container_layout.addWidget(cs_section)
+        self.cs_section = CollapsibleGroupBox("Contact Sheet")
+        self.cs_section.set_content_layout(self._create_contact_sheet_content())
+        self.cs_section.set_collapsed(True)
+        container_layout.addWidget(self.cs_section)
 
         # Advanced Options Section (includes video encoding)
         advanced_section = CollapsibleGroupBox("Advanced Options")
@@ -1419,6 +1419,12 @@ class ModernMainWindow(QMainWindow):
         if checked:
             self.layer_combo.setEnabled(False)
             self.layer_combo.setToolTip("Layer selection disabled in Contact Sheet mode.")
+            # Visual cue for disabled state
+            self.layer_combo.setStyleSheet("color: #888; font-style: italic;")
+
+            # Auto-expand settings
+            if hasattr(self, "cs_section"):
+                self.cs_section.set_collapsed(False)
         else:
             # Re-enable if we have layers (more than 1 or not just RGBA)
             should_enable = False
@@ -1429,12 +1435,24 @@ class ModernMainWindow(QMainWindow):
 
             self.layer_combo.setEnabled(should_enable)
             self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
+            self.layer_combo.setStyleSheet("")  # Reset style
+
+        # Trigger preview update if we have a pattern (to show/hide grid)
+        if self._is_output_path_valid() or self.input_pattern_combo.currentText().strip():
+            if hasattr(self, "_last_preview_path") and self._last_preview_path:
+                self._load_preview()
 
         self.cs_columns_spin.setEnabled(checked)
         self.cs_thumb_width_spin.setEnabled(checked)
         self.cs_padding_spin.setEnabled(checked)
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
+
+        # Trigger preview update when settings change
+        if checked:
+            if hasattr(self, "_last_preview_path") and self._last_preview_path:
+                # We can just define a slot for these spins to reload preview
+                pass
 
     def _on_quality_changed(self, value: int) -> None:
         """Handle quality slider change."""
@@ -1569,11 +1587,33 @@ class ModernMainWindow(QMainWindow):
             return
 
         preset, input_space = self._get_current_color_space_config()
+
+        # Determine if we are in Contact Sheet mode
+        cs_config = None
         layer = self.layer_combo.currentText()
 
+        if self.cs_enable_check.isChecked():
+            # Build config from UI
+            cs_config = ContactSheetConfig(
+                columns=self.cs_columns_spin.value(),
+                thumbnail_width=self.cs_thumb_width_spin.value(),
+                padding=self.cs_padding_spin.value(),
+                show_labels=self.cs_show_labels_check.isChecked(),
+                font_size=self.cs_font_size_spin.value(),
+                background_color=(0.1, 0.1, 0.1, 1.0),  # Dark background for preview
+            )
+            # Set layer to None to avoid "Layer not found" warnings when generator handles it
+            layer = None
+
         self._last_preview_path = sample_path
-        self.preview_widget.load_preview(sample_path, preset, input_space=input_space, layer=layer)
-        logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
+        self.preview_widget.load_preview(
+            sample_path, preset, input_space=input_space, layer=layer, cs_config=cs_config
+        )
+
+        if cs_config:
+            logger.info(f"Loading Contact Sheet preview: {sample_path.name}")
+        else:
+            logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
 
     def _browse_input_pattern(self) -> None:
         """Browse for input file pattern."""
@@ -2317,7 +2357,17 @@ class ModernMainWindow(QMainWindow):
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
+
+        # Don't auto-expand on load, respect default collapsed state unless we add persistence for it.
+        # But we do need to set the state of enabled/disabled widgets
+        # Force a toggle event to run logic without flipping the checked state if possible,
+        # or just call the handler manually
         self._on_cs_enable_toggled(self.cs_enable_check.isChecked())
+
+        # If checked from settings, we might want to expand, but usually load_settings implies app startup
+        # where we might want things collapsed? Let's leave it to the toggle logic which handles it.
+        # Although _on_cs_enable_toggled WILL expand it if true. That's probably fine/desired.
+
         self._load_recent_patterns()
 
     def _create_burnin_content(self) -> QVBoxLayout:
