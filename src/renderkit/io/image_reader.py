@@ -1,6 +1,7 @@
 """Image reading with OpenImageIO (OIIO)."""
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
@@ -9,6 +10,7 @@ import numpy as np
 
 from renderkit import constants
 from renderkit.exceptions import ImageReadError
+from renderkit.io.file_info import FileInfo
 from renderkit.io.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,11 @@ class ImageReader(ABC):
             path: Path to image file
             layer: Optional layer name to extract (for multi-layer EXRs)
         """
+        pass
+
+    @abstractmethod
+    def get_file_info(self, path: Path) -> FileInfo:
+        """Get consolidated file information in a single read operation."""
         pass
 
     @abstractmethod
@@ -54,7 +61,143 @@ class ImageReader(ABC):
 
 
 class OIIOReader(ImageReader):
-    """Reader for all image formats supported by OpenImageIO."""
+    """Reader for all image formats supported by OpenImageIO.
+
+    Includes caching to minimize redundant I/O operations, especially
+    important for heavy EXR files accessed over network paths.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the reader with caching."""
+        super().__init__()
+        # Cache: (path, mtime) -> FileInfo
+        self._file_info_cache: dict[tuple[str, float], FileInfo] = {}
+
+    def _get_cache_key(self, path: Path) -> tuple[str, float]:
+        """Generate cache key based on path and modification time."""
+        try:
+            mtime = os.path.getmtime(path)
+            return (str(path), mtime)
+        except OSError:
+            # If we can't get mtime (network error, etc.), use path only
+            return (str(path), 0.0)
+
+    def get_file_info(self, path: Path) -> FileInfo:
+        """Get consolidated file information in a single read operation.
+
+        This method opens the file once and extracts all metadata,
+        significantly reducing I/O operations for network files.
+        Results are cached based on file path and modification time.
+
+        Args:
+            path: Path to image file
+
+        Returns:
+            FileInfo with all metadata
+        """
+        # Check cache first
+        cache_key = self._get_cache_key(path)
+        if cache_key in self._file_info_cache:
+            logger.debug(f"Using cached file info for {path}")
+            return self._file_info_cache[cache_key]
+
+        try:
+            import OpenImageIO as oiio
+        except ImportError as e:
+            raise ImageReadError("OpenImageIO library not available.") from e
+
+        if not path.exists():
+            raise ImageReadError(f"File does not exist: {path}")
+
+        try:
+            # Open file once and extract everything
+            buf = oiio.ImageBuf(str(path))
+            if buf.has_error:
+                raise ImageReadError(f"OIIO failed to read {path}: {buf.geterror()}")
+
+            spec = buf.spec()
+            width = spec.width
+            height = spec.height
+            channels = spec.nchannels
+            subimages = buf.nsubimages
+
+            # Extract FPS metadata
+            fps = None
+            for key in constants.FPS_METADATA_KEYS:
+                val = spec.getattribute(key)
+                if val is not None:
+                    try:
+                        if isinstance(val, bytes):
+                            val = val.decode("utf-8")
+                        if isinstance(val, (list, tuple)) and len(val) == 2:
+                            fps = float(val[0]) / float(val[1])
+                        elif isinstance(val, str) and "/" in val:
+                            parts = val.split("/")
+                            if len(parts) == 2:
+                                fps = float(parts[0]) / float(parts[1])
+                        else:
+                            fps = float(val)
+                        break
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        continue
+
+            # Extract color space metadata
+            color_space = None
+            for key in constants.COLOR_SPACE_METADATA_KEYS:
+                val = spec.getattribute(key)
+                if val is not None:
+                    if isinstance(val, bytes):
+                        val = val.decode("utf-8")
+                    color_space = str(val).strip()
+                    break
+
+            # Extract layers from all subimages
+            layers = set()
+            for i in range(subimages):
+                sub_buf = oiio.ImageBuf(str(path), i, 0)
+                sub_spec = sub_buf.spec()
+
+                # Check subimage name
+                part_name = sub_spec.getattribute("name")
+                if part_name:
+                    if isinstance(part_name, bytes):
+                        part_name = part_name.decode("utf-8")
+                    if part_name.lower() not in ("rgba", "beauty", "default"):
+                        layers.add(part_name)
+                    else:
+                        layers.add("RGBA")
+
+                # Check channel prefixes
+                for channel_name in sub_spec.channelnames:
+                    if "." in channel_name:
+                        layers.add(channel_name.rsplit(".", 1)[0])
+                    else:
+                        if not part_name or part_name.lower() in ("rgba", "beauty", "default"):
+                            layers.add("RGBA")
+
+            # Sort layers with RGBA first
+            layers_list = sorted(layers)
+            if "RGBA" in layers_list:
+                layers_list.remove("RGBA")
+                layers_list.insert(0, "RGBA")
+
+            # Create FileInfo and cache it
+            file_info = FileInfo(
+                width=width,
+                height=height,
+                channels=channels,
+                layers=layers_list,
+                fps=fps,
+                color_space=color_space,
+                subimages=subimages,
+            )
+
+            self._file_info_cache[cache_key] = file_info
+            logger.debug(f"Cached file info for {path}")
+            return file_info
+
+        except Exception as e:
+            raise ImageReadError(f"Failed to read file info with OIIO: {path} - {e}") from e
 
     def read(self, path: Path, layer: Optional[str] = None) -> np.ndarray:
         """Read an image using OIIO ImageBuf.
@@ -164,144 +307,59 @@ class OIIOReader(ImageReader):
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
 
     def get_layers(self, path: Path) -> list[str]:
-        """Get available layers from the image file, including multi-part AOVs."""
+        """Get available layers from the image file, including multi-part AOVs.
+
+        Uses cached file info to avoid redundant I/O.
+        """
         try:
-            import OpenImageIO as oiio
-        except ImportError:
+            file_info = self.get_file_info(path)
+            return file_info.layers
+        except ImageReadError:
             return ["RGBA"]
-
-        buf = oiio.ImageBuf(str(path))
-        if buf.has_error:
-            return ["RGBA"]
-
-        layers = set()
-
-        # Scan all subimages (parts)
-        for i in range(buf.nsubimages):
-            # We don't need to fully read pixels, just the spec
-            sub_buf = oiio.ImageBuf(str(path), i, 0)
-            spec = sub_buf.spec()
-
-            # 1. Check subimage name (Standard for multi-part EXR)
-            part_name = spec.getattribute("name")
-            if part_name:
-                if isinstance(part_name, bytes):
-                    part_name = part_name.decode("utf-8")
-
-                # Exclude standard beauty/rgba part names to avoid duplicates
-                if part_name.lower() not in ("rgba", "beauty", "default"):
-                    layers.add(part_name)
-                else:
-                    layers.add("RGBA")
-
-            # 2. Check channel prefixes (Standard for single-part multi-layer EXR)
-            for channel_name in spec.channelnames:
-                if "." in channel_name:
-                    layers.add(channel_name.rsplit(".", 1)[0])
-                else:
-                    # If it's a part but has no dot-channels, it might be the beauty
-                    if not part_name or part_name.lower() in ("rgba", "beauty", "default"):
-                        layers.add("RGBA")
-
-        # Ensure RGBA is first if present
-        result = sorted(layers)
-        if "RGBA" in result:
-            result.remove("RGBA")
-            result.insert(0, "RGBA")
-
-        return result
 
     def get_channels(self, path: Path) -> int:
-        """Get channel count using OIIO."""
+        """Get channel count using OIIO.
+
+        Uses cached file info to avoid redundant I/O.
+        """
         try:
-            import OpenImageIO as oiio
-        except ImportError:
+            file_info = self.get_file_info(path)
+            return file_info.channels
+        except ImageReadError:
             return 3
-
-        buf = oiio.ImageBuf(str(path))
-        if buf.has_error:
-            return 3
-
-        spec = buf.spec()
-        return spec.nchannels
 
     def get_resolution(self, path: Path) -> tuple[int, int]:
-        """Get resolution using OIIO."""
+        """Get resolution using OIIO.
+
+        Uses cached file info to avoid redundant I/O.
+        """
         try:
-            import OpenImageIO as oiio
-        except ImportError:
+            file_info = self.get_file_info(path)
+            return (file_info.width, file_info.height)
+        except ImageReadError:
             return (0, 0)
-
-        buf = oiio.ImageBuf(str(path))
-        if buf.has_error:
-            return (0, 0)
-
-        spec = buf.spec()
-        return (spec.width, spec.height)
 
     def get_metadata_fps(self, path: Path) -> Optional[float]:
-        """Get FPS from OIIO metadata."""
+        """Get FPS from OIIO metadata.
+
+        Uses cached file info to avoid redundant I/O.
+        """
         try:
-            import OpenImageIO as oiio
-        except ImportError:
+            file_info = self.get_file_info(path)
+            return file_info.fps
+        except ImageReadError:
             return None
-
-        buf = oiio.ImageBuf(str(path))
-        if buf.has_error:
-            return None
-
-        spec = buf.spec()
-        fps = None
-
-        for key in constants.FPS_METADATA_KEYS:
-            val = spec.getattribute(key)
-            if val is not None:
-                try:
-                    # Handle bytes
-                    if isinstance(val, bytes):
-                        val = val.decode("utf-8")
-
-                    # OIIO attributes can be tuples for rationals
-                    if isinstance(val, (list, tuple)) and len(val) == 2:
-                        fps = float(val[0]) / float(val[1])
-                    elif isinstance(val, str) and "/" in val:
-                        # Handle rational strings like "24000/1001"
-                        parts = val.split("/")
-                        if len(parts) == 2:
-                            fps = float(parts[0]) / float(parts[1])
-                    else:
-                        # Handle simple float/int or float strings
-                        fps = float(val)
-                    break
-                except (ValueError, TypeError, ZeroDivisionError):
-                    continue
-
-        return fps
 
     def get_metadata_color_space(self, path: Path) -> Optional[str]:
-        """Get color space from OIIO metadata."""
+        """Get color space from OIIO metadata.
+
+        Uses cached file info to avoid redundant I/O.
+        """
         try:
-            import OpenImageIO as oiio
-        except ImportError:
+            file_info = self.get_file_info(path)
+            return file_info.color_space
+        except ImageReadError:
             return None
-
-        buf = oiio.ImageBuf(str(path))
-        if buf.has_error:
-            return None
-
-        spec = buf.spec()
-        color_space = None
-
-        # Check standard and custom keys in constants
-        for key in constants.COLOR_SPACE_METADATA_KEYS:
-            val = spec.getattribute(key)
-            if val is not None:
-                if isinstance(val, bytes):
-                    val = val.decode("utf-8")
-                color_space = str(val).strip()
-                break
-
-        return color_space
 
 
 class ImageReaderFactory:

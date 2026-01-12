@@ -25,6 +25,7 @@ from renderkit.processing.color_space import (
 )
 from renderkit.processing.video_encoder import get_available_encoders, select_available_encoder
 from renderkit.ui.conversion_worker import ConversionWorker
+from renderkit.ui.file_info_worker import FileInfoWorker
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.qt_compat import (
     QT_BACKEND_NAME,
@@ -167,6 +168,7 @@ class ModernMainWindow(QMainWindow):
         self._input_pattern_validated = False
         self._is_cancelling = False
         self._startup_logs: list[str] = []
+        self._file_info_worker: Optional[FileInfoWorker] = None
 
         self._setup_logging()
         self._ensure_ocio_env()
@@ -1659,48 +1661,22 @@ class ModernMainWindow(QMainWindow):
             else:
                 self.log_text.appendPlainText("No FPS metadata found in sequence.")
 
-            # Auto-detect color space
-            from renderkit.io.image_reader import ImageReaderFactory
-
-            reader = ImageReaderFactory.create_reader(sample_path)
-            detected_color_space = reader.get_metadata_color_space(sample_path)
-            if detected_color_space:
-                self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
-
-                preferred_label = resolve_ocio_role_label_for_colorspace(
-                    detected_color_space,
-                    preferred_roles=["rendering", "scene_linear", "compositing_linear"],
-                )
-                if preferred_label:
-                    index = self.color_space_combo.findText(
-                        preferred_label, Qt.MatchFlag.MatchExactly
-                    )
-                else:
-                    index = self.color_space_combo.findText(
-                        detected_color_space, Qt.MatchFlag.MatchContains
-                    )
-
-                if index >= 0:
-                    self.color_space_combo.setCurrentIndex(index)
-                else:
-                    # If exact match not found, try setting text directly since it's editable
-                    self.color_space_combo.setEditText(detected_color_space)
-            else:
-                self.log_text.appendPlainText("No specific Color Space metadata found.")
-
-            # Detect Layers
-            layers = reader.get_layers(sample_path)
+            # Show loading indicator while discovering metadata from potentially slow network files
+            self.sequence_info_label.setText(
+                f"Detected {frame_count} frames (discovering metadata...)"
+            )
+            # Block signals to prevent "Loading..." from triggering preview or being used as layer
             self.layer_combo.blockSignals(True)
+            self.layer_combo.setEnabled(False)
             self.layer_combo.clear()
-            self.layer_combo.addItems(layers)
-            self.layer_combo.setEnabled(len(layers) > 1 or layers[0] != "RGBA")
+            self.layer_combo.addItem("Loading...")
             self.layer_combo.blockSignals(False)
 
-            if len(layers) > 1:
-                self.log_text.appendPlainText(f"Found {len(layers)} layers.")
-                logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
-
-            self._load_preview_from_path(sample_path)
+            # Start async file info discovery
+            sample_path = sequence.get_file_path(sequence.frame_numbers[0])
+            self._start_file_info_discovery(
+                sample_path, sequence, frame_count, frame_range, pattern
+            )
 
             # Auto-detect output path in same folder as input
             pattern_path = Path(pattern)
@@ -1737,6 +1713,108 @@ class ModernMainWindow(QMainWindow):
             self._input_pattern_valid = False
             self._set_input_validation_state(False, error_text)
             self._update_convert_gate()
+
+    def _start_file_info_discovery(self, sample_path, sequence, frame_count, frame_range, pattern):
+        """Start async file info discovery to avoid blocking UI."""
+        # Stop any existing worker
+        if self._file_info_worker and self._file_info_worker.isRunning():
+            self._file_info_worker.stop()
+            self._file_info_worker.wait(500)
+
+        # Create and start new worker
+        self._file_info_worker = FileInfoWorker(sample_path, self)
+        self._file_info_worker.file_info_ready.connect(
+            lambda path, info: self._on_file_info_ready(
+                path, info, sample_path, sequence, frame_count, frame_range, pattern
+            )
+        )
+        self._file_info_worker.error_occurred.connect(
+            lambda path, error: self._on_file_info_error(
+                path, error, sample_path, sequence, frame_count, frame_range, pattern
+            )
+        )
+        self._file_info_worker.start()
+
+        self.log_text.appendPlainText(f"Checking metadata: {sample_path.name}")
+
+    def _on_file_info_ready(
+        self, path_str, file_info, sample_path, sequence, frame_count, frame_range, pattern
+    ):
+        """Handle file info ready from background worker."""
+        try:
+            # Update color space
+            detected_color_space = file_info.color_space
+            if detected_color_space:
+                self.log_text.appendPlainText(f"Auto-detected Color Space: {detected_color_space}")
+
+                preferred_label = resolve_ocio_role_label_for_colorspace(
+                    detected_color_space,
+                    preferred_roles=["rendering", "scene_linear", "compositing_linear"],
+                )
+                if preferred_label:
+                    index = self.color_space_combo.findText(
+                        preferred_label, Qt.MatchFlag.MatchExactly
+                    )
+                else:
+                    index = self.color_space_combo.findText(
+                        detected_color_space, Qt.MatchFlag.MatchContains
+                    )
+
+                if index >= 0:
+                    self.color_space_combo.setCurrentIndex(index)
+                else:
+                    self.color_space_combo.setEditText(detected_color_space)
+            else:
+                self.log_text.appendPlainText("No specific Color Space metadata found.")
+
+            # Update layers
+            layers = file_info.layers
+            self.layer_combo.blockSignals(True)
+            self.layer_combo.clear()
+            self.layer_combo.addItems(layers)
+            self.layer_combo.setEnabled(len(layers) > 1 or layers[0] != "RGBA")
+            self.layer_combo.blockSignals(False)
+
+            if len(layers) > 1:
+                self.log_text.appendPlainText(f"Found {len(layers)} layers.")
+                logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
+
+            # Update sequence info with final text
+            info_text = (
+                f"Detected {frame_count} frames\n"
+                f"Frame range: {frame_range}\n"
+                f"Pattern: {Path(pattern).name}"
+            )
+            self.sequence_info_label.setText(info_text)
+
+            # Load preview
+            self._load_preview_from_path(sample_path)
+
+        except Exception as e:
+            logger.error(f"Error processing file info: {e}")
+            self.log_text.appendPlainText(f"Error processing metadata: {e}")
+
+    def _on_file_info_error(
+        self, path_str, error, sample_path, sequence, frame_count, frame_range, pattern
+    ):
+        """Handle file info discovery error."""
+        logger.warning(f"File info discovery failed: {error}")
+        self.log_text.appendPlainText(f"Metadata discovery failed: {error}")
+
+        # Set default values
+        self.layer_combo.blockSignals(True)
+        self.layer_combo.clear()
+        self.layer_combo.addItems(["RGBA"])
+        self.layer_combo.setEnabled(False)
+        self.layer_combo.blockSignals(False)
+
+        # Update sequence info
+        info_text = (
+            f"Detected {frame_count} frames\n"
+            f"Frame range: {frame_range}\n"
+            f"Pattern: {Path(pattern).name}"
+        )
+        self.sequence_info_label.setText(info_text)
 
     def _get_current_color_space_config(self) -> tuple[ColorSpacePreset, Optional[str]]:
         """Determine color space preset and input space name from UI.

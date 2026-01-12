@@ -91,13 +91,16 @@ class SequenceConverter:
         if not frame_numbers:
             raise ValueError("No frames found in specified range")
 
-        # Step 4: Read first frame to get dimensions and metadata
+        # Step 4: Read first frame to get dimensions and metadata (batched for efficiency)
         first_frame_path = self.sequence.get_file_path(frame_numbers[0])
         self.reader = ImageReaderFactory.create_reader(first_frame_path)
-        width, height = self.reader.get_resolution(first_frame_path)
 
-        # Detect input color space
-        detected_color_space = self.reader.get_metadata_color_space(first_frame_path)
+        # Get all file info in a single batched operation (reduces network I/O)
+        file_info = self.reader.get_file_info(first_frame_path)
+        width = file_info.width
+        height = file_info.height
+        detected_color_space = file_info.color_space
+
         if detected_color_space:
             logger.info(f"Detected input color space: {detected_color_space}")
 
@@ -107,7 +110,7 @@ class SequenceConverter:
 
         if self.config.contact_sheet_mode and self.contact_sheet_generator:
             # We need to calculate the actual composite size
-            layers = self.reader.get_layers(first_frame_path)
+            layers = file_info.layers
             if layers:
                 cols = self.config.contact_sheet_config.columns
                 rows = (len(layers) + cols - 1) // cols
