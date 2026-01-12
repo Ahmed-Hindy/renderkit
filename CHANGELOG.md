@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Moved Contact Sheet toggle to Input Sequence section for better visibility.
-- Enforced mutual exclusivity between Contact Sheet mode and single Layer selection.
+- Enforced mutual exclusivity between Contact Sheet mode and single Layer selection with visual cues.
+- Auto-expand Contact Sheet settings when mode is enabled.
+- Preview window now displays a contact sheet grid when in Contact Sheet mode.
+- Offloaded contact sheet preview generation to a background thread to prevent UI hangs.
+- Implemented robust thread management with worker pooling to prevent crashes during rapid UI interactions.
 
 ## [0.4.0] - 2026-01-09
 

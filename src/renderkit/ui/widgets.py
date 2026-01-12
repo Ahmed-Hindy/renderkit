@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import OpenImageIO as oiio
 
+from renderkit.core.config import ContactSheetConfig
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.ui.qt_compat import (
@@ -31,6 +33,7 @@ class PreviewWorker(QThread):
         color_space: ColorSpacePreset,
         input_space: Optional[str] = None,
         layer: Optional[str] = None,
+        cs_config: Optional[ContactSheetConfig] = None,
     ) -> None:
         """Initialize preview worker.
 
@@ -39,18 +42,27 @@ class PreviewWorker(QThread):
             color_space: Color space preset for conversion
             input_space: Optional explicit input color space
             layer: Optional EXR layer to load
+            cs_config: Optional contact sheet configuration
         """
         super().__init__()
         self.file_path = file_path
         self.color_space = color_space
         self.input_space = input_space
         self.layer = layer
+        self.cs_config = cs_config
 
     def run(self) -> None:
         """Load and process preview image."""
         try:
-            reader = ImageReaderFactory.create_reader(self.file_path)
-            image = reader.read(self.file_path, layer=self.layer)
+            if self.cs_config:
+                from renderkit.processing.contact_sheet import ContactSheetGenerator
+
+                generator = ContactSheetGenerator(self.cs_config)
+                buf = generator.composite_layers(self.file_path)
+                image = buf.get_pixels(oiio.FLOAT)
+            else:
+                reader = ImageReaderFactory.create_reader(self.file_path)
+                image = reader.read(self.file_path, layer=self.layer)
 
             # Convert color space
             converter = ColorSpaceConverter(self.color_space)
@@ -120,6 +132,7 @@ class PreviewWidget(QWidget):
         self._setup_ui()
         self._original_pixmap: Optional[QPixmap] = None
         self.worker: Optional[PreviewWorker] = None
+        self._active_workers: list[PreviewWorker] = []
 
     def _setup_ui(self) -> None:
         """Set up the preview UI."""
@@ -152,6 +165,7 @@ class PreviewWidget(QWidget):
         color_space: ColorSpacePreset,
         input_space: Optional[str] = None,
         layer: Optional[str] = None,
+        cs_config: Optional[ContactSheetConfig] = None,
     ) -> None:
         """Load preview from file.
 
@@ -160,11 +174,24 @@ class PreviewWidget(QWidget):
             color_space: Color space preset
             input_space: Optional explicit input color space
             layer: Optional EXR layer
+            cs_config: Optional contact sheet configuration
         """
-        # Cancel previous worker if running
+        # Safety: Never terminate() a thread busy with I/O (like OIIO).
+        # Instead, disconnect signals so its results are ignored, and let it finish.
         if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
+            try:
+                self.worker.preview_ready.disconnect(self._on_preview_ready)
+                self.worker.error.disconnect(self._on_preview_error)
+            except (RuntimeError, TypeError):
+                # Signals might already be disconnected or worker deleted
+                pass
+
+            # Keep a reference alive until it finishes to avoid "QThread: Destroyed while still running"
+            if self.worker not in self._active_workers:
+                self._active_workers.append(self.worker)
+
+            self.worker.finished.connect(self._on_worker_finished)
+            self.worker.finished.connect(self.worker.deleteLater)
 
         self._original_pixmap = None
         self.preview_label.setText("Loading preview...")
@@ -177,10 +204,22 @@ class PreviewWidget(QWidget):
             }
         """)
 
-        self.worker = PreviewWorker(file_path, color_space, input_space=input_space, layer=layer)
+        self.worker = PreviewWorker(
+            file_path, color_space, input_space=input_space, layer=layer, cs_config=cs_config
+        )
         self.worker.preview_ready.connect(self._on_preview_ready)
         self.worker.error.connect(self._on_preview_error)
+        self.worker.finished.connect(self._on_worker_finished)
+        self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
+
+    def _on_worker_finished(self) -> None:
+        """Cleanup worker reference when finished."""
+        worker = self.sender()
+        if isinstance(worker, PreviewWorker) and worker in self._active_workers:
+            self._active_workers.remove(worker)
+        if worker == self.worker:
+            self.worker = None
 
     def _on_preview_ready(self, pixmap: QPixmap) -> None:
         """Handle preview ready."""
