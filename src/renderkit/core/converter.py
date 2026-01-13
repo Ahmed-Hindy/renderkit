@@ -166,52 +166,115 @@ class SequenceConverter:
         )
         self.encoder.initialize(output_width, output_height)
 
-        # Step 8: Process frames
+        # Step 8: Process frames with freeze-frame for missing frames
         logger.debug(f"Processing {len(frame_numbers)} frames...")
+
+        # Determine the actual frame range to process
+        start_frame = (
+            self.config.start_frame if self.config.start_frame is not None else frame_numbers[0]
+        )
+        end_frame = (
+            self.config.end_frame if self.config.end_frame is not None else frame_numbers[-1]
+        )
+
+        # Create a set of existing frames for fast lookup
+        existing_frames = set(frame_numbers)
+
+        # Generate complete frame range
+        all_frames = list(range(start_frame, end_frame + 1))
+        total_frames = len(all_frames)
+
+        # Count missing frames for logging
+        missing_count = total_frames - len([f for f in all_frames if f in existing_frames])
+        if missing_count > 0:
+            logger.warning(
+                f"Detected {missing_count} missing frames in range {start_frame}-{end_frame}. "
+                f"Will use freeze-frame (hold last valid frame) for missing frames."
+            )
+
         scaler = ImageScaler()
         success_count = 0
+        last_valid_image = None
 
         try:
-            total_frames = len(frame_numbers)
             if progress_callback:
                 # Use provided callback
-                for i, frame_num in enumerate(frame_numbers):
+                for i, frame_num in enumerate(all_frames):
                     # Check for cancellation via callback return value
                     if progress_callback(i, total_frames) is False:
                         logger.info("Conversion cancelled by progress callback")
                         raise ConversionCancelledError("Conversion cancelled by user")
 
-                    wrote_frame = self._process_single_frame(
-                        frame_num,
-                        output_width,
-                        output_height,
-                        width,
-                        height,
-                        scaler,
-                        input_space,
-                        self.contact_sheet_generator if self.config.contact_sheet_mode else None,
-                    )
-                    if wrote_frame:
-                        success_count += 1
+                    if frame_num in existing_frames:
+                        # Process actual frame
+                        result = self._process_single_frame(
+                            frame_num,
+                            output_width,
+                            output_height,
+                            width,
+                            height,
+                            scaler,
+                            input_space,
+                            self.contact_sheet_generator
+                            if self.config.contact_sheet_mode
+                            else None,
+                        )
+                        if result is not None:
+                            last_valid_image = result
+                            success_count += 1
+                    else:
+                        # Missing frame - use freeze-frame
+                        if last_valid_image is not None:
+                            try:
+                                self.encoder.write_frame(last_valid_image)
+                                success_count += 1
+                                if i == 0 or (i + 1) % 10 == 0:  # Log occasionally to avoid spam
+                                    logger.debug(f"Frame {frame_num} missing, using freeze-frame")
+                            except VideoEncodingError as e:
+                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
+                                raise
+                        else:
+                            logger.warning(
+                                f"Frame {frame_num} missing and no previous frame available. Skipping."
+                            )
+
                 # Final progress update
                 progress_callback(total_frames, total_frames)
             else:
                 # Use tqdm for console
                 from tqdm import tqdm
 
-                for frame_num in tqdm(frame_numbers, desc="Converting frames"):
-                    wrote_frame = self._process_single_frame(
-                        frame_num,
-                        output_width,
-                        output_height,
-                        width,
-                        height,
-                        scaler,
-                        input_space,
-                        self.contact_sheet_generator if self.config.contact_sheet_mode else None,
-                    )
-                    if wrote_frame:
-                        success_count += 1
+                for frame_num in tqdm(all_frames, desc="Converting frames"):
+                    if frame_num in existing_frames:
+                        # Process actual frame
+                        result = self._process_single_frame(
+                            frame_num,
+                            output_width,
+                            output_height,
+                            width,
+                            height,
+                            scaler,
+                            input_space,
+                            self.contact_sheet_generator
+                            if self.config.contact_sheet_mode
+                            else None,
+                        )
+                        if result is not None:
+                            last_valid_image = result
+                            success_count += 1
+                    else:
+                        # Missing frame - use freeze-frame
+                        if last_valid_image is not None:
+                            try:
+                                self.encoder.write_frame(last_valid_image)
+                                success_count += 1
+                            except VideoEncodingError as e:
+                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
+                                raise
+                        else:
+                            logger.warning(
+                                f"Frame {frame_num} missing and no previous frame available. Skipping."
+                            )
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -219,7 +282,9 @@ class SequenceConverter:
                     "Check logs for reading or conversion errors."
                 )
 
-            logger.info(f"{success_count} frames written")
+            logger.info(
+                f"{success_count} frames written (including freeze-frames for missing frames)"
+            )
 
         finally:
             # Clean up
@@ -236,7 +301,7 @@ class SequenceConverter:
         scaler: "ImageScaler",
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
-    ) -> bool:
+    ) -> Optional[np.ndarray]:
         """Process a single frame.
 
         Args:
@@ -247,8 +312,10 @@ class SequenceConverter:
             height: Source height
             scaler: Image scaler instance
             input_space: Explicit input color space
+            contact_sheet_generator: Optional contact sheet generator
+
         Returns:
-            True if a frame was written successfully.
+            Processed image as numpy array, or None if processing failed.
         """
         frame_path = self.sequence.get_file_path(frame_num)
 
@@ -269,14 +336,14 @@ class SequenceConverter:
                 image = self.reader.read(frame_path, layer=self.config.layer)
         except (ImageReadError, Exception) as e:
             logger.warning(f"Failed to process frame {frame_num}: {e}")
-            return False
+            return None
 
         # Convert color space
         try:
             image = self.color_converter.convert(image, input_space=input_space)
         except ColorSpaceError as e:
             logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-            return False
+            return None
 
         if output_width != width or output_height != height:
             image = scaler.scale_image(image, output_width, output_height)
@@ -314,4 +381,5 @@ class SequenceConverter:
         except VideoEncodingError as e:
             logger.error(f"Failed to write frame {frame_num}: {e}")
             raise
-        return True
+
+        return image
