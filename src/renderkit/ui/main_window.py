@@ -480,18 +480,16 @@ class ModernMainWindow(QMainWindow):
         # Frame Range
         frame_range_layout = QHBoxLayout()
         self.start_frame_spin = NoWheelSpinBox()
-        self.start_frame_spin.setMinimum(0)
+        self.start_frame_spin.setMinimum(1)
         self.start_frame_spin.setMaximum(999999)
-        self.start_frame_spin.setSpecialValueText("Auto")
-        self.start_frame_spin.setValue(0)
+        self.start_frame_spin.setValue(1)
         frame_range_layout.addWidget(QLabel("Start:"))
         frame_range_layout.addWidget(self.start_frame_spin)
 
         self.end_frame_spin = NoWheelSpinBox()
-        self.end_frame_spin.setMinimum(0)
+        self.end_frame_spin.setMinimum(1)
         self.end_frame_spin.setMaximum(999999)
-        self.end_frame_spin.setSpecialValueText("Auto")
-        self.end_frame_spin.setValue(0)
+        self.end_frame_spin.setValue(1)
         frame_range_layout.addWidget(QLabel("End:"))
         frame_range_layout.addWidget(self.end_frame_spin)
         frame_range_layout.addStretch()
@@ -1730,9 +1728,18 @@ class ModernMainWindow(QMainWindow):
             self.sequence_info_label.setText(info_text)
             # self.sequence_info_label.setStyleSheet("color: #4CAF50; font-style: normal;")
 
-            # Auto-set frame range
-            self.start_frame_spin.setValue(sequence.frame_numbers[0])
-            self.end_frame_spin.setValue(sequence.frame_numbers[-1])
+            # Auto-set frame range and adjust minimums to match sequence
+            min_frame = sequence.frame_numbers[0]
+            max_frame = sequence.frame_numbers[-1]
+
+            # Set spinbox ranges to match the detected sequence
+            self.start_frame_spin.setMinimum(min_frame)
+            self.start_frame_spin.setMaximum(max_frame)
+            self.start_frame_spin.setValue(min_frame)
+
+            self.end_frame_spin.setMinimum(min_frame)
+            self.end_frame_spin.setMaximum(max_frame)
+            self.end_frame_spin.setValue(max_frame)
 
             # Create a loading state in the UI immediately
             self.sequence_info_label.setText(f"Detected {frame_count} frames (Loading metadata...)")
