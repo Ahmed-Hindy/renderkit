@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Callable
 
 _LOGGER_NAME = "renderkit"
 

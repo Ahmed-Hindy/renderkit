@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "A high-performance image and video processor for VFX workflows"
 
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Ahmed Hindy"}
@@ -20,18 +20,21 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-    "numpy>=2.3.0,<2.4",
+    "numpy>=1.24.0",
     "imageio>=2.31.0",
     "imageio-ffmpeg>=0.4.9",
-    "openimageio>=3.0.3.1",
+    "openimageio>=2.3.0",
     "click>=8.1.0",
     "tqdm>=4.66.0",
-    "PySide6>=6.8.0,<6.9",
-    "opencolorio>=2.5.0,<2.6",
+    "PySide6>=6.6.0",
+    "opencolorio>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -55,7 +58,7 @@ renderkit = "renderkit.cli.main:main"
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py39"
 [tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
@@ -68,7 +71,6 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
-    "UP045",  # keep Optional[...] annotations for now
 ]
 
 [tool.ruff.format]
@@ -99,7 +101,7 @@ omit = [
 ]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
