@@ -7,9 +7,10 @@
 ```bash
 git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
-uv venv
+uv venv --python 3.13
 uv pip install -e ".[dev]"
 ```
+Use Python 3.13.x to match the VFX Platform CY2026 spec.
 
 ### Using pip
 
@@ -128,7 +129,7 @@ The package is organized with clear separation of concerns:
 The project uses GitHub Actions for:
 - Linting and formatting (Ruff)
 - Type checking (mypy, non-blocking)
-- Tests on Windows and Ubuntu (Python 3.10)
+- Tests on Windows and Ubuntu (Python 3.13)
 - UI tests on Ubuntu (xvfb)
 - Python package build on Ubuntu
 - PyInstaller builds on Windows, Linux, and macOS (Build workflow)
