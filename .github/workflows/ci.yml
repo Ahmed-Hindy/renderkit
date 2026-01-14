@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.13'
       
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.13'
       
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -58,12 +58,12 @@ jobs:
         continue-on-error: true  # Type checking is optional
 
   test:
-    name: Test (Python 3.10)
+    name: Test (Python 3.13)
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest] # [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.10']
+        python-version: ['3.13']
     
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +105,7 @@ jobs:
         run: python -m pytest tests/ -v -k "not test_ui" --cov=image_video_processor --cov-report=xml
       
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
@@ -121,7 +121,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.13'
       
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -169,7 +169,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.13'
       
       - name: Install uv
         uses: astral-sh/setup-uv@v4
