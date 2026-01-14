@@ -1,11 +1,13 @@
 # RenderKit
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![VFX Platform CY2026](https://img.shields.io/badge/VFX_Platform-CY2026-2b7a78.svg)](https://vfxplatform.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](https://Ahmed-Hindy.github.io/renderkit/)
 
 A high-performance Python package and CLI tool for converting image sequences (EXR, PNG, JPEG) to video (MP4) in VFX workflows.
+Targets the VFX Platform CY2026 spec (Python 3.13.x, Qt 6.8/PySide6 6.8, OpenColorIO 2.5, NumPy 2.3).
 
 **[Full Documentation](https://Ahmed-Hindy.github.io/renderkit/)**
 
@@ -38,6 +40,7 @@ git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
 uv pip install -e .
 ```
+Requires Python 3.13.x (VFX Platform CY2026).
 
 ## Quick Start
 
