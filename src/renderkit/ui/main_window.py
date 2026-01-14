@@ -54,6 +54,7 @@ from renderkit.ui.qt_compat import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QSystemTrayIcon,
     Qt,
     QTimer,
     QUrl,
@@ -161,6 +162,7 @@ class ModernMainWindow(QMainWindow):
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
         self._log_forwarder: Optional[UiLogForwarder] = None
+        self.tray_icon: Optional[QSystemTrayIcon] = None
         self._ocio_role_display_map: dict[str, str] = {}
         self._recent_patterns: list[str] = []
         self._last_pattern_text = ""
@@ -188,6 +190,7 @@ class ModernMainWindow(QMainWindow):
 
         self._apply_theme()
         self._setup_ui()
+        self._setup_tray_icon()
         self._load_settings()
         self._setup_connections()
 
@@ -319,6 +322,18 @@ class ModernMainWindow(QMainWindow):
             for msg in self._startup_logs:
                 self.log_text.appendPlainText(msg)
             self._startup_logs.clear()
+
+    def _setup_tray_icon(self) -> None:
+        """Set up the system tray icon for notifications."""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            logger.info("System tray is not available; skipping tray icon setup.")
+            return
+
+        tray_icon = QSystemTrayIcon(self)
+        tray_icon.setIcon(icon_manager.get_icon("info"))
+        tray_icon.setToolTip("RenderKit")
+        tray_icon.show()
+        self.tray_icon = tray_icon
 
     def _set_form_growth_policy(self, form_layout: QFormLayout) -> None:
         policy_enum = getattr(QFormLayout, "FieldGrowthPolicy", None)
@@ -2205,6 +2220,7 @@ class ModernMainWindow(QMainWindow):
             self._update_play_button_state()
 
         output_path = Path(self.output_path_edit.text().strip()).absolute()
+        self._ping_user("Conversion completed", f"Output: {output_path}")
         message_box = QMessageBox(self)
         message_box.setWindowTitle("Success")
         icon_enum = getattr(QMessageBox, "Icon", None)
@@ -2230,6 +2246,19 @@ class ModernMainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_path.parent)))
         elif clicked_button == copy_path_btn:
             QApplication.clipboard().setText(str(output_path))
+
+    def _ping_user(self, title: str, message: str) -> None:
+        """Notify the user that the conversion finished."""
+        if self.tray_icon and self.tray_icon.isVisible():
+            icon_enum = getattr(QSystemTrayIcon, "MessageIcon", None)
+            info_icon = (
+                icon_enum.Information if icon_enum is not None else QSystemTrayIcon.Information
+            )
+            self.tray_icon.showMessage(title, message, info_icon, 5000)
+            return
+
+        QApplication.beep()
+        QApplication.alert(self, 3000)
 
     def _on_conversion_cancelled(self) -> None:
         """Handle conversion cancellation."""
