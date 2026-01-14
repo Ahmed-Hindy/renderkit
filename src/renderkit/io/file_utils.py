@@ -1,9 +1,12 @@
 """File I/O utilities."""
 
 import logging
+import re
 from pathlib import Path
+from typing import Optional
 
 from renderkit import constants
+from renderkit.core.sequence import SequenceDetector
 
 logger = logging.getLogger(__name__)
 
@@ -126,3 +129,40 @@ class FileUtils:
             return False, f"Filename contains invalid characters: {invalid_chars}"
 
         return True, ""
+
+    @staticmethod
+    def convert_path_to_pattern(path_str: str) -> str:
+        """Convert a file path to a frame sequence pattern string."""
+        path = Path(path_str)
+        filename = path.name
+        matches = list(re.finditer(r"\d+", filename))
+        if not matches:
+            return str(path)
+
+        last_match = matches[-1]
+        padding = len(last_match.group(0))
+        token = "#" * padding
+        pattern_name = (
+            f"{filename[:last_match.start()]}{token}{filename[last_match.end():]}"
+        )
+        return str(path.with_name(pattern_name))
+
+    @staticmethod
+    def detect_sequence(pattern: str) -> list[int]:
+        """Detect a frame sequence and return the frame numbers."""
+        sequence = SequenceDetector.detect_sequence(pattern)
+        return sequence.frame_numbers
+
+    @staticmethod
+    def get_sample_frame_from_pattern(pattern: str) -> Optional[Path]:
+        """Get a sample frame path from a sequence pattern."""
+        try:
+            sequence = SequenceDetector.detect_sequence(pattern)
+        except Exception as exc:
+            logger.debug(f"Could not detect sequence for preview: {exc}")
+            return None
+
+        if not sequence.frame_numbers:
+            return None
+
+        return sequence.get_file_path(sequence.frame_numbers[0])
