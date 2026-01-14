@@ -1,6 +1,7 @@
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 import numpy as np
 import OpenImageIO as oiio
