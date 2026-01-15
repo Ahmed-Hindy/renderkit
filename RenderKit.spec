@@ -24,6 +24,8 @@ tmp_ret = collect_all('OpenImageIO')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('opencolorio')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# qt_compat uses dynamic imports; include minimal PySide6 modules explicitly.
+hiddenimports += ["PySide6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
 
 vendor_ffmpeg_root = Path("vendor") / "ffmpeg"
 platform_dir_map = {

@@ -702,9 +702,7 @@ class MainWindowLogicMixin:
             self.end_frame_spin.setValue(max_frame)
 
             # Create a loading state in the UI immediately
-            self.sequence_info_label.setText(
-                f"Detected {frame_count} frames (Loading metadata...)"
-            )
+            self.sequence_info_label.setText(f"Detected {frame_count} frames (Loading metadata...)")
 
             # Disable Convert until valid metadata (FPS etc) is loaded
             self._input_pattern_valid = False
@@ -756,9 +754,7 @@ class MainWindowLogicMixin:
             self._set_input_validation_state(False, error_text)
             self._update_convert_gate()
 
-    def _start_file_info_discovery(
-        self, sample_path, sequence, frame_count, frame_range, pattern
-    ):
+    def _start_file_info_discovery(self, sample_path, sequence, frame_count, frame_range, pattern):
         """Start async file info discovery to avoid blocking UI."""
         # Stop any existing worker and DISCONNECT signals to prevent stale updates
         if self._file_info_worker:

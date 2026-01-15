@@ -283,9 +283,7 @@ class SequenceConverter:
                     "Check logs for reading or conversion errors."
                 )
 
-            logger.info(
-                f"{success_count} frames written"
-            )
+            logger.info(f"{success_count} frames written")
 
         finally:
             # Clean up

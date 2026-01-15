@@ -142,9 +142,7 @@ class FileUtils:
         last_match = matches[-1]
         padding = len(last_match.group(0))
         token = "#" * padding
-        pattern_name = (
-            f"{filename[:last_match.start()]}{token}{filename[last_match.end():]}"
-        )
+        pattern_name = f"{filename[: last_match.start()]}{token}{filename[last_match.end() :]}"
         return str(path.with_name(pattern_name))
 
     @staticmethod

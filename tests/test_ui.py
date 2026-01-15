@@ -192,8 +192,7 @@ def test_recent_patterns_updated(qtbot, tmp_path, monkeypatch):
 
     qtbot.waitUntil(lambda: pattern in window._recent_patterns, timeout=2000)
     combo_items = [
-        window.input_pattern_combo.itemText(i)
-        for i in range(window.input_pattern_combo.count())
+        window.input_pattern_combo.itemText(i) for i in range(window.input_pattern_combo.count())
     ]
     assert pattern in combo_items
 

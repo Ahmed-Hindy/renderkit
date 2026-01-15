@@ -2,7 +2,7 @@
 
 import importlib
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 _BACKEND_ORDER = ("pyside6", "pyside2", "pyqt6", "pyqt5")
 _BACKEND_MODULES = {
@@ -60,6 +60,56 @@ _QTWIDGET_NAMES = [
     "QVBoxLayout",
     "QWidget",
 ]
+
+if TYPE_CHECKING:
+    from PySide6.QtCore import (  # noqa: F401
+        QEvent,
+        QObject,
+        QPoint,
+        QSettings,
+        QSize,
+        Qt,
+        QThread,
+        QTimer,
+        QUrl,
+    )
+    from PySide6.QtGui import (  # noqa: F401
+        QColor,
+        QDesktopServices,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPalette,
+        QPixmap,
+    )
+    from PySide6.QtWidgets import (  # noqa: F401
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QDoubleSpinBox,
+        QFileDialog,
+        QFormLayout,
+        QFrame,
+        QGroupBox,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QMainWindow,
+        QMessageBox,
+        QPlainTextEdit,
+        QProgressBar,
+        QPushButton,
+        QScrollArea,
+        QSizePolicy,
+        QSlider,
+        QSpinBox,
+        QSplitter,
+        QSystemTrayIcon,
+        QTabWidget,
+        QVBoxLayout,
+        QWidget,
+    )
 
 # Try to detect which Qt backend to use
 # Priority: Environment variable > PySide6 > PySide2 > PyQt6 > PyQt5
