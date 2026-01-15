@@ -249,7 +249,8 @@ class OCIOColorSpaceStrategy:
     """Strategy for converting using OpenColorIO."""
 
     def __init__(self) -> None:
-        self.processor = None
+        self._processor_cache: dict[tuple[str, str], object] = {}
+        self._output_space: Optional[str] = None
         self.config = None
         try:
             import PyOpenColorIO as OCIO
@@ -304,6 +305,43 @@ class OCIOColorSpaceStrategy:
 
         return input_space
 
+    def _resolve_output_space(self) -> str:
+        if self._output_space:
+            return self._output_space
+
+        # Common display spaces in OCIO configs
+        output_candidates = constants.OCIO_OUTPUT_CANDIDATES
+        output_space = None
+
+        all_spaces = self.config.getColorSpaceNames()
+        for candidate in output_candidates:
+            if candidate in all_spaces:
+                output_space = candidate
+                break
+
+        if not output_space:
+            # Try finding a display view
+            display = self.config.getDefaultDisplay()
+            view = self.config.getDefaultView(display)
+            output_space = self.config.getDisplayViewColorSpaceName(display, view)
+
+        if not output_space:
+            raise ColorSpaceError("Could not find suitable OCIO output space.")
+
+        self._output_space = output_space
+        return output_space
+
+    def _get_cpu_processor(self, input_space: str, output_space: str):
+        cache_key = (input_space, output_space)
+        cached = self._processor_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        processor = self.config.getProcessor(input_space, output_space)
+        cpu_processor = processor.getDefaultCPUProcessor()
+        self._processor_cache[cache_key] = cpu_processor
+        return cpu_processor
+
     def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
         """Convert image using OCIO.
 
@@ -321,32 +359,11 @@ class OCIOColorSpaceStrategy:
 
         try:
             input_space = self._resolve_input_space(input_space)
-            # Determine output space (assume sRGB for now, could be configurable)
-            # Determine output space (assume sRGB for now, could be configurable)
-            # Common display spaces in OCIO configs
-            output_candidates = constants.OCIO_OUTPUT_CANDIDATES
-            output_space = None
-
-            # Simple heuristic matching
-            all_spaces = self.config.getColorSpaceNames()
-            for candidate in output_candidates:
-                if candidate in all_spaces:
-                    output_space = candidate
-                    break
-
-            if not output_space:
-                # Try finding a display view
-                display = self.config.getDefaultDisplay()
-                view = self.config.getDefaultView(display)
-                output_space = self.config.getDisplayViewColorSpaceName(display, view)
-
-            if not output_space:
-                raise ColorSpaceError("Could not find suitable OCIO output space.")
+            output_space = self._resolve_output_space()
 
             logger.debug(f"OCIO Conversion: '{input_space}' -> '{output_space}'")
 
-            processor = self.config.getProcessor(input_space, output_space)
-            cpu_processor = processor.getDefaultCPUProcessor()
+            cpu_processor = self._get_cpu_processor(input_space, output_space)
 
             # OCIO expects RGBA usually, or RGB.
             # It processes in place or returns new.

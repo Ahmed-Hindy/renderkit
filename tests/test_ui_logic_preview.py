@@ -41,7 +41,7 @@ class _DummyPreviewWidget:
 class _DummyWindow(main_window_logic.MainWindowLogicMixin):
     def __init__(self, cs_enabled: bool) -> None:
         self.preview_widget = _DummyPreviewWidget()
-        self.preview_scale_spin = _DummyValue(25)
+        self.preview_scale_spin = _DummyValue(100)
         self.cs_enable_check = _DummyCheck(cs_enabled)
         self.cs_show_labels_check = _DummyCheck(True)
         self.cs_columns_spin = _DummyValue(4)
@@ -68,7 +68,7 @@ def test_load_preview_from_path_uses_load_preview(tmp_path: Path) -> None:
     assert args[1] == ColorSpacePreset.OCIO_CONVERSION
     assert kwargs["layer"] == "RGBA"
     assert kwargs["cs_config"] is None
-    assert kwargs["preview_scale"] == 0.25
+    assert kwargs["preview_scale"] == 1
 
 
 def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> None:

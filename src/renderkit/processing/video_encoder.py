@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -23,7 +24,7 @@ def _escape_ffreport_path(path: Path) -> str:
     return str(path)
 
 
-def get_available_encoders() -> set[str]:
+def _probe_available_encoders() -> set[str]:
     try:
         cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
         result = subprocess.run(
@@ -50,6 +51,15 @@ def get_available_encoders() -> set[str]:
         if parts[0].startswith("V"):
             encoders.add(parts[1])
     return encoders
+
+
+@lru_cache(maxsize=1)
+def _cached_available_encoders() -> frozenset[str]:
+    return frozenset(_probe_available_encoders())
+
+
+def get_available_encoders() -> set[str]:
+    return set(_cached_available_encoders())
 
 
 def select_available_encoder(requested: str, available: set[str]) -> tuple[str, Optional[str]]:

@@ -354,8 +354,6 @@ class MainWindowLogicMixin:
         self.codec_combo.setCurrentIndex(0)
         self.keep_resolution_check.setChecked(True)
         self.quality_slider.setValue(10)
-        self.multiprocessing_check.setChecked(False)
-        self.num_workers_spin.setValue(4)
 
         self.burnin_enable_check.setChecked(True)
         self.burnin_frame_check.setChecked(True)
@@ -994,11 +992,6 @@ class MainWindowLogicMixin:
             if start_frame > 0 and end_frame > 0 and end_frame >= start_frame:
                 config_builder.with_frame_range(start_frame, end_frame)
 
-            # Multiprocessing
-            if self.multiprocessing_check.isChecked():
-                num_workers = self.num_workers_spin.value()
-                config_builder.with_multiprocessing(True, num_workers)
-
             # Contact Sheet Mode
             if self.cs_enable_check.isChecked():
                 cs_config = ContactSheetConfig(
@@ -1269,8 +1262,6 @@ class MainWindowLogicMixin:
         self.settings.setValue("codec_text", self.codec_combo.currentText())
         self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
         self.settings.setValue("quality", self.quality_slider.value())
-        self.settings.setValue("multiprocessing", self.multiprocessing_check.isChecked())
-        self.settings.setValue("num_workers", self.num_workers_spin.value())
         self.settings.setValue("burnin_enable", self.burnin_enable_check.isChecked())
         self.settings.setValue("burnin_frame", self.burnin_frame_check.isChecked())
         self.settings.setValue("burnin_layer", self.burnin_layer_check.isChecked())
@@ -1323,12 +1314,6 @@ class MainWindowLogicMixin:
         self._on_keep_resolution_toggled(self.keep_resolution_check.isChecked())
         self._on_quality_changed(self.quality_slider.value())
         self._update_play_button_state()  # Call it here
-
-        self.multiprocessing_check.setChecked(
-            self.settings.value("multiprocessing", False, type=bool)
-        )
-
-        self.num_workers_spin.setValue(self.settings.value("num_workers", 4, type=int))
 
         self.burnin_enable_check.setChecked(self.settings.value("burnin_enable", True, type=bool))
         self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", True, type=bool))

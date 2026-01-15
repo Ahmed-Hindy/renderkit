@@ -719,17 +719,6 @@ class MainWindowUiMixin:
         quality_layout.setStretch(1, 0)
         form_layout.addRow("Visual Quality:", quality_layout)
 
-        # Multiprocessing Options
-        self.multiprocessing_check = QCheckBox("Enable Multiprocessing")
-        self.multiprocessing_check.setToolTip("Use multiple CPU cores for faster processing")
-        form_layout.addRow(self.multiprocessing_check)
-
-        self.num_workers_spin = NoWheelSpinBox()
-        self.num_workers_spin.setRange(1, 32)
-        self.num_workers_spin.setValue(4)
-        self.num_workers_spin.setToolTip("Number of worker processes")
-        form_layout.addRow("Worker Processes:", self.num_workers_spin)
-
         self.overwrite_check = QCheckBox("Overwrite existing files")
         self.overwrite_check.setToolTip("Automatically overwrite output files if they exist")
         self.overwrite_check.setChecked(True)
