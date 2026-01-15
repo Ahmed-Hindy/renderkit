@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Replaced imageio-ffmpeg usage with an internal FFmpeg resolver for bundled/PATH binaries.
+- Updated FFmpeg override docs to match bundled/PATH behavior.
+
+### Removed
+- Removed `imageio` and `imageio-ffmpeg` runtime dependencies and PyInstaller metadata payload.
+
 
 ## [0.4.0] - 2026-01-09
 

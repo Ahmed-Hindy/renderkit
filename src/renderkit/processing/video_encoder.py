@@ -8,10 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import imageio_ffmpeg
 import numpy as np
-from imageio_ffmpeg._utils import _popen_kwargs
 
+from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
 from renderkit.exceptions import VideoEncodingError
 from renderkit.processing.scaler import ImageScaler
 
@@ -26,12 +25,12 @@ def _escape_ffreport_path(path: Path) -> str:
 
 def get_available_encoders() -> set[str]:
     try:
-        cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-encoders"]
+        cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            **_popen_kwargs(prevent_sigint=True),
+            **popen_kwargs(prevent_sigint=True),
         )
         text = (result.stdout or "") + "\n" + (result.stderr or "")
     except Exception as exc:
@@ -86,7 +85,7 @@ class _RawFfmpegPipeWriter:
         ffmpeg_log_level: str,
         bitrate: Optional[str],
     ) -> None:
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        ffmpeg_exe = get_ffmpeg_exe()
         size_str = f"{width}x{height}"
         self._cmd = [
             ffmpeg_exe,
@@ -121,7 +120,7 @@ class _RawFfmpegPipeWriter:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=None,
-                **_popen_kwargs(prevent_sigint=True),
+                **popen_kwargs(prevent_sigint=True),
             )
         except Exception as exc:
             raise RuntimeError(f"Failed to start FFmpeg: {exc}") from exc
@@ -374,7 +373,7 @@ class VideoEncoder:
             self._restore_ffmpeg_report_env()
             if "ffmpeg" in msg.lower():
                 raise VideoEncodingError(
-                    "FFmpeg backend not found. Please install imageio-ffmpeg: 'pip install imageio-ffmpeg'"
+                    "FFmpeg backend not found. Ensure a bundled FFmpeg is available or ffmpeg is on PATH."
                 ) from e
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:

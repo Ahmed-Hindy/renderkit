@@ -2,6 +2,8 @@
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -60,4 +62,33 @@ def ensure_ffmpeg_env() -> None:
             logger.info("Using bundled ffmpeg: %s", candidate)
             return
 
-    logger.debug("No bundled ffmpeg found; using imageio-ffmpeg default.")
+    logger.debug("No bundled ffmpeg found; falling back to system ffmpeg.")
+
+
+def get_ffmpeg_exe() -> str:
+    """Return the best FFmpeg executable path for the current environment."""
+    env_exe = os.environ.get("IMAGEIO_FFMPEG_EXE")
+    if env_exe:
+        return env_exe
+
+    ensure_ffmpeg_env()
+    env_exe = os.environ.get("IMAGEIO_FFMPEG_EXE")
+    if env_exe:
+        return env_exe
+
+    path_exe = shutil.which("ffmpeg")
+    if path_exe:
+        return path_exe
+
+    return "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+
+
+def popen_kwargs(prevent_sigint: bool = True) -> dict[str, object]:
+    """Return subprocess kwargs tuned for FFmpeg execution."""
+    kwargs: dict[str, object] = {}
+    if prevent_sigint:
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+    return kwargs

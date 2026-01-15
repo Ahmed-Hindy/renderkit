@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all
 
 def get_version():
     init_path = Path("src") / "renderkit" / "__init__.py"
@@ -24,10 +24,6 @@ tmp_ret = collect_all('OpenImageIO')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('opencolorio')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-# Ensure importlib.metadata can resolve package versions at runtime.
-datas += copy_metadata('imageio')
-datas += copy_metadata('imageio-ffmpeg')
-hiddenimports += ["imageio_ffmpeg"]
 
 vendor_ffmpeg_root = Path("vendor") / "ffmpeg"
 platform_dir_map = {
@@ -171,25 +167,6 @@ def _prune_qt_payload(entries):
             pruned.append((src, dest, entry_type))
     return pruned
 
-def _prune_imageio_ffmpeg_payload(entries):
-    pruned = []
-    for entry in entries:
-        if len(entry) == 2:
-            src, dest = entry
-            entry_type = None
-        else:
-            src, dest, entry_type = entry
-        src_str = str(src)
-        dest_str = str(dest)
-        if "imageio_ffmpeg" in src_str or "imageio_ffmpeg" in dest_str:
-            if "binaries" in src_str or "binaries" in dest_str:
-                continue
-        if entry_type is None:
-            pruned.append((src, dest))
-        else:
-            pruned.append((src, dest, entry_type))
-    return pruned
-
 strip_binaries = sys.platform != "win32"
 
 
@@ -208,8 +185,8 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-a.datas = _prune_qt_payload(_prune_imageio_ffmpeg_payload(a.datas))
-a.binaries = _prune_qt_payload(_prune_imageio_ffmpeg_payload(a.binaries))
+a.datas = _prune_qt_payload(a.datas)
+a.binaries = _prune_qt_payload(a.binaries)
 pyz = PYZ(a.pure)
 
 exe = EXE(

@@ -66,7 +66,7 @@ python -m renderkit.ui.main_window
 ### Environment Variables
 
 - `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
-- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, for offline systems).
+- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, used to override the bundled or PATH ffmpeg).
 - `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
 - `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
 - `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
