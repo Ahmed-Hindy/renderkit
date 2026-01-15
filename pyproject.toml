@@ -28,7 +28,7 @@ dependencies = [
     "openimageio>=3.0.3.1",
     "click>=8.1.0",
     "tqdm>=4.66.0",
-    "PySide6>=6.8.0,<6.9",
+    "PySide6-Essentials>=6.8.0,<6.9",
     "opencolorio>=2.5.0,<2.6",
 ]
 

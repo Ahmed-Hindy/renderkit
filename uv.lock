@@ -521,37 +521,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyside6"
-version = "6.8.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyside6-addons" },
-    { name = "pyside6-essentials" },
-    { name = "shiboken6" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/5f/dc408fb62a99d20e30f930f4de60c7d5c257d25a97baab600dc430f859bf/PySide6-6.8.3-cp39-abi3-macosx_12_0_universal2.whl", hash = "sha256:31f390c961b54067ae41360e5ea3b340ce0e0e5feadea2236c28226d3b37edcc", size = 553886, upload-time = "2025-03-27T12:10:10.147Z" },
-    { url = "https://files.pythonhosted.org/packages/f0/00/67c41f7280ed9d1c53a50bdaa5a6050134875341f0be96a58d329fe71ade/PySide6-6.8.3-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:8e53e2357bfbdee1fa86c48312bf637460a2c26d49e7af0b3fae2e179ccc7052", size = 554788, upload-time = "2025-03-27T12:10:12.514Z" },
-    { url = "https://files.pythonhosted.org/packages/99/80/79df5af0f309f75297054caf127e82c6c4e6c3cd237a8abd428d18fe3a16/PySide6-6.8.3-cp39-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:5bf5153cab9484629315f57c56a9ad4b7d075b4dd275f828f7549abf712c590b", size = 554785, upload-time = "2025-03-27T12:10:14.054Z" },
-    { url = "https://files.pythonhosted.org/packages/ce/b0/238abab3e005fff130a455ba07e8f1323e624b14e41f70f2f62c6bdc2601/PySide6-6.8.3-cp39-abi3-win_amd64.whl", hash = "sha256:722dc0061d8ef6dbb8c0b99864f21e83a5b49ece1ecb2d0b890840d969e1e461", size = 561080, upload-time = "2025-03-27T12:10:15.467Z" },
-]
-
-[[package]]
-name = "pyside6-addons"
-version = "6.8.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyside6-essentials" },
-    { name = "shiboken6" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/23/fcd006128ecac40284fc218f804a46c52ebc1ad5995f3edb548d296f0d39/PySide6_Addons-6.8.3-cp39-abi3-macosx_12_0_universal2.whl", hash = "sha256:ea46649e40b9e6ab11a0da2da054d3914bff5607a5882885e9c3bc2eef200036", size = 302447038, upload-time = "2025-03-27T12:11:29.671Z" },
-    { url = "https://files.pythonhosted.org/packages/49/93/e7c743e7a01e66f22cac4133c320832700b9d15a43d9a46dbd067cc1877e/PySide6_Addons-6.8.3-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:6983d3b01fad53637bad5360930d5923509c744cc39704f9c1190eb9934e33da", size = 160547187, upload-time = "2025-03-27T12:12:13.027Z" },
-    { url = "https://files.pythonhosted.org/packages/c7/5b/51217c90f9292651ef39ec3179bcb7797db1481a8f61138378720b1b91bc/PySide6_Addons-6.8.3-cp39-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:7949a844a40ee10998eb2734e2c06c4c7182dfcd4c21cc4108a6b96655ebe59f", size = 156291508, upload-time = "2025-03-27T12:12:52.071Z" },
-    { url = "https://files.pythonhosted.org/packages/77/e8/bbe84519355814166bbb7e867dfc8c7ea0044827d64b6b11c29a7b1a7424/PySide6_Addons-6.8.3-cp39-abi3-win_amd64.whl", hash = "sha256:67548f6db11f4e1b7e4b6efd9c3fc2e8d275188a7b2feac388961128572a6955", size = 127865208, upload-time = "2025-03-27T12:13:24.828Z" },
-]
-
-[[package]]
 name = "pyside6-essentials"
 version = "6.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -672,7 +641,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencolorio" },
     { name = "openimageio" },
-    { name = "pyside6" },
+    { name = "pyside6-essentials" },
     { name = "tqdm" },
 ]
 
@@ -699,7 +668,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.0,<2.4" },
     { name = "opencolorio", specifier = ">=2.5.0,<2.6" },
     { name = "openimageio", specifier = ">=3.0.3.1" },
-    { name = "pyside6", specifier = ">=6.8.0,<6.9" },
+    { name = "pyside6-essentials", specifier = ">=6.8.0,<6.9" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },

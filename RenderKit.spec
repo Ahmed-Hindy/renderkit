@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 def get_version():
     init_path = Path("src") / "renderkit" / "__init__.py"
@@ -20,10 +20,8 @@ datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/st
 binaries = []
 hiddenimports = []
 # Rely on PyInstaller's built-in PySide6 hook to avoid duplicate Qt frameworks on macOS.
-tmp_ret = collect_all('OpenImageIO')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('opencolorio')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+binaries += collect_dynamic_libs("OpenImageIO")
+binaries += collect_dynamic_libs("opencolorio")
 # qt_compat uses dynamic imports; include minimal PySide6 modules explicitly.
 hiddenimports += ["PySide6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
 
