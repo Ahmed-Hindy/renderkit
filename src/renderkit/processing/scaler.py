@@ -59,7 +59,8 @@ class ImageScaler:
         # Create OIIO ImageBuf from numpy array
         # Note: image might be float32 or uint8. OIIO handles both.
         src_buf = oiio.ImageBuf(oiio.ImageSpec(w, h, channels, oiio.FLOAT))
-        src_buf.set_pixels(oiio.ROI(), image.astype(np.float32))
+        pixels = image if image.dtype == np.float32 else image.astype(np.float32)
+        src_buf.set_pixels(oiio.ROI(), pixels)
 
         # Create destination buffer
         dst_buf = oiio.ImageBuf(oiio.ImageSpec(target_w, target_h, channels, oiio.FLOAT))
@@ -74,7 +75,8 @@ class ImageScaler:
 
         # Cast back to original type if needed (though our pipeline mostly uses float32)
         if image.dtype == np.uint8:
-            scaled = (np.clip(scaled, 0.0, 1.0) * 255.0).astype(np.uint8)
+            scaled = np.clip(scaled, 0.0, 1.0)
+            scaled = (scaled * np.float32(255.0)).astype(np.uint8)
 
         return scaled
 

@@ -411,7 +411,9 @@ class VideoEncoder:
 
         # Ensure frame is uint8 [0, 255] for FFmpeg rawvideo
         if frame.dtype != np.uint8:
-            frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
+            frame_f32 = frame.astype(np.float32, copy=False)
+            frame = np.clip(frame_f32, 0.0, 1.0)
+            frame = (frame * np.float32(255.0)).astype(np.uint8)
 
         # FFmpeg rawvideo expects RGB (standard)
         # If RGBA, drop alpha channel

@@ -90,7 +90,9 @@ class PreviewWorker(QThread):
 
             # Convert to uint8
             if image.dtype != np.uint8:
-                image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
+                image_f32 = image.astype(np.float32, copy=False)
+                image = np.clip(image_f32, 0.0, 1.0)
+                image = (image * np.float32(255.0)).astype(np.uint8)
 
             # Convert to QImage
             height, width = image.shape[:2]

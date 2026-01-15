@@ -3,6 +3,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -20,12 +21,18 @@ class ImageReader(ABC):
     """Abstract base class for image readers."""
 
     @abstractmethod
-    def read(self, path: Path, layer: Optional[str] = None) -> np.ndarray:
+    def read(
+        self,
+        path: Path,
+        layer: Optional[str] = None,
+        layer_map: Optional[dict[str, "LayerMapEntry"]] = None,
+    ) -> np.ndarray:
         """Read an image file and return as numpy array.
 
         Args:
             path: Path to image file
             layer: Optional layer name to extract (for multi-layer EXRs)
+            layer_map: Optional precomputed layer mapping for faster layer lookup
         """
         pass
 
@@ -60,6 +67,14 @@ class ImageReader(ABC):
         pass
 
 
+@dataclass(frozen=True)
+class LayerMapEntry:
+    """Mapping metadata for extracting a layer from a subimage."""
+
+    subimage_index: int
+    channel_indices: Optional[tuple[int, ...]] = None
+
+
 class OIIOReader(ImageReader):
     """Reader for all image formats supported by OpenImageIO.
 
@@ -72,6 +87,8 @@ class OIIOReader(ImageReader):
         super().__init__()
         # Cache: (path, mtime) -> FileInfo
         self._file_info_cache: dict[tuple[str, float], FileInfo] = {}
+        # Cache: (path, mtime) -> layer map
+        self._layer_map_cache: dict[tuple[str, float], dict[str, LayerMapEntry]] = {}
 
     def _get_cache_key(self, path: Path) -> tuple[str, float]:
         """Generate cache key based on path and modification time."""
@@ -199,12 +216,74 @@ class OIIOReader(ImageReader):
         except Exception as e:
             raise ImageReadError(f"Failed to read file info with OIIO: {path} - {e}") from e
 
-    def read(self, path: Path, layer: Optional[str] = None) -> np.ndarray:
+    def get_layer_map(self, path: Path) -> dict[str, LayerMapEntry]:
+        """Precompute a mapping of layer names to subimage indices for fast lookup."""
+        cache_key = self._get_cache_key(path)
+        cached = self._layer_map_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            import OpenImageIO as oiio
+        except ImportError as e:
+            raise ImageReadError("OpenImageIO library not available.") from e
+
+        if not path.exists():
+            raise ImageReadError(f"File does not exist: {path}")
+
+        try:
+            temp_buf = oiio.ImageBuf(str(path))
+            if temp_buf.has_error:
+                raise ImageReadError(f"OIIO failed to read {path}: {temp_buf.geterror()}")
+
+            subimages = temp_buf.nsubimages
+            layer_map: dict[str, LayerMapEntry] = {}
+            default_entry: Optional[LayerMapEntry] = None
+
+            for i in range(subimages):
+                sub_buf = oiio.ImageBuf(str(path), i, 0)
+                sub_spec = sub_buf.spec()
+                part_name = sub_spec.getattribute("name")
+                if isinstance(part_name, bytes):
+                    part_name = part_name.decode("utf-8")
+
+                if part_name and part_name.lower() not in ("rgba", "beauty", "default"):
+                    if part_name not in layer_map:
+                        layer_map[part_name] = LayerMapEntry(i, None)
+                elif default_entry is None:
+                    default_entry = LayerMapEntry(i, None)
+
+                prefix_indices: dict[str, list[int]] = {}
+                for idx, channel_name in enumerate(sub_spec.channelnames):
+                    if "." in channel_name:
+                        prefix, _ = channel_name.split(".", 1)
+                        prefix_indices.setdefault(prefix, []).append(idx)
+
+                for prefix, indices in prefix_indices.items():
+                    if prefix not in layer_map:
+                        layer_map[prefix] = LayerMapEntry(i, tuple(indices))
+
+            if "RGBA" not in layer_map and default_entry is not None:
+                layer_map["RGBA"] = default_entry
+
+            self._layer_map_cache[cache_key] = layer_map
+            return layer_map
+
+        except Exception as e:
+            raise ImageReadError(f"Failed to build layer map with OIIO: {path} - {e}") from e
+
+    def read(
+        self,
+        path: Path,
+        layer: Optional[str] = None,
+        layer_map: Optional[dict[str, LayerMapEntry]] = None,
+    ) -> np.ndarray:
         """Read an image using OIIO ImageBuf.
 
         Args:
             path: Path to image file
             layer: Optional layer name to extract (e.g., "diffuse")
+            layer_map: Optional precomputed layer mapping for faster lookup
 
         Returns:
             Image as numpy array (H, W, C) in float32 format.
@@ -220,7 +299,18 @@ class OIIOReader(ImageReader):
         try:
             # First, find which subimage (part) contains the requested layer
             subimage_index = 0
-            if layer and layer != "RGBA":
+            channel_indices: Optional[tuple[int, ...]] = None
+            use_layer_map = False
+
+            if layer_map is not None:
+                lookup = layer if layer else "RGBA"
+                entry = layer_map.get(lookup)
+                if entry is not None:
+                    subimage_index = entry.subimage_index
+                    channel_indices = entry.channel_indices
+                    use_layer_map = True
+
+            if not use_layer_map and layer and layer != "RGBA":
                 # Quick scan to find the part
                 temp_buf = oiio.ImageBuf(str(path))
                 for i in range(temp_buf.nsubimages):
@@ -248,7 +338,7 @@ class OIIOReader(ImageReader):
 
             # Handle layer selection for multi-layer EXRs within the part
             spec = buf.spec()
-            if layer and layer != "RGBA":
+            if not use_layer_map and layer and layer != "RGBA":
                 channel_names = spec.channelnames
                 # Check if we need to filter channels (if it's a grouped layer in this part)
                 indices = []
@@ -300,6 +390,9 @@ class OIIOReader(ImageReader):
                 image = data.reshape((height, width, channels))
             else:
                 image = data
+
+            if use_layer_map and channel_indices:
+                image = image[:, :, list(channel_indices)]
 
             return image
 

@@ -41,8 +41,6 @@ class SequenceConverter:
         self.encoder: Optional[VideoEncoder] = None
         self.burnin_processor = BurnInProcessor()
         self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
-        if self.config.contact_sheet_mode and self.config.contact_sheet_config:
-            self.contact_sheet_generator = ContactSheetGenerator(self.config.contact_sheet_config)
 
     def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
         """Perform the conversion from image sequence to video.
@@ -104,6 +102,13 @@ class SequenceConverter:
 
         if detected_color_space:
             logger.info(f"Detected input color space: {detected_color_space}")
+
+        if self.config.contact_sheet_mode and self.config.contact_sheet_config:
+            self.contact_sheet_generator = ContactSheetGenerator(
+                self.config.contact_sheet_config,
+                reader=self.reader,
+                layers=file_info.layers,
+            )
 
         # Step 5: Determine output resolution
         output_width = self.config.width or width
@@ -354,7 +359,8 @@ class SequenceConverter:
                 h, w = image.shape[:2]
                 channels = image.shape[2] if image.ndim == 3 else 1
                 buf = oiio.ImageBuf(oiio.ImageSpec(w, h, channels, oiio.FLOAT))
-                buf.set_pixels(oiio.ROI(), image.astype(np.float32))
+                pixels = image if image.dtype == np.float32 else image.astype(np.float32)
+                buf.set_pixels(oiio.ROI(), pixels)
 
                 # Prepare metadata for tokens
                 metadata = {

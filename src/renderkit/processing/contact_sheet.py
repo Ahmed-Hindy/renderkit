@@ -2,12 +2,13 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
-from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.image_reader import ImageReader, ImageReaderFactory
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,22 @@ logger = logging.getLogger(__name__)
 class ContactSheetGenerator:
     """Generates a composite grid of all AOVs (layers) for a single image frame."""
 
-    def __init__(self, config: ContactSheetConfig) -> None:
+    def __init__(
+        self,
+        config: ContactSheetConfig,
+        reader: Optional[ImageReader] = None,
+        layers: Optional[list[str]] = None,
+    ) -> None:
         """Initialize generator.
 
         Args:
             config: Contact sheet layout configuration
+            reader: Optional reader instance to reuse across frames
+            layers: Optional layer list to reuse across frames
         """
         self.config = config
+        self.reader = reader
+        self.layers = layers
 
     def composite_layers(self, frame_path: Path) -> oiio.ImageBuf:
         """Composite all layers of a frame into a grid.
@@ -33,8 +43,14 @@ class ContactSheetGenerator:
         Returns:
             ImageBuf containing the composited grid
         """
-        reader = ImageReaderFactory.create_reader(frame_path)
-        layers = reader.get_layers(frame_path)
+        reader = self.reader or ImageReaderFactory.create_reader(frame_path)
+        layers = self.layers or reader.get_layers(frame_path)
+        layer_map = None
+        if hasattr(reader, "get_layer_map"):
+            try:
+                layer_map = reader.get_layer_map(frame_path)
+            except Exception as e:
+                logger.debug(f"Failed to precompute layer map for {frame_path}: {e}")
 
         if not layers:
             # Fallback to just reading the image if no layers detected
@@ -49,7 +65,7 @@ class ContactSheetGenerator:
         padding = self.config.padding
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
-        first_pixels = reader.read(frame_path, layer=layers[0])
+        first_pixels = reader.read(frame_path, layer=layers[0], layer_map=layer_map)
         h, w = first_pixels.shape[:2]
         aspect = h / w
         thumb_h = int(thumb_w * aspect)
@@ -82,7 +98,7 @@ class ContactSheetGenerator:
 
             try:
                 # Read layer
-                layer_pixels = reader.read(frame_path, layer=layer_name)
+                layer_pixels = reader.read(frame_path, layer=layer_name, layer_map=layer_map)
 
                 # Resize to thumbnail
                 scaled_buf = self._scale_to_thumbnail(layer_pixels, thumb_w, thumb_h)
@@ -121,5 +137,8 @@ class ContactSheetGenerator:
         channels = scaled_pixels.shape[2] if scaled_pixels.ndim == 3 else 1
         spec = oiio.ImageSpec(width, height, channels, oiio.FLOAT)
         scaled_buf = oiio.ImageBuf(spec)
-        scaled_buf.set_pixels(oiio.ROI(), scaled_pixels.astype(np.float32))
+        pixels = scaled_pixels
+        if pixels.dtype != np.float32:
+            pixels = pixels.astype(np.float32)
+        scaled_buf.set_pixels(oiio.ROI(), pixels)
         return scaled_buf
