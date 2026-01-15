@@ -284,7 +284,7 @@ class SequenceConverter:
                 )
 
             logger.info(
-                f"{success_count} frames written (including freeze-frames for missing frames)"
+                f"{success_count} frames written"
             )
 
         finally:

@@ -23,7 +23,7 @@ from renderkit.ui.main_window_widgets import UiLogForwarder
 from renderkit.ui.qt_compat import (
     QApplication,
     QMainWindow,
-    QMessageBox,  # noqa: F401
+    QMessageBox,
     QSettings,
     QSplitter,
     QSystemTrayIcon,
