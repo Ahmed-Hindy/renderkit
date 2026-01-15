@@ -56,8 +56,10 @@ class ContactSheetGenerator:
 
         # Label height
         label_h = 0
+        label_gap = 0
         if self.config.show_labels:
-            label_h = int(self.config.font_size * 2.5)
+            label_gap = max(4, int(self.config.font_size * 0.01))
+            label_h = label_gap + int(self.config.font_size * 1.4)
 
         cell_w = thumb_w + (padding * 2)
         cell_h = thumb_h + (padding * 2) + label_h
@@ -91,7 +93,13 @@ class ContactSheetGenerator:
                 # Add label
                 if self.config.show_labels:
                     label_x = x_offset
-                    label_y = y_offset + thumb_h + 5
+                    label_y = (
+                        y_offset
+                        + thumb_h
+                        + label_gap
+                        + self.config.font_size
+                        - max(2, int(self.config.font_size * 0.2))
+                    )
                     oiio.ImageBufAlgo.render_text(
                         canvas,
                         label_x,

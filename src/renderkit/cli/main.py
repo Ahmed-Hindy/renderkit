@@ -253,7 +253,7 @@ def convert_exr_sequence(
 @click.option(
     "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
 )
-@click.option("--font-size", type=int, default=12, help="Font size for labels (default: 12)")
+@click.option("--font-size", type=int, default=16, help="Font size for labels (default: 16)")
 @click.option(
     "--layer",
     type=str,

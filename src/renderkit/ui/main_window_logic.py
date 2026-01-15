@@ -368,7 +368,8 @@ class MainWindowLogicMixin:
         self.cs_thumb_width_spin.setValue(512)
         self.cs_padding_spin.setValue(4)
         self.cs_show_labels_check.setChecked(True)
-        self.cs_font_size_spin.setValue(12)
+        self.cs_font_size_spin.setValue(16)
+        self.preview_scale_spin.setValue(75)
         if hasattr(self, "overwrite_check"):
             self.overwrite_check.setChecked(True)
 
@@ -1341,8 +1342,8 @@ class MainWindowLogicMixin:
         self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
-        self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 12, type=int))
-        self.preview_scale_spin.setValue(self.settings.value("preview_scale", 25, type=int))
+        self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 16, type=int))
+        self.preview_scale_spin.setValue(self.settings.value("preview_scale", 75, type=int))
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
 

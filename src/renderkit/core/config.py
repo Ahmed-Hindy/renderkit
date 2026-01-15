@@ -38,7 +38,7 @@ class ContactSheetConfig:
     padding: int = 10
     background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
     show_labels: bool = True
-    font_size: int = 12
+    font_size: int = 16
 
     def __post_init__(self) -> None:
         """Validate configuration."""
@@ -60,7 +60,7 @@ class ContactSheetConfigBuilder:
         self._padding: int = 10
         self._background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
         self._show_labels: bool = True
-        self._font_size: int = 12
+        self._font_size: int = 16
 
     def with_columns(self, columns: int) -> "ContactSheetConfigBuilder":
         """Set number of columns."""
@@ -77,7 +77,7 @@ class ContactSheetConfigBuilder:
         self._padding = padding
         return self
 
-    def with_labels(self, show: bool, font_size: int = 12) -> "ContactSheetConfigBuilder":
+    def with_labels(self, show: bool, font_size: int = 16) -> "ContactSheetConfigBuilder":
         """Set label options."""
         self._show_labels = show
         self._font_size = font_size

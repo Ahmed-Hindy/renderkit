@@ -645,7 +645,7 @@ class MainWindowUiMixin:
 
         self.cs_font_size_spin = NoWheelSpinBox()
         self.cs_font_size_spin.setRange(6, 72)
-        self.cs_font_size_spin.setValue(12)
+        self.cs_font_size_spin.setValue(16)
         self.cs_font_size_spin.setSuffix(" pt")
         form_layout.addRow("Font Size:", self.cs_font_size_spin)
 
@@ -738,7 +738,7 @@ class MainWindowUiMixin:
         # Preview Scale
         self.preview_scale_spin = NoWheelSpinBox()
         self.preview_scale_spin.setRange(5, 100)
-        self.preview_scale_spin.setValue(25)
+        self.preview_scale_spin.setValue(75)
         self.preview_scale_spin.setSuffix("%")
         self.preview_scale_spin.setToolTip(
             "Scale down the preview resolution to improve performance (5-100%)"
