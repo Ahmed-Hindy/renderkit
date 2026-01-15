@@ -21,6 +21,9 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --contact-sheet --cs-c
 
 # Burn-in frame number and FPS
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-fps
+
+# Profile a conversion (writes .prof + .prof.txt)
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --profile
 ```
 
 ### Options
@@ -48,6 +51,8 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burni
 | `--cs-thumb-width` | Width of each layer cell | `512` |
 | `--cs-padding` | Spacing between cells | `10` |
 | `--cs-no-labels` | Disable layer name labels | `False` |
+| `--profile` | Enable cProfile output | `False` |
+| `--profile-out` | Output .prof path or directory | Temp dir |
 
 ## Python API
 
@@ -124,6 +129,8 @@ $env:QT_BACKEND = "pyside6"
 - `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
 - `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, overrides the bundled or PATH ffmpeg).
 - `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
+- `RENDERKIT_PROFILE`: Enable cProfile output for UI/CLI when set to `1` (or `true`/`yes`).
+- `RENDERKIT_PROFILE_OUT`: Output .prof path or directory (default: temp dir).
 - `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
 - `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
 - `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).
