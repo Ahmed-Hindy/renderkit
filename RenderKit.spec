@@ -115,6 +115,14 @@ allowed_qt_plugin_dirs = {
     "platformthemes",
 }
 
+allowed_qt_imageformat_plugins = {"qsvg"}
+platform_plugin_map = {
+    "win32": {"qwindows"},
+    "linux": {"qxcb"},
+    "darwin": {"qcocoa"},
+}
+allowed_qt_platform_plugins = platform_plugin_map.get(sys.platform, set())
+
 qt_excluded_tokens = {name.split(".")[-1] for name in qt_excludes}
 qt_excluded_tokens.add("QtWebEngineProcess")
 qt_excluded_tokens.update(
@@ -154,6 +162,20 @@ def _prune_qt_payload(entries):
             plugin_dir = dest_parts[3]
             if plugin_dir not in allowed_qt_plugin_dirs:
                 continue
+            if plugin_dir == "imageformats":
+                plugin_name = Path(src).name
+                plugin_stem = Path(plugin_name).stem
+                if plugin_stem.startswith("lib"):
+                    plugin_stem = plugin_stem[3:]
+                if plugin_stem not in allowed_qt_imageformat_plugins:
+                    continue
+            if plugin_dir == "platforms":
+                plugin_name = Path(src).name
+                plugin_stem = Path(plugin_name).stem
+                if plugin_stem.startswith("lib"):
+                    plugin_stem = plugin_stem[3:]
+                if allowed_qt_platform_plugins and plugin_stem not in allowed_qt_platform_plugins:
+                    continue
         if len(dest_parts) >= 3 and dest_parts[:3] in {
             ("PySide6", "Qt", "qml"),
             ("PySide6", "Qt6", "qml"),
