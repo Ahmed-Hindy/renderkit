@@ -3,9 +3,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-import OpenImageIO as oiio
-
 from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import (
@@ -41,6 +38,7 @@ class SequenceConverter:
         self.encoder: Optional[VideoEncoder] = None
         self.burnin_processor = BurnInProcessor()
         self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
+        self._layer_map = None
 
     def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
         """Perform the conversion from image sequence to video.
@@ -109,6 +107,11 @@ class SequenceConverter:
                 reader=self.reader,
                 layers=file_info.layers,
             )
+        if hasattr(self.reader, "get_layer_map"):
+            try:
+                self._layer_map = self.reader.get_layer_map(first_frame_path)
+            except Exception as e:
+                logger.debug(f"Failed to build layer map for {first_frame_path}: {e}")
 
         # Step 5: Determine output resolution
         output_width = self.config.width or width
@@ -200,7 +203,7 @@ class SequenceConverter:
 
         scaler = ImageScaler()
         success_count = 0
-        last_valid_image = None
+        last_valid_buf = None
 
         try:
             if progress_callback:
@@ -213,7 +216,7 @@ class SequenceConverter:
 
                     if frame_num in existing_frames:
                         # Process actual frame
-                        result = self._process_single_frame(
+                        result = self._process_single_frame_buf(
                             frame_num,
                             output_width,
                             output_height,
@@ -226,13 +229,13 @@ class SequenceConverter:
                             else None,
                         )
                         if result is not None:
-                            last_valid_image = result
+                            last_valid_buf = result
                             success_count += 1
                     else:
                         # Missing frame - use freeze-frame
-                        if last_valid_image is not None:
+                        if last_valid_buf is not None:
                             try:
-                                self.encoder.write_frame(last_valid_image)
+                                self.encoder.write_frame(last_valid_buf)
                                 success_count += 1
                                 if i == 0 or (i + 1) % 10 == 0:  # Log occasionally to avoid spam
                                     logger.debug(f"Frame {frame_num} missing, using freeze-frame")
@@ -253,7 +256,7 @@ class SequenceConverter:
                 for frame_num in tqdm(all_frames, desc="Converting frames"):
                     if frame_num in existing_frames:
                         # Process actual frame
-                        result = self._process_single_frame(
+                        result = self._process_single_frame_buf(
                             frame_num,
                             output_width,
                             output_height,
@@ -266,13 +269,13 @@ class SequenceConverter:
                             else None,
                         )
                         if result is not None:
-                            last_valid_image = result
+                            last_valid_buf = result
                             success_count += 1
                     else:
                         # Missing frame - use freeze-frame
-                        if last_valid_image is not None:
+                        if last_valid_buf is not None:
                             try:
-                                self.encoder.write_frame(last_valid_image)
+                                self.encoder.write_frame(last_valid_buf)
                                 success_count += 1
                             except VideoEncodingError as e:
                                 logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
@@ -295,7 +298,7 @@ class SequenceConverter:
             if self.encoder:
                 self.encoder.close()
 
-    def _process_single_frame(
+    def _process_single_frame_buf(
         self,
         frame_num: int,
         output_width: int,
@@ -305,64 +308,36 @@ class SequenceConverter:
         scaler: "ImageScaler",
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
-    ) -> Optional[np.ndarray]:
-        """Process a single frame.
-
-        Args:
-            frame_num: Frame number to process
-            output_width: Target width
-            output_height: Target height
-            width: Source width
-            height: Source height
-            scaler: Image scaler instance
-            input_space: Explicit input color space
-            contact_sheet_generator: Optional contact sheet generator
-
-        Returns:
-            Processed image as numpy array, or None if processing failed.
-        """
+    ):
+        """Process a single frame using ImageBuf-first operations."""
         frame_path = self.sequence.get_file_path(frame_num)
 
-        # Read image or generate contact sheet
         try:
             if contact_sheet_generator:
                 buf = contact_sheet_generator.composite_layers(frame_path)
-                # Composite is already in FLOAT and has correct layers (3 or 4)
-                # We need to convert it to numpy for the rest of the pipeline
-                image = buf.get_pixels(oiio.FLOAT)
-                # Reshape if necessary (buf.spec() gives us dimensions)
                 spec = buf.spec()
-                image = image.reshape((spec.height, spec.width, spec.nchannels))
-
-                # Update current width/height for scaling logic
                 width, height = spec.width, spec.height
             else:
-                image = self.reader.read(frame_path, layer=self.config.layer)
+                buf = self.reader.read_imagebuf(
+                    frame_path,
+                    layer=self.config.layer,
+                    layer_map=self._layer_map,
+                )
         except (ImageReadError, Exception) as e:
             logger.warning(f"Failed to process frame {frame_num}: {e}")
             return None
 
-        # Convert color space
         try:
-            image = self.color_converter.convert(image, input_space=input_space)
+            buf = self.color_converter.convert_buf(buf, input_space=input_space)
         except ColorSpaceError as e:
             logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
             return None
 
         if output_width != width or output_height != height:
-            image = scaler.scale_image(image, output_width, output_height)
+            buf = scaler.scale_buf(buf, output_width, output_height)
 
-        # Apply burn-ins if configured
         if self.config.burnin_config:
             try:
-                # Convert NumPy to ImageBuf
-                h, w = image.shape[:2]
-                channels = image.shape[2] if image.ndim == 3 else 1
-                buf = oiio.ImageBuf(oiio.ImageSpec(w, h, channels, oiio.FLOAT))
-                pixels = image if image.dtype == np.float32 else image.astype(np.float32)
-                buf.set_pixels(oiio.ROI(), pixels)
-
-                # Prepare metadata for tokens
                 metadata = {
                     "frame": frame_num,
                     "file": frame_path.name,
@@ -370,21 +345,20 @@ class SequenceConverter:
                     "layer": self.config.layer or "RGBA",
                     "colorspace": input_space or "Unknown",
                 }
-
-                # Apply burn-ins
-                buf = self.burnin_processor.apply_burnins(buf, metadata, self.config.burnin_config)
-
-                # Convert back to NumPy
-                image = buf.get_pixels(oiio.FLOAT)
-                image = image.reshape((h, w, channels))
+                buf = self.burnin_processor.apply_burnins(
+                    buf,
+                    metadata,
+                    self.config.burnin_config,
+                )
             except Exception as e:
                 logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
 
-        # Write frame
         try:
-            self.encoder.write_frame(image)
-        except VideoEncodingError as e:
-            logger.error(f"Failed to write frame {frame_num}: {e}")
+            self.encoder.write_frame(buf)
+        except VideoEncodingError:
             raise
+        except Exception as e:
+            logger.error(f"Failed to write frame {frame_num}: {e}")
+            raise VideoEncodingError(f"Failed to write frame {frame_num}: {e}") from e
 
-        return image
+        return buf

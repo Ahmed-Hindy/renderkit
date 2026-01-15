@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import OpenImageIO as oiio
 
 from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
 from renderkit.exceptions import VideoEncodingError
@@ -390,35 +391,39 @@ class VideoEncoder:
             self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 
-    def write_frame(self, frame: np.ndarray) -> None:
-        """Write a frame to the video.
-
-        Args:
-            frame: Frame as numpy array (H, W, C) in uint8 or float32 format
-        """
+    def write_frame(self, buf: oiio.ImageBuf) -> None:
+        """Write an ImageBuf frame to the video."""
         if self._writer is None:
             raise VideoEncodingError("Video encoder not initialized. Call initialize() first.")
 
-        # Resize frame if needed to match adjusted dimensions
-        # This ensures all frames have consistent size for video encoding
-        if frame.shape[1] != self._adjusted_width or frame.shape[0] != self._adjusted_height:
-            frame = ImageScaler.scale_image(
-                frame,
+        spec = buf.spec()
+        if spec.width != self._adjusted_width or spec.height != self._adjusted_height:
+            buf = ImageScaler.scale_buf(
+                buf,
                 width=self._adjusted_width,
                 height=self._adjusted_height,
                 filter_name="lanczos3",
             )
+            spec = buf.spec()
 
-        # Ensure frame is uint8 [0, 255] for FFmpeg rawvideo
-        if frame.dtype != np.uint8:
-            frame_f32 = frame.astype(np.float32, copy=False)
-            frame = np.clip(frame_f32, 0.0, 1.0)
-            frame = (frame * np.float32(255.0)).astype(np.uint8)
+        pixels = buf.get_pixels(oiio.FLOAT)
+        if pixels is None or pixels.size == 0:
+            raise VideoEncodingError("Failed to extract pixel data from ImageBuf.")
+        if pixels.ndim == 1:
+            frame = pixels.reshape((spec.height, spec.width, spec.nchannels))
+        else:
+            frame = pixels
+
+        frame_f32 = frame.astype(np.float32, copy=False)
+        frame = np.clip(frame_f32, 0.0, 1.0)
+        frame = (frame * np.float32(255.0)).astype(np.uint8)
 
         # FFmpeg rawvideo expects RGB (standard)
         # If RGBA, drop alpha channel
         if len(frame.shape) == 3 and frame.shape[2] == 4:
             frame = frame[:, :, :3]
+        elif len(frame.shape) == 3 and frame.shape[2] == 1:
+            frame = np.repeat(frame, 3, axis=2)
         # If Grayscale, ensure 3D
         elif len(frame.shape) == 2:
             frame = np.stack([frame] * 3, axis=-1)

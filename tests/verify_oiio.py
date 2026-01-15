@@ -38,8 +38,12 @@ def test_oiio():
     reader = ImageReaderFactory.create_reader(sample_path)
     print(f"Using reader: {type(reader).__name__}")
 
-    img = reader.read(sample_path)
-    print(f"Image shape: {img.shape}, dtype: {img.dtype}")
+    buf = reader.read_imagebuf(sample_path)
+    pixels = buf.get_pixels(oiio.FLOAT)
+    if pixels is not None and pixels.ndim == 1:
+        spec = buf.spec()
+        pixels = pixels.reshape((spec.height, spec.width, spec.nchannels))
+    print(f"Image shape: {pixels.shape}, dtype: {pixels.dtype}")
 
     res = reader.get_resolution(sample_path)
     print(f"Resolution: {res}")
@@ -58,12 +62,20 @@ def test_oiio():
         # Try reading a specific layer
         layer_to_read = layers[1]
         print(f"Attempting to read layer: {layer_to_read}")
-        layer_img = reader.read(sample_path, layer=layer_to_read)
-        print(f"Layer image shape: {layer_img.shape}")
+        layer_buf = reader.read_imagebuf(sample_path, layer=layer_to_read)
+        layer_pixels = layer_buf.get_pixels(oiio.FLOAT)
+        if layer_pixels is not None and layer_pixels.ndim == 1:
+            spec = layer_buf.spec()
+            layer_pixels = layer_pixels.reshape((spec.height, spec.width, spec.nchannels))
+        print(f"Layer image shape: {layer_pixels.shape}")
 
     # Test Scaler
-    scaled = ImageScaler.scale_image(img, width=100)
-    print(f"Scaled shape: {scaled.shape}")
+    scaled_buf = ImageScaler.scale_buf(buf, width=100, height=100)
+    scaled_pixels = scaled_buf.get_pixels(oiio.FLOAT)
+    if scaled_pixels is not None and scaled_pixels.ndim == 1:
+        spec = scaled_buf.spec()
+        scaled_pixels = scaled_pixels.reshape((spec.height, spec.width, spec.nchannels))
+    print(f"Scaled shape: {scaled_pixels.shape}")
 
     print("OIIO Verification Successful!")
 

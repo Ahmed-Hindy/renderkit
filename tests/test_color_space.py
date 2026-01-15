@@ -7,9 +7,33 @@ from renderkit.processing.color_space import (
     ColorSpaceConverter,
     ColorSpaceError,
     ColorSpacePreset,
-    LinearToSRGBStrategy,
     NoConversionStrategy,
 )
+
+try:
+    import OpenImageIO as oiio
+except ImportError:
+    oiio = None
+
+
+def _make_buf(pixels: np.ndarray):
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+    h, w, c = pixels.shape
+    spec = oiio.ImageSpec(w, h, c, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    buf.set_pixels(oiio.ROI(), pixels.astype(np.float32))
+    return buf
+
+
+def _buf_to_array(buf):
+    pixels = buf.get_pixels(oiio.FLOAT)
+    if pixels is None or pixels.size == 0:
+        return None
+    spec = buf.spec()
+    if pixels.ndim == 1:
+        return pixels.reshape((spec.height, spec.width, spec.nchannels))
+    return pixels
 
 
 class TestColorSpaceConverter:
@@ -21,7 +45,9 @@ class TestColorSpaceConverter:
 
         # Test with linear values
         linear_image = np.array([[[0.0, 0.5, 1.0]]], dtype=np.float32)
-        srgb_image = converter.convert(linear_image)
+        buf = _make_buf(linear_image)
+        srgb_buf = converter.convert_buf(buf)
+        srgb_image = _buf_to_array(srgb_buf)
 
         assert srgb_image.dtype == np.float32
         assert np.all(srgb_image >= 0.0)
@@ -32,7 +58,9 @@ class TestColorSpaceConverter:
         converter = ColorSpaceConverter(ColorSpacePreset.NO_CONVERSION)
 
         test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
-        result = converter.convert(test_image)
+        buf = _make_buf(test_image)
+        result_buf = converter.convert_buf(buf)
+        result = _buf_to_array(result_buf)
 
         np.testing.assert_array_equal(test_image, result)
 
@@ -42,7 +70,9 @@ class TestColorSpaceConverter:
 
         # HDR values > 1.0
         hdr_image = np.array([[[10.0, 5.0, 2.0]]], dtype=np.float32)
-        result = converter.convert(hdr_image)
+        buf = _make_buf(hdr_image)
+        result_buf = converter.convert_buf(buf)
+        result = _buf_to_array(result_buf)
 
         # Should be clamped to [0, 1]
         assert np.all(result >= 0.0)
@@ -57,7 +87,7 @@ class TestColorSpaceConverter:
             test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
             if preset == ColorSpacePreset.OCIO_CONVERSION:
                 with pytest.raises(ColorSpaceError):
-                    converter.convert(test_image)
+                    converter.convert_buf(_make_buf(test_image))
             elif preset == ColorSpacePreset.LINEAR_TO_REC709:
                 if not _has_oiio_colorspace_candidates(
                     [
@@ -71,10 +101,12 @@ class TestColorSpaceConverter:
                     ]
                 ):
                     pytest.skip("Rec.709 colorspace not available in OCIO config.")
-                result = converter.convert(test_image)
+                result_buf = converter.convert_buf(_make_buf(test_image))
+                result = _buf_to_array(result_buf)
                 assert result.shape == test_image.shape
             else:
-                result = converter.convert(test_image)
+                result_buf = converter.convert_buf(_make_buf(test_image))
+                result = _buf_to_array(result_buf)
                 assert result.shape == test_image.shape
 
     def test_ocio_requires_input_space(self) -> None:
@@ -82,25 +114,7 @@ class TestColorSpaceConverter:
         converter = ColorSpaceConverter(ColorSpacePreset.OCIO_CONVERSION)
         test_image = np.array([[[0.5, 0.5, 0.5]]], dtype=np.float32)
         with pytest.raises(ColorSpaceError):
-            converter.convert(test_image)
-
-
-class TestLinearToSRGBStrategy:
-    """Tests for LinearToSRGBStrategy."""
-
-    def test_linear_to_srgb_function(self) -> None:
-        """Test the linear to sRGB transfer function."""
-        strategy = LinearToSRGBStrategy()
-
-        # Test linear value 0
-        linear_zero = np.array([0.0])
-        srgb_zero = strategy._linear_to_srgb(linear_zero)
-        assert srgb_zero[0] == 0.0
-
-        # Test linear value 1.0
-        linear_one = np.array([1.0])
-        srgb_one = strategy._linear_to_srgb(linear_one)
-        assert 0.0 < srgb_one[0] <= 1.0
+            converter.convert_buf(_make_buf(test_image))
 
 
 class TestNoConversionStrategy:
@@ -111,7 +125,9 @@ class TestNoConversionStrategy:
         strategy = NoConversionStrategy()
 
         test_image = np.array([[[0.1, 0.5, 0.9]]], dtype=np.float32)
-        result = strategy.convert(test_image)
+        buf = _make_buf(test_image)
+        result_buf = strategy.convert_buf(buf)
+        result = _buf_to_array(result_buf)
 
         np.testing.assert_array_equal(test_image, result)
 

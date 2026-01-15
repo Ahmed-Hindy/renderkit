@@ -3,9 +3,7 @@
 import logging
 import re
 from enum import Enum
-from typing import Optional, Protocol
-
-import numpy as np
+from typing import Any, Optional, Protocol
 
 from renderkit import constants
 from renderkit.exceptions import ColorSpaceError
@@ -78,55 +76,62 @@ def _resolve_oiio_spaces(candidates: list[str], space_map: dict[str, str]) -> li
     return resolved or candidates
 
 
-def _oiio_colorconvert(
-    image: np.ndarray, from_spaces: list[str], to_spaces: list[str]
-) -> np.ndarray:
-    try:
-        import OpenImageIO as oiio
-    except ImportError as err:
-        raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+def _ensure_float_buf(oiio, buf):
+    spec = buf.spec()
+    if spec.format == oiio.FLOAT:
+        return buf
+    float_spec = oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT)
+    float_buf = oiio.ImageBuf(float_spec)
+    if not oiio.ImageBufAlgo.copy(float_buf, buf):
+        raise ColorSpaceError(f"OIIO failed to convert to float: {oiio.geterror()}")
+    return float_buf
 
-    if image.dtype != np.float32:
-        image = image.astype(np.float32)
 
-    if image.ndim != 3 or image.shape[2] not in (3, 4):
-        raise ColorSpaceError("Color conversion expects an image array of shape (H, W, 3|4).")
+def _oiio_clamp_buf(oiio, buf, min_val: float, max_val: float):
+    spec = buf.spec()
+    dst = oiio.ImageBuf(oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT))
+    if not oiio.ImageBufAlgo.clamp(dst, buf, min_val, max_val):
+        raise ColorSpaceError(f"OIIO clamp failed: {oiio.geterror()}")
+    return dst
 
-    try:
-        height, width = image.shape[:2]
-        channels = image.shape[2]
 
-        src_buf = oiio.ImageBuf(oiio.ImageSpec(width, height, channels, oiio.FLOAT))
-        src_buf.set_pixels(oiio.ROI(), image)
-        dst_buf = oiio.ImageBuf(oiio.ImageSpec(width, height, channels, oiio.FLOAT))
+def _oiio_tone_map_reinhard(oiio, buf):
+    src = _ensure_float_buf(oiio, buf)
+    spec = src.spec()
+    denom = oiio.ImageBuf(oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT))
+    if not oiio.ImageBufAlgo.add(denom, src, 1.0):
+        raise ColorSpaceError(f"OIIO tone map add failed: {oiio.geterror()}")
+    tone = oiio.ImageBuf(oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT))
+    if not oiio.ImageBufAlgo.div(tone, src, denom):
+        raise ColorSpaceError(f"OIIO tone map div failed: {oiio.geterror()}")
+    return _oiio_clamp_buf(oiio, tone, 0.0, 1.0)
 
-        space_map = _get_oiio_color_space_map(oiio)
-        from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
-        to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
 
-        errors: list[str] = []
-        for from_space in from_candidates:
-            for to_space in to_candidates:
-                if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
-                    pixels = dst_buf.get_pixels(oiio.FLOAT)
-                    if pixels is None:
-                        err = dst_buf.geterror()
-                        if err:
-                            errors.append(err)
-                        continue
-                    if pixels.ndim == 1:
-                        return pixels.reshape((height, width, channels))
-                    return pixels
-                err = dst_buf.geterror()
-                if err:
-                    errors.append(err)
-        if errors:
-            message = " ".join(errors)
-            raise ColorSpaceError(message.strip())
-    except ColorSpaceError:
-        raise
-    except Exception as e:
-        raise ColorSpaceError(f"OIIO color conversion failed: {e}") from e
+def _oiio_colorconvert_buf(oiio, src_buf, from_spaces: list[str], to_spaces: list[str]):
+    src_buf = _ensure_float_buf(oiio, src_buf)
+    spec = src_buf.spec()
+    channels = spec.nchannels
+    if channels not in (3, 4):
+        raise ColorSpaceError("Color conversion expects 3 or 4 channel images.")
+
+    space_map = _get_oiio_color_space_map(oiio)
+    from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
+    to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
+
+    errors: list[str] = []
+    for from_space in from_candidates:
+        for to_space in to_candidates:
+            dst_buf = oiio.ImageBuf(
+                oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT)
+            )
+            if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
+                return dst_buf
+            err = dst_buf.geterror()
+            if err:
+                errors.append(err)
+    if errors:
+        message = " ".join(errors)
+        raise ColorSpaceError(message.strip())
 
     raise ColorSpaceError(f"OIIO color conversion failed for '{from_spaces}' -> '{to_spaces}'.")
 
@@ -232,16 +237,8 @@ class ColorSpacePreset(Enum):
 class ColorSpaceStrategy(Protocol):
     """Protocol for color space conversion strategies."""
 
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert image color space.
-
-        Args:
-            image: Input image array (H, W, C) in float32
-            input_space: Optional name of input color space
-
-        Returns:
-            Converted image array
-        """
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        """Convert an OIIO ImageBuf to a new ImageBuf."""
         ...
 
 
@@ -249,7 +246,6 @@ class OCIOColorSpaceStrategy:
     """Strategy for converting using OpenColorIO."""
 
     def __init__(self) -> None:
-        self._processor_cache: dict[tuple[str, str], object] = {}
         self._output_space: Optional[str] = None
         self.config = None
         try:
@@ -331,64 +327,22 @@ class OCIOColorSpaceStrategy:
         self._output_space = output_space
         return output_space
 
-    def _get_cpu_processor(self, input_space: str, output_space: str):
-        cache_key = (input_space, output_space)
-        cached = self._processor_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        processor = self.config.getProcessor(input_space, output_space)
-        cpu_processor = processor.getDefaultCPUProcessor()
-        self._processor_cache[cache_key] = cpu_processor
-        return cpu_processor
-
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert image using OCIO.
-
-        Args:
-            image: Input image array (H, W, C) in float32
-            input_space: Name of input color space (e.g. 'ACES - ACEScg')
-
-        Returns:
-            Converted image array
-        """
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
         if not self.config:
             raise ColorSpaceError("OCIO config not available.")
         if not input_space:
             raise ColorSpaceError("OCIO input color space is required.")
 
         try:
+            import OpenImageIO as oiio
+        except ImportError as err:
+            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+
+        try:
             input_space = self._resolve_input_space(input_space)
             output_space = self._resolve_output_space()
-
-            logger.debug(f"OCIO Conversion: '{input_space}' -> '{output_space}'")
-
-            cpu_processor = self._get_cpu_processor(input_space, output_space)
-
-            # OCIO expects RGBA usually, or RGB.
-            # It processes in place or returns new.
-            # image is H, W, C
-
-            # Ensure float32
-            if image.dtype != np.float32:
-                image = image.astype(np.float32)
-
-            height, width, channels = image.shape
-
-            # Flatten for OCIO
-            flat_image = image.reshape(-1, channels)
-
-            # Handle 3 channel vs 4 channel
-            if channels == 3:
-                # OCIO python bindings might expect RGBAPacked or RGBPacked depending on version
-                # Usually applyRGB works on packed pixel data
-                cpu_processor.applyRGB(flat_image)
-
-            elif channels == 4:
-                cpu_processor.applyRGBA(flat_image)
-
-            return flat_image.reshape(height, width, channels)
-
+            logger.debug(f"OCIO Conversion (ImageBuf): '{input_space}' -> '{output_space}'")
+            return _oiio_colorconvert_buf(oiio, buf, [input_space], [output_space])
         except Exception as e:
             raise ColorSpaceError(f"OCIO conversion error: {e}") from e
 
@@ -396,165 +350,68 @@ class OCIOColorSpaceStrategy:
 class LinearToSRGBStrategy:
     """Strategy for converting linear to sRGB color space."""
 
-    @staticmethod
-    def _linear_to_srgb(linear: np.ndarray) -> np.ndarray:
-        """Convert linear RGB to sRGB.
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        try:
+            import OpenImageIO as oiio
+        except ImportError as err:
+            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
 
-        Args:
-            linear: Linear RGB values [0, inf]
-
-        Returns:
-            sRGB values [0, 1]
-        """
-        # Clamp negative values
-        linear = np.maximum(linear, 0.0)
-
-        # sRGB transfer function
-        mask = linear <= 0.0031308
-        srgb = np.where(
-            mask,
-            linear * 12.92,
-            1.055 * np.power(linear, 1.0 / 2.4) - 0.055,
-        )
-
-        return np.clip(srgb, 0.0, 1.0)
-
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert linear image to sRGB.
-
-        Args:
-            image: Linear image array (H, W, C) in float32
-            input_space: Ignored for fixed strategy
-
-        Returns:
-            sRGB image array [0, 1]
-        """
-        if image.dtype != np.float32:
-            image = image.astype(np.float32)
-
-        # Apply tone mapping for HDR values (simple Reinhard)
-        tone_mapped = image / (1.0 + image)
-        tone_mapped = np.maximum(tone_mapped, 0.0)
-
-        oiio_result = _oiio_colorconvert(
+        tone_mapped = _oiio_tone_map_reinhard(oiio, buf)
+        oiio_result = _oiio_colorconvert_buf(
+            oiio,
             tone_mapped,
             _OIIO_LINEAR_CANDIDATES,
             _OIIO_SRGB_CANDIDATES,
         )
-        return np.clip(oiio_result, 0.0, 1.0)
+        return _oiio_clamp_buf(oiio, oiio_result, 0.0, 1.0)
 
 
 class LinearToRec709Strategy:
     """Strategy for converting linear to Rec.709 color space."""
 
-    @staticmethod
-    def _linear_to_rec709(linear: np.ndarray) -> np.ndarray:
-        """Convert linear RGB to Rec.709.
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        try:
+            import OpenImageIO as oiio
+        except ImportError as err:
+            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
 
-        Args:
-            linear: Linear RGB values [0, inf]
-
-        Returns:
-            Rec.709 values [0, 1]
-        """
-        linear = np.maximum(linear, 0.0)
-
-        # Rec.709 transfer function
-        mask = linear < 0.018
-        rec709 = np.where(
-            mask,
-            linear * 4.5,
-            1.099 * np.power(linear, 0.45) - 0.099,
-        )
-
-        return np.clip(rec709, 0.0, 1.0)
-
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert linear image to Rec.709.
-
-        Args:
-            image: Linear image array (H, W, C) in float32
-            input_space: Ignored
-
-        Returns:
-            Rec.709 image array [0, 1]
-        """
-        if image.dtype != np.float32:
-            image = image.astype(np.float32)
-
-        # Apply tone mapping
-        tone_mapped = image / (1.0 + image)
-        tone_mapped = np.maximum(tone_mapped, 0.0)
-
-        oiio_result = _oiio_colorconvert(
+        tone_mapped = _oiio_tone_map_reinhard(oiio, buf)
+        oiio_result = _oiio_colorconvert_buf(
+            oiio,
             tone_mapped,
             _OIIO_LINEAR_CANDIDATES,
             _OIIO_REC709_CANDIDATES,
         )
-        return np.clip(oiio_result, 0.0, 1.0)
+        return _oiio_clamp_buf(oiio, oiio_result, 0.0, 1.0)
 
 
 class SRGBToLinearStrategy:
     """Strategy for converting sRGB to linear color space."""
 
-    @staticmethod
-    def _srgb_to_linear(srgb: np.ndarray) -> np.ndarray:
-        """Convert sRGB to linear RGB.
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        try:
+            import OpenImageIO as oiio
+        except ImportError as err:
+            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
 
-        Args:
-            srgb: sRGB values [0, 1]
-
-        Returns:
-            Linear RGB values [0, inf]
-        """
-        srgb = np.clip(srgb, 0.0, 1.0)
-
-        # Inverse sRGB transfer function
-        mask = srgb <= 0.04045
-        linear = np.where(
-            mask,
-            srgb / 12.92,
-            np.power((srgb + 0.055) / 1.055, 2.4),
-        )
-
-        return linear
-
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert sRGB image to linear.
-
-        Args:
-            image: sRGB image array (H, W, C) in float32 [0, 1]
-            input_space: Ignored
-
-        Returns:
-            Linear image array
-        """
-        if image.dtype != np.float32:
-            image = image.astype(np.float32)
-
-        srgb = np.clip(image, 0.0, 1.0)
-        oiio_result = _oiio_colorconvert(
+        srgb = _oiio_clamp_buf(oiio, buf, 0.0, 1.0)
+        return _oiio_colorconvert_buf(
+            oiio,
             srgb,
             _OIIO_SRGB_CANDIDATES,
             _OIIO_LINEAR_CANDIDATES,
         )
-        return oiio_result
 
 
 class NoConversionStrategy:
     """Strategy for no color space conversion (passthrough)."""
 
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Return image unchanged.
-
-        Args:
-            image: Image array (H, W, C)
-            input_space: Ignored
-
-        Returns:
-            Same image array
-        """
-        return image
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        try:
+            import OpenImageIO as oiio
+        except ImportError as err:
+            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        return _ensure_float_buf(oiio, buf)
 
 
 class ColorSpaceConverter:
@@ -579,19 +436,10 @@ class ColorSpaceConverter:
             raise ColorSpaceError(f"Unknown color space preset: {preset}")
 
         self._strategy = strategy_class()
-        self._preset = preset
 
-    def convert(self, image: np.ndarray, input_space: Optional[str] = None) -> np.ndarray:
-        """Convert image color space.
-
-        Args:
-            image: Input image array (H, W, C) in float32
-            input_space: Optional name of detected input space (used by OCIO strategy)
-
-        Returns:
-            Converted image array
-        """
-        return self._strategy.convert(image, input_space=input_space)
+    def convert_buf(self, buf: Any, input_space: Optional[str] = None):
+        """Convert an OIIO ImageBuf without round-tripping through NumPy."""
+        return self._strategy.convert_buf(buf, input_space=input_space)
 
     @classmethod
     def register_strategy(

@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
@@ -65,8 +64,9 @@ class ContactSheetGenerator:
         padding = self.config.padding
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
-        first_pixels = reader.read(frame_path, layer=layers[0], layer_map=layer_map)
-        h, w = first_pixels.shape[:2]
+        first_buf = reader.read_imagebuf(frame_path, layer=layers[0], layer_map=layer_map)
+        spec = first_buf.spec()
+        h, w = spec.height, spec.width
         aspect = h / w
         thumb_h = int(thumb_w * aspect)
 
@@ -97,11 +97,13 @@ class ContactSheetGenerator:
             y_offset = row * cell_h + padding
 
             try:
-                # Read layer
-                layer_pixels = reader.read(frame_path, layer=layer_name, layer_map=layer_map)
-
-                # Resize to thumbnail
-                scaled_buf = self._scale_to_thumbnail(layer_pixels, thumb_w, thumb_h)
+                if layer_name == layers[0]:
+                    layer_buf = first_buf
+                else:
+                    layer_buf = reader.read_imagebuf(
+                        frame_path, layer=layer_name, layer_map=layer_map
+                    )
+                scaled_buf = self._scale_to_thumbnail(layer_buf, thumb_w, thumb_h)
 
                 # Paste onto canvas
                 oiio.ImageBufAlgo.paste(canvas, x_offset, y_offset, 0, 0, scaled_buf)
@@ -129,16 +131,6 @@ class ContactSheetGenerator:
 
         return canvas
 
-    def _scale_to_thumbnail(self, pixels: np.ndarray, width: int, height: int) -> oiio.ImageBuf:
-        """Scale pixel data to thumbnail dimensions and return as ImageBuf."""
-        scaled_pixels = ImageScaler.scale_image(pixels, width=width, height=height)
-
-        # Convert back to ImageBuf
-        channels = scaled_pixels.shape[2] if scaled_pixels.ndim == 3 else 1
-        spec = oiio.ImageSpec(width, height, channels, oiio.FLOAT)
-        scaled_buf = oiio.ImageBuf(spec)
-        pixels = scaled_pixels
-        if pixels.dtype != np.float32:
-            pixels = pixels.astype(np.float32)
-        scaled_buf.set_pixels(oiio.ROI(), pixels)
-        return scaled_buf
+    def _scale_to_thumbnail(self, buf: oiio.ImageBuf, width: int, height: int) -> oiio.ImageBuf:
+        """Scale ImageBuf to thumbnail dimensions and return ImageBuf."""
+        return ImageScaler.scale_buf(buf, width=width, height=height)

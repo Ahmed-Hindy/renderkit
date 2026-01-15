@@ -5,9 +5,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
-import numpy as np
+from typing import Any, Optional
 
 from renderkit import constants
 from renderkit.exceptions import ImageReadError
@@ -21,19 +19,13 @@ class ImageReader(ABC):
     """Abstract base class for image readers."""
 
     @abstractmethod
-    def read(
+    def read_imagebuf(
         self,
         path: Path,
         layer: Optional[str] = None,
         layer_map: Optional[dict[str, "LayerMapEntry"]] = None,
-    ) -> np.ndarray:
-        """Read an image file and return as numpy array.
-
-        Args:
-            path: Path to image file
-            layer: Optional layer name to extract (for multi-layer EXRs)
-            layer_map: Optional precomputed layer mapping for faster layer lookup
-        """
+    ) -> Any:
+        """Read an image file and return as an OIIO ImageBuf."""
         pass
 
     @abstractmethod
@@ -272,22 +264,13 @@ class OIIOReader(ImageReader):
         except Exception as e:
             raise ImageReadError(f"Failed to build layer map with OIIO: {path} - {e}") from e
 
-    def read(
+    def read_imagebuf(
         self,
         path: Path,
         layer: Optional[str] = None,
         layer_map: Optional[dict[str, LayerMapEntry]] = None,
-    ) -> np.ndarray:
-        """Read an image using OIIO ImageBuf.
-
-        Args:
-            path: Path to image file
-            layer: Optional layer name to extract (e.g., "diffuse")
-            layer_map: Optional precomputed layer mapping for faster lookup
-
-        Returns:
-            Image as numpy array (H, W, C) in float32 format.
-        """
+    ):
+        """Read an image using OIIO ImageBuf and return the ImageBuf."""
         try:
             import OpenImageIO as oiio
         except ImportError as e:
@@ -373,28 +356,26 @@ class OIIOReader(ImageReader):
                         f"Layer {layer} not found in any part of {path}, falling back to beauty."
                     )
 
-            # Read image as float32
-            data = buf.get_pixels(oiio.FLOAT)
-
-            if data is None or data.size == 0:
-                raise ImageReadError(f"OIIO failed to extract pixel data: {path}")
-
-            spec = buf.spec()
-            width = spec.width
-            height = spec.height
-            channels = spec.nchannels
-
-            # OIIO's get_pixels often returns the correctly shaped array already,
-            # but let's be explicit and ensure (H, W, C)
-            if data.ndim == 1:
-                image = data.reshape((height, width, channels))
-            else:
-                image = data
-
             if use_layer_map and channel_indices:
-                image = image[:, :, list(channel_indices)]
+                buf = oiio.ImageBufAlgo.channels(buf, channel_indices)
+                if buf.has_error:
+                    raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
 
-            return image
+            # Ensure float32 for downstream processing
+            spec = buf.spec()
+            if spec.format != oiio.FLOAT:
+                float_spec = oiio.ImageSpec(
+                    spec.width,
+                    spec.height,
+                    spec.nchannels,
+                    oiio.FLOAT,
+                )
+                float_buf = oiio.ImageBuf(float_spec)
+                if not oiio.ImageBufAlgo.copy(float_buf, buf):
+                    raise ImageReadError(f"Failed to convert {path} to float32: {buf.geterror()}")
+                buf = float_buf
+
+            return buf
 
         except Exception as e:
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
