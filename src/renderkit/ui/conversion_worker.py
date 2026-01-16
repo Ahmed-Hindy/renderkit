@@ -34,6 +34,7 @@ class ConversionWorker(QThread):
         """Run the conversion."""
         try:
             from renderkit.core.converter import SequenceConverter
+            from renderkit.core.profiler import get_profile_env_config, profile_context
             from renderkit.exceptions import ConversionCancelledError
 
             logger.info("Starting conversion...")
@@ -44,7 +45,9 @@ class ConversionWorker(QThread):
                 # Return True to continue, False to cancel
                 return not self._is_cancelled
 
-            converter.convert(progress_callback=progress_callback)
+            enabled, output_path = get_profile_env_config()
+            with profile_context(enabled, output_path, label="ui-convert"):
+                converter.convert(progress_callback=progress_callback)
             self.finished.emit()
         except ConversionCancelledError:
             logger.info("Conversion cancelled by user.")

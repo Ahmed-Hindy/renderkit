@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import sys
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 def get_version():
     init_path = Path("src") / "renderkit" / "__init__.py"
@@ -20,14 +20,10 @@ datas = [('src/renderkit/ui/icons', 'renderkit/ui/icons'), ('src/renderkit/ui/st
 binaries = []
 hiddenimports = []
 # Rely on PyInstaller's built-in PySide6 hook to avoid duplicate Qt frameworks on macOS.
-tmp_ret = collect_all('OpenImageIO')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('opencolorio')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-# Ensure importlib.metadata can resolve package versions at runtime.
-datas += copy_metadata('imageio')
-datas += copy_metadata('imageio-ffmpeg')
-hiddenimports += ["imageio_ffmpeg"]
+binaries += collect_dynamic_libs("OpenImageIO")
+binaries += collect_dynamic_libs("opencolorio")
+# qt_compat uses dynamic imports; include minimal PySide6 modules explicitly.
+hiddenimports += ["PySide6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
 
 vendor_ffmpeg_root = Path("vendor") / "ffmpeg"
 platform_dir_map = {
@@ -119,6 +115,14 @@ allowed_qt_plugin_dirs = {
     "platformthemes",
 }
 
+allowed_qt_imageformat_plugins = {"qsvg"}
+platform_plugin_map = {
+    "win32": {"qwindows"},
+    "linux": {"qxcb"},
+    "darwin": {"qcocoa"},
+}
+allowed_qt_platform_plugins = platform_plugin_map.get(sys.platform, set())
+
 qt_excluded_tokens = {name.split(".")[-1] for name in qt_excludes}
 qt_excluded_tokens.add("QtWebEngineProcess")
 qt_excluded_tokens.update(
@@ -158,6 +162,20 @@ def _prune_qt_payload(entries):
             plugin_dir = dest_parts[3]
             if plugin_dir not in allowed_qt_plugin_dirs:
                 continue
+            if plugin_dir == "imageformats":
+                plugin_name = Path(src).name
+                plugin_stem = Path(plugin_name).stem
+                if plugin_stem.startswith("lib"):
+                    plugin_stem = plugin_stem[3:]
+                if plugin_stem not in allowed_qt_imageformat_plugins:
+                    continue
+            if plugin_dir == "platforms":
+                plugin_name = Path(src).name
+                plugin_stem = Path(plugin_name).stem
+                if plugin_stem.startswith("lib"):
+                    plugin_stem = plugin_stem[3:]
+                if allowed_qt_platform_plugins and plugin_stem not in allowed_qt_platform_plugins:
+                    continue
         if len(dest_parts) >= 3 and dest_parts[:3] in {
             ("PySide6", "Qt", "qml"),
             ("PySide6", "Qt6", "qml"),
@@ -165,25 +183,6 @@ def _prune_qt_payload(entries):
             continue
         if _should_drop_qt_lib(dest_parts, dest):
             continue
-        if entry_type is None:
-            pruned.append((src, dest))
-        else:
-            pruned.append((src, dest, entry_type))
-    return pruned
-
-def _prune_imageio_ffmpeg_payload(entries):
-    pruned = []
-    for entry in entries:
-        if len(entry) == 2:
-            src, dest = entry
-            entry_type = None
-        else:
-            src, dest, entry_type = entry
-        src_str = str(src)
-        dest_str = str(dest)
-        if "imageio_ffmpeg" in src_str or "imageio_ffmpeg" in dest_str:
-            if "binaries" in src_str or "binaries" in dest_str:
-                continue
         if entry_type is None:
             pruned.append((src, dest))
         else:
@@ -208,8 +207,8 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-a.datas = _prune_qt_payload(_prune_imageio_ffmpeg_payload(a.datas))
-a.binaries = _prune_qt_payload(_prune_imageio_ffmpeg_payload(a.binaries))
+a.datas = _prune_qt_payload(a.datas)
+a.binaries = _prune_qt_payload(a.binaries)
 pyz = PYZ(a.pure)
 
 exe = EXE(

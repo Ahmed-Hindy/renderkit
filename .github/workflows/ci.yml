@@ -149,8 +149,8 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
       
-      - name: Install PySide6 for UI tests
-        run: uv pip install --system PySide6
+      - name: Install PySide6-Essentials for UI tests
+        run: uv pip install --system PySide6-Essentials
       
       - name: Run UI tests with xvfb
         run: |

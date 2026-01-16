@@ -70,27 +70,36 @@ class PreviewWorker(QThread):
 
                 generator = ContactSheetGenerator(self.cs_config)
                 buf = generator.composite_layers(self.file_path)
-                image = buf.get_pixels(oiio.FLOAT)
             else:
                 reader = ImageReaderFactory.create_reader(self.file_path)
-                image = reader.read(self.file_path, layer=self.layer)
+                buf = reader.read_imagebuf(self.file_path, layer=self.layer)
 
             # Apply preview scale
             if self.preview_scale < 1.0:
-                h, w = image.shape[:2]
+                spec = buf.spec()
+                h, w = spec.height, spec.width
                 new_w = max(1, int(w * self.preview_scale))
                 new_h = max(1, int(h * self.preview_scale))
                 from renderkit.processing.scaler import ImageScaler
 
-                image = ImageScaler.scale_image(image, width=new_w, height=new_h)
+                buf = ImageScaler.scale_buf(buf, width=new_w, height=new_h)
 
             # Convert color space
             converter = ColorSpaceConverter(self.color_space)
-            image = converter.convert(image, input_space=self.input_space)
+            buf = converter.convert_buf(buf, input_space=self.input_space)
+
+            image = buf.get_pixels(oiio.FLOAT)
+            if image is None or image.size == 0:
+                raise ValueError("Failed to extract preview pixels.")
+            spec = buf.spec()
+            if image.ndim == 1:
+                image = image.reshape((spec.height, spec.width, spec.nchannels))
 
             # Convert to uint8
             if image.dtype != np.uint8:
-                image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
+                image_f32 = image.astype(np.float32, copy=False)
+                image = np.clip(image_f32, 0.0, 1.0)
+                image = (image * np.float32(255.0)).astype(np.uint8)
 
             # Convert to QImage
             height, width = image.shape[:2]

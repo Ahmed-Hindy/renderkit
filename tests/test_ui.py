@@ -115,6 +115,93 @@ def test_output_path_edit(qtbot, qapp):
     assert window.output_path_edit.text() == test_path
 
 
+def test_output_path_auto_generated(qtbot, tmp_path, monkeypatch):
+    """Test output path auto-generation from input pattern."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    # Create test files
+    for i in range(1, 4):
+        (tmp_path / f"render.{i:04d}.exr").touch()
+
+    # Avoid async metadata worker
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    pattern = str(tmp_path / "render.%04d.exr")
+    window.input_pattern_combo.lineEdit().setText(pattern)
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    expected = str(tmp_path / "render.mp4")
+    qtbot.waitUntil(lambda: window.output_path_edit.text() == expected, timeout=2000)
+    assert window.output_path_edit.text() == expected
+
+
+def test_output_path_updates_on_pattern_change(qtbot, tmp_path, monkeypatch):
+    """Test output path updates when input pattern changes."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    for i in range(1, 3):
+        (tmp_path / f"first.{i:04d}.exr").touch()
+        (tmp_path / f"second.{i:04d}.exr").touch()
+
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    first_pattern = str(tmp_path / "first.%04d.exr")
+    second_pattern = str(tmp_path / "second.%04d.exr")
+
+    window.input_pattern_combo.lineEdit().setText(first_pattern)
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    first_output = str(tmp_path / "first.mp4")
+    qtbot.waitUntil(lambda: window.output_path_edit.text() == first_output, timeout=2000)
+    assert window.output_path_edit.text() == first_output
+
+    window.input_pattern_combo.lineEdit().setText(second_pattern)
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    second_output = str(tmp_path / "second.mp4")
+    qtbot.waitUntil(lambda: window.output_path_edit.text() == second_output, timeout=2000)
+    assert window.output_path_edit.text() == second_output
+
+
+def test_recent_patterns_updated(qtbot, tmp_path, monkeypatch):
+    """Test recent patterns list updates after detection."""
+    from renderkit.ui.main_window import RECENT_PATTERNS_KEY, ModernMainWindow
+
+    for i in range(1, 3):
+        (tmp_path / f"render.{i:04d}.exr").touch()
+
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    previous = window.settings.value(RECENT_PATTERNS_KEY, None)
+    window.settings.remove(RECENT_PATTERNS_KEY)
+    window._recent_patterns = []
+    window._refresh_recent_patterns_combo()
+
+    pattern = str(tmp_path / "render.%04d.exr")
+    window.input_pattern_combo.lineEdit().setText(pattern)
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    qtbot.waitUntil(lambda: pattern in window._recent_patterns, timeout=2000)
+    combo_items = [
+        window.input_pattern_combo.itemText(i) for i in range(window.input_pattern_combo.count())
+    ]
+    assert pattern in combo_items
+
+    if previous is None:
+        window.settings.remove(RECENT_PATTERNS_KEY)
+    else:
+        window.settings.setValue(RECENT_PATTERNS_KEY, previous)
+
+
 def test_fps_spinbox(qtbot, qapp):
     """Test FPS spinbox."""
     from renderkit.ui.main_window import ModernMainWindow

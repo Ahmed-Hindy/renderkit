@@ -38,7 +38,7 @@ class ContactSheetConfig:
     padding: int = 10
     background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
     show_labels: bool = True
-    font_size: int = 12
+    font_size: int = 16
 
     def __post_init__(self) -> None:
         """Validate configuration."""
@@ -60,7 +60,7 @@ class ContactSheetConfigBuilder:
         self._padding: int = 10
         self._background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
         self._show_labels: bool = True
-        self._font_size: int = 12
+        self._font_size: int = 16
 
     def with_columns(self, columns: int) -> "ContactSheetConfigBuilder":
         """Set number of columns."""
@@ -77,7 +77,7 @@ class ContactSheetConfigBuilder:
         self._padding = padding
         return self
 
-    def with_labels(self, show: bool, font_size: int = 12) -> "ContactSheetConfigBuilder":
+    def with_labels(self, show: bool, font_size: int = 16) -> "ContactSheetConfigBuilder":
         """Set label options."""
         self._show_labels = show
         self._font_size = font_size
@@ -111,8 +111,6 @@ class ConversionConfig:
     layer: Optional[str] = None  # Specific layer to extract (e.g. "diffuse")
     start_frame: Optional[int] = None
     end_frame: Optional[int] = None
-    use_multiprocessing: bool = False
-    num_workers: Optional[int] = None
     explicit_input_color_space: Optional[str] = (
         None  # Force specific input space (e.g. "ACES - ACEScg")
     )
@@ -131,8 +129,6 @@ class ConversionConfig:
         if self.start_frame is not None and self.end_frame is not None:
             if self.start_frame > self.end_frame:
                 raise ConfigurationError("Start frame must be <= end frame")
-        if self.num_workers is not None and self.num_workers <= 0:
-            raise ConfigurationError("Number of workers must be greater than 0")
 
 
 class ConversionConfigBuilder:
@@ -152,8 +148,6 @@ class ConversionConfigBuilder:
         self._layer: Optional[str] = None
         self._start_frame: Optional[int] = None
         self._end_frame: Optional[int] = None
-        self._use_multiprocessing: bool = False
-        self._num_workers: Optional[int] = None
         self._explicit_input_color_space: Optional[str] = None
         self._burnin_config: Optional[BurnInConfig] = None
         self._contact_sheet_mode: bool = False
@@ -216,14 +210,6 @@ class ConversionConfigBuilder:
         self._end_frame = end
         return self
 
-    def with_multiprocessing(
-        self, enabled: bool = True, num_workers: Optional[int] = None
-    ) -> "ConversionConfigBuilder":
-        """Enable multiprocessing for batch operations."""
-        self._use_multiprocessing = enabled
-        self._num_workers = num_workers
-        return self
-
     def with_burnin(self, config: BurnInConfig) -> "ConversionConfigBuilder":
         """Set the burn-in configuration."""
         self._burnin_config = config
@@ -257,8 +243,6 @@ class ConversionConfigBuilder:
             layer=self._layer,
             start_frame=self._start_frame,
             end_frame=self._end_frame,
-            use_multiprocessing=self._use_multiprocessing,
-            num_workers=self._num_workers,
             explicit_input_color_space=self._explicit_input_color_space,
             burnin_config=self._burnin_config,
             contact_sheet_mode=self._contact_sheet_mode,

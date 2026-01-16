@@ -16,6 +16,7 @@ from renderkit.core.config import (
     ConversionConfigBuilder,
 )
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
+from renderkit.core.profiler import get_profile_env_config, profile_context
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
@@ -95,6 +96,18 @@ def main() -> None:
 )
 @click.option("--cs-padding", type=int, default=10, help="Contact sheet padding (default: 10)")
 @click.option("--cs-no-labels", is_flag=True, default=False, help="Disable contact sheet labels")
+@click.option(
+    "--profile",
+    is_flag=True,
+    default=False,
+    help="Enable cProfile and write stats to disk.",
+)
+@click.option(
+    "--profile-out",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output .prof file or directory (default: temp directory).",
+)
 def convert_exr_sequence(
     input_pattern: str,
     output_path: str,
@@ -117,6 +130,8 @@ def convert_exr_sequence(
     cs_thumb_width: int,
     cs_padding: int,
     cs_no_labels: bool,
+    profile: bool,
+    profile_out: Optional[Path],
 ) -> None:
     """Convert an EXR sequence to MP4 video.
 
@@ -235,7 +250,14 @@ def convert_exr_sequence(
     try:
         config = config_builder.build()
         processor = RenderKit()
-        processor.convert_with_config(config)
+        if profile:
+            enabled = True
+            output_path_opt = profile_out
+        else:
+            enabled, output_path_opt = get_profile_env_config()
+
+        with profile_context(enabled, output_path_opt, label="cli-convert"):
+            processor.convert_with_config(config)
         logger.info(f"Successfully converted to: {output_path}")
         click.echo(f"Successfully converted to: {output_path}")
     except Exception as e:
@@ -253,7 +275,7 @@ def convert_exr_sequence(
 @click.option(
     "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
 )
-@click.option("--font-size", type=int, default=12, help="Font size for labels (default: 12)")
+@click.option("--font-size", type=int, default=16, help="Font size for labels (default: 16)")
 @click.option(
     "--layer",
     type=str,

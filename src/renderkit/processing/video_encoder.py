@@ -5,13 +5,14 @@ import os
 import subprocess
 import tempfile
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-import imageio_ffmpeg
 import numpy as np
-from imageio_ffmpeg._utils import _popen_kwargs
+import OpenImageIO as oiio
 
+from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
 from renderkit.exceptions import VideoEncodingError
 from renderkit.processing.scaler import ImageScaler
 
@@ -24,14 +25,14 @@ def _escape_ffreport_path(path: Path) -> str:
     return str(path)
 
 
-def get_available_encoders() -> set[str]:
+def _probe_available_encoders() -> set[str]:
     try:
-        cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-encoders"]
+        cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            **_popen_kwargs(prevent_sigint=True),
+            **popen_kwargs(prevent_sigint=True),
         )
         text = (result.stdout or "") + "\n" + (result.stderr or "")
     except Exception as exc:
@@ -51,6 +52,15 @@ def get_available_encoders() -> set[str]:
         if parts[0].startswith("V"):
             encoders.add(parts[1])
     return encoders
+
+
+@lru_cache(maxsize=1)
+def _cached_available_encoders() -> frozenset[str]:
+    return frozenset(_probe_available_encoders())
+
+
+def get_available_encoders() -> set[str]:
+    return set(_cached_available_encoders())
 
 
 def select_available_encoder(requested: str, available: set[str]) -> tuple[str, Optional[str]]:
@@ -86,7 +96,7 @@ class _RawFfmpegPipeWriter:
         ffmpeg_log_level: str,
         bitrate: Optional[str],
     ) -> None:
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        ffmpeg_exe = get_ffmpeg_exe()
         size_str = f"{width}x{height}"
         self._cmd = [
             ffmpeg_exe,
@@ -121,7 +131,7 @@ class _RawFfmpegPipeWriter:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=None,
-                **_popen_kwargs(prevent_sigint=True),
+                **popen_kwargs(prevent_sigint=True),
             )
         except Exception as exc:
             raise RuntimeError(f"Failed to start FFmpeg: {exc}") from exc
@@ -374,40 +384,46 @@ class VideoEncoder:
             self._restore_ffmpeg_report_env()
             if "ffmpeg" in msg.lower():
                 raise VideoEncodingError(
-                    "FFmpeg backend not found. Please install imageio-ffmpeg: 'pip install imageio-ffmpeg'"
+                    "FFmpeg backend not found. Ensure a bundled FFmpeg is available or ffmpeg is on PATH."
                 ) from e
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:
             self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 
-    def write_frame(self, frame: np.ndarray) -> None:
-        """Write a frame to the video.
-
-        Args:
-            frame: Frame as numpy array (H, W, C) in uint8 or float32 format
-        """
+    def write_frame(self, buf: oiio.ImageBuf) -> None:
+        """Write an ImageBuf frame to the video."""
         if self._writer is None:
             raise VideoEncodingError("Video encoder not initialized. Call initialize() first.")
 
-        # Resize frame if needed to match adjusted dimensions
-        # This ensures all frames have consistent size for video encoding
-        if frame.shape[1] != self._adjusted_width or frame.shape[0] != self._adjusted_height:
-            frame = ImageScaler.scale_image(
-                frame,
+        spec = buf.spec()
+        if spec.width != self._adjusted_width or spec.height != self._adjusted_height:
+            buf = ImageScaler.scale_buf(
+                buf,
                 width=self._adjusted_width,
                 height=self._adjusted_height,
                 filter_name="lanczos3",
             )
+            spec = buf.spec()
 
-        # Ensure frame is uint8 [0, 255] for FFmpeg rawvideo
-        if frame.dtype != np.uint8:
-            frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
+        pixels = buf.get_pixels(oiio.FLOAT)
+        if pixels is None or pixels.size == 0:
+            raise VideoEncodingError("Failed to extract pixel data from ImageBuf.")
+        if pixels.ndim == 1:
+            frame = pixels.reshape((spec.height, spec.width, spec.nchannels))
+        else:
+            frame = pixels
+
+        frame_f32 = frame.astype(np.float32, copy=False)
+        frame = np.clip(frame_f32, 0.0, 1.0)
+        frame = (frame * np.float32(255.0)).astype(np.uint8)
 
         # FFmpeg rawvideo expects RGB (standard)
         # If RGBA, drop alpha channel
         if len(frame.shape) == 3 and frame.shape[2] == 4:
             frame = frame[:, :, :3]
+        elif len(frame.shape) == 3 and frame.shape[2] == 1:
+            frame = np.repeat(frame, 3, axis=2)
         # If Grayscale, ensure 3D
         elif len(frame.shape) == 2:
             frame = np.stack([frame] * 3, axis=-1)

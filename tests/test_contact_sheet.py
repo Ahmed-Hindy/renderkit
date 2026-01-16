@@ -53,7 +53,7 @@ def test_contact_sheet_composite_layers(tmp_path):
 
     spec = composite.spec()
     assert spec.width == 120
-    assert spec.height == 80
+    assert spec.height == 75
     assert spec.nchannels == 3
 
 

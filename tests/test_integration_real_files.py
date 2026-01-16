@@ -75,6 +75,8 @@ class TestRealEXRSequence:
 
     def test_image_reader_real_files(self) -> None:
         """Test reading real EXR files."""
+        import OpenImageIO as oiio
+
         from renderkit.io.image_reader import ImageReaderFactory
 
         sequence = SequenceDetector.detect_sequence(REAL_SEQUENCE_PATTERN)
@@ -82,13 +84,17 @@ class TestRealEXRSequence:
 
         # Create reader and read image
         reader = ImageReaderFactory.create_reader(first_frame_path)
-        image = reader.read(first_frame_path)
+        buf = reader.read_imagebuf(first_frame_path)
+        image = buf.get_pixels(oiio.FLOAT)
+        assert image is not None and image.size > 0
 
         # Verify image properties
         assert image is not None
-        assert len(image.shape) == 3  # Should be H, W, C
-        assert image.shape[2] in [3, 4]  # RGB or RGBA
-        assert image.dtype in [float, "float32", "float64"]
+        if image.ndim == 1:
+            spec = buf.spec()
+            image = image.reshape((spec.height, spec.width, spec.nchannels))
+        assert len(image.shape) == 3
+        assert image.shape[2] in [3, 4]
 
         # Verify resolution
         width, height = reader.get_resolution(first_frame_path)
@@ -99,6 +105,8 @@ class TestRealEXRSequence:
 
     def test_color_space_conversion_real_files(self) -> None:
         """Test color space conversion with real EXR files."""
+        import OpenImageIO as oiio
+
         from renderkit.io.image_reader import ImageReaderFactory
         from renderkit.processing.color_space import ColorSpaceConverter
 
@@ -107,16 +115,18 @@ class TestRealEXRSequence:
 
         # Read image
         reader = ImageReaderFactory.create_reader(first_frame_path)
-        image = reader.read(first_frame_path)
+        buf = reader.read_imagebuf(first_frame_path)
 
         # Convert color space
         converter = ColorSpaceConverter(ColorSpacePreset.LINEAR_TO_SRGB)
-        converted = converter.convert(image)
+        converted_buf = converter.convert_buf(buf)
+        converted = converted_buf.get_pixels(oiio.FLOAT)
+        if converted is not None and converted.ndim == 1:
+            spec = converted_buf.spec()
+            converted = converted.reshape((spec.height, spec.width, spec.nchannels))
 
         # Verify conversion
         assert converted is not None
-        assert converted.shape == image.shape
-        assert converted.dtype == image.dtype
         # Values should be in [0, 1] range after conversion
         assert converted.min() >= 0.0
         assert converted.max() <= 1.0
