@@ -63,13 +63,6 @@ class ContactSheetGenerator:
             # Fallback to just reading the image if no layers detected
             return oiio.ImageBuf(str(frame_path))
 
-        # Calculate grid dimensions
-        num_layers = len(layers)
-        cols = self.config.columns
-        rows = (num_layers + cols - 1) // cols
-
-        padding = self.config.padding
-
         subimage_buffers = self._build_subimage_buffers(reader, frame_path, layers, layer_map)
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
@@ -82,20 +75,16 @@ class ContactSheetGenerator:
         )
         spec = first_buf.spec()
         h, w = spec.height, spec.width
-        thumb_w, thumb_h = self.config.resolve_layer_size(w, h)
-
-        # Label height
-        label_h = 0
-        label_gap = 0
-        if self.config.show_labels:
-            label_gap = max(4, int(self.config.font_size * 0.01))
-            label_h = label_gap + int(self.config.font_size * 1.4)
-
-        cell_w = thumb_w + (padding * 2)
-        cell_h = thumb_h + (padding * 2) + label_h
-
-        canvas_w = cell_w * cols
-        canvas_h = cell_h * rows
+        layout = self._compute_layout(len(layers), w, h)
+        thumb_w = layout["thumb_w"]
+        thumb_h = layout["thumb_h"]
+        cell_w = layout["cell_w"]
+        cell_h = layout["cell_h"]
+        canvas_w = layout["canvas_w"]
+        canvas_h = layout["canvas_h"]
+        label_gap = layout["label_gap"]
+        padding = layout["padding"]
+        cols = layout["cols"]
 
         # Create canvas
         canvas_spec = oiio.ImageSpec(canvas_w, canvas_h, 3, oiio.FLOAT)
@@ -152,6 +141,37 @@ class ContactSheetGenerator:
                 logger.error(f"Failed to process layer {layer_name} for contact sheet: {e}")
 
         return canvas
+
+    def _compute_layout(self, num_layers: int, source_w: int, source_h: int) -> dict[str, int]:
+        cols = self.config.columns
+        rows = (num_layers + cols - 1) // cols
+        padding = self.config.padding
+        thumb_w, thumb_h = self.config.resolve_layer_size(source_w, source_h)
+        label_gap, label_h = self._compute_label_metrics()
+        cell_w = thumb_w + (padding * 2)
+        cell_h = thumb_h + (padding * 2) + label_h
+        canvas_w = cell_w * cols
+        canvas_h = cell_h * rows
+        return {
+            "cols": cols,
+            "rows": rows,
+            "padding": padding,
+            "thumb_w": thumb_w,
+            "thumb_h": thumb_h,
+            "cell_w": cell_w,
+            "cell_h": cell_h,
+            "canvas_w": canvas_w,
+            "canvas_h": canvas_h,
+            "label_gap": label_gap,
+            "label_h": label_h,
+        }
+
+    def _compute_label_metrics(self) -> tuple[int, int]:
+        if not self.config.show_labels:
+            return 0, 0
+        label_gap = max(4, int(self.config.font_size * 0.01))
+        label_h = label_gap + int(self.config.font_size * 1.4)
+        return label_gap, label_h
 
     def _build_subimage_buffers(
         self,

@@ -33,6 +33,53 @@ def _is_default_part(part_name: Optional[str]) -> bool:
     return part_name.lower() in _DEFAULT_PART_NAMES
 
 
+def _extract_fps_from_spec(spec) -> Optional[float]:
+    for key in constants.FPS_METADATA_KEYS:
+        val = spec.getattribute(key)
+        if val is None:
+            continue
+        try:
+            if isinstance(val, bytes):
+                val = val.decode("utf-8")
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                return float(val[0]) / float(val[1])
+            if isinstance(val, str) and "/" in val:
+                parts = val.split("/")
+                if len(parts) == 2:
+                    return float(parts[0]) / float(parts[1])
+            return float(val)
+        except (ValueError, TypeError, ZeroDivisionError):
+            continue
+    return None
+
+
+def _extract_color_space_from_spec(spec) -> Optional[str]:
+    for key in constants.COLOR_SPACE_METADATA_KEYS:
+        val = spec.getattribute(key)
+        if val is None:
+            continue
+        if isinstance(val, bytes):
+            val = val.decode("utf-8")
+        return str(val).strip()
+    return None
+
+
+def _extract_layers_from_spec(sub_spec, layers: set[str]) -> None:
+    part_name = _normalize_part_name(sub_spec.getattribute("name"))
+    if part_name:
+        if not _is_default_part(part_name):
+            layers.add(part_name)
+        else:
+            layers.add("RGBA")
+
+    for channel_name in sub_spec.channelnames:
+        if "." in channel_name:
+            layers.add(channel_name.rsplit(".", 1)[0])
+        else:
+            if not part_name or _is_default_part(part_name):
+                layers.add("RGBA")
+
+
 class ImageReader(ABC):
     """Abstract base class for image readers."""
 
@@ -119,6 +166,33 @@ class OIIOReader(ImageReader):
             return None
         return spec
 
+    def _update_layer_map_from_spec(
+        self,
+        sub_spec,
+        subimage_index: int,
+        layer_map: dict[str, LayerMapEntry],
+        default_entry: Optional[LayerMapEntry],
+    ) -> Optional[LayerMapEntry]:
+        part_name = _normalize_part_name(sub_spec.getattribute("name"))
+
+        if part_name and not _is_default_part(part_name):
+            if part_name not in layer_map:
+                layer_map[part_name] = LayerMapEntry(subimage_index, None)
+        elif default_entry is None:
+            default_entry = LayerMapEntry(subimage_index, None)
+
+        prefix_indices: dict[str, list[int]] = {}
+        for idx, channel_name in enumerate(sub_spec.channelnames):
+            if "." in channel_name:
+                prefix, _ = channel_name.split(".", 1)
+                prefix_indices.setdefault(prefix, []).append(idx)
+
+        for prefix, indices in prefix_indices.items():
+            if prefix not in layer_map:
+                layer_map[prefix] = LayerMapEntry(subimage_index, tuple(indices))
+
+        return default_entry
+
     def _get_cache_key(self, path: Path) -> tuple[str, float]:
         """Generate cache key based on path and modification time."""
         try:
@@ -177,35 +251,8 @@ class OIIOReader(ImageReader):
                 subimages = spec.getattribute("oiio:subimages") or 1
                 subimages = int(subimages)
 
-            # Extract FPS metadata
-            fps = None
-            for key in constants.FPS_METADATA_KEYS:
-                val = spec.getattribute(key)
-                if val is not None:
-                    try:
-                        if isinstance(val, bytes):
-                            val = val.decode("utf-8")
-                        if isinstance(val, (list, tuple)) and len(val) == 2:
-                            fps = float(val[0]) / float(val[1])
-                        elif isinstance(val, str) and "/" in val:
-                            parts = val.split("/")
-                            if len(parts) == 2:
-                                fps = float(parts[0]) / float(parts[1])
-                        else:
-                            fps = float(val)
-                        break
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        continue
-
-            # Extract color space metadata
-            color_space = None
-            for key in constants.COLOR_SPACE_METADATA_KEYS:
-                val = spec.getattribute(key)
-                if val is not None:
-                    if isinstance(val, bytes):
-                        val = val.decode("utf-8")
-                    color_space = str(val).strip()
-                    break
+            fps = _extract_fps_from_spec(spec)
+            color_space = _extract_color_space_from_spec(spec)
 
             # Extract layers from all subimages
             layers = set()
@@ -219,21 +266,7 @@ class OIIOReader(ImageReader):
                         sub_buf = oiio.ImageBuf(str(path), i, 0)
                         sub_spec = sub_buf.spec()
 
-                # Check subimage name
-                part_name = _normalize_part_name(sub_spec.getattribute("name"))
-                if part_name:
-                    if not _is_default_part(part_name):
-                        layers.add(part_name)
-                    else:
-                        layers.add("RGBA")
-
-                # Check channel prefixes
-                for channel_name in sub_spec.channelnames:
-                    if "." in channel_name:
-                        layers.add(channel_name.rsplit(".", 1)[0])
-                    else:
-                        if not part_name or _is_default_part(part_name):
-                            layers.add("RGBA")
+                _extract_layers_from_spec(sub_spec, layers)
 
             # Sort layers with RGBA first
             layers_list = sorted(layers)
@@ -297,23 +330,9 @@ class OIIOReader(ImageReader):
                     if sub_spec is None:
                         sub_buf = oiio.ImageBuf(str(path), i, 0)
                         sub_spec = sub_buf.spec()
-                part_name = _normalize_part_name(sub_spec.getattribute("name"))
-
-                if part_name and not _is_default_part(part_name):
-                    if part_name not in layer_map:
-                        layer_map[part_name] = LayerMapEntry(i, None)
-                elif default_entry is None:
-                    default_entry = LayerMapEntry(i, None)
-
-                prefix_indices: dict[str, list[int]] = {}
-                for idx, channel_name in enumerate(sub_spec.channelnames):
-                    if "." in channel_name:
-                        prefix, _ = channel_name.split(".", 1)
-                        prefix_indices.setdefault(prefix, []).append(idx)
-
-                for prefix, indices in prefix_indices.items():
-                    if prefix not in layer_map:
-                        layer_map[prefix] = LayerMapEntry(i, tuple(indices))
+                default_entry = self._update_layer_map_from_spec(
+                    sub_spec, i, layer_map, default_entry
+                )
 
             if "RGBA" not in layer_map and default_entry is not None:
                 layer_map["RGBA"] = default_entry
