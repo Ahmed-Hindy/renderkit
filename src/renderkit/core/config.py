@@ -34,20 +34,45 @@ class ContactSheetConfig:
     """Configuration for contact sheet layout in multi-AOV mode."""
 
     columns: int = 4
-    thumbnail_width: int = 512
+    thumbnail_width: Optional[int] = None
     padding: int = 10
     background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
     show_labels: bool = True
     font_size: int = 16
+    layer_width: Optional[int] = None
+    layer_height: Optional[int] = None
 
     def __post_init__(self) -> None:
         """Validate configuration."""
         if self.columns <= 0:
             raise ConfigurationError("Columns must be greater than 0")
-        if self.thumbnail_width <= 0:
+        if self.thumbnail_width is not None and self.thumbnail_width <= 0:
             raise ConfigurationError("Thumbnail width must be greater than 0")
         if self.padding < 0:
             raise ConfigurationError("Padding cannot be negative")
+        if self.layer_width is not None and self.layer_width <= 0:
+            raise ConfigurationError("Layer width must be greater than 0")
+        if self.layer_height is not None and self.layer_height <= 0:
+            raise ConfigurationError("Layer height must be greater than 0")
+
+    def resolve_layer_size(self, source_width: int, source_height: int) -> tuple[int, int]:
+        """Resolve target layer size based on config or source resolution."""
+        target_w = self.layer_width
+        target_h = self.layer_height
+
+        if target_w is None and target_h is None:
+            if self.thumbnail_width is None:
+                return source_width, source_height
+            target_w = self.thumbnail_width
+
+        if target_w is None:
+            scale = target_h / source_height
+            target_w = max(1, int(source_width * scale))
+        if target_h is None:
+            scale = target_w / source_width
+            target_h = max(1, int(source_height * scale))
+
+        return target_w, target_h
 
 
 class ContactSheetConfigBuilder:
@@ -56,11 +81,13 @@ class ContactSheetConfigBuilder:
     def __init__(self) -> None:
         """Initialize builder."""
         self._columns: int = 4
-        self._thumbnail_width: int = 512
+        self._thumbnail_width: Optional[int] = None
         self._padding: int = 10
         self._background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
         self._show_labels: bool = True
         self._font_size: int = 16
+        self._layer_width: Optional[int] = None
+        self._layer_height: Optional[int] = None
 
     def with_columns(self, columns: int) -> "ContactSheetConfigBuilder":
         """Set number of columns."""
@@ -70,6 +97,14 @@ class ContactSheetConfigBuilder:
     def with_thumbnail_width(self, width: int) -> "ContactSheetConfigBuilder":
         """Set thumbnail width."""
         self._thumbnail_width = width
+        return self
+
+    def with_layer_size(
+        self, width: int, height: Optional[int] = None
+    ) -> "ContactSheetConfigBuilder":
+        """Set explicit per-layer size."""
+        self._layer_width = width
+        self._layer_height = height
         return self
 
     def with_padding(self, padding: int) -> "ContactSheetConfigBuilder":
@@ -92,6 +127,8 @@ class ContactSheetConfigBuilder:
             background_color=self._background_color,
             show_labels=self._show_labels,
             font_size=self._font_size,
+            layer_width=self._layer_width,
+            layer_height=self._layer_height,
         )
 
 
