@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.ui.qt_compat import QThread, Signal
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,9 @@ class FileInfoWorker(QThread):
             if self._should_stop:
                 return
 
-            reader = ImageReaderFactory.create_reader(self.file_path)
+            reader = ImageReaderFactory.create_reader(
+                self.file_path, image_cache=get_shared_image_cache()
+            )
             file_info = reader.get_file_info(self.file_path)
 
             if not self._should_stop:

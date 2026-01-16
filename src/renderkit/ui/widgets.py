@@ -8,6 +8,7 @@ import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
 from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.qt_compat import (
@@ -71,7 +72,9 @@ class PreviewWorker(QThread):
                 generator = ContactSheetGenerator(self.cs_config)
                 buf = generator.composite_layers(self.file_path)
             else:
-                reader = ImageReaderFactory.create_reader(self.file_path)
+                reader = ImageReaderFactory.create_reader(
+                    self.file_path, image_cache=get_shared_image_cache()
+                )
                 buf = reader.read_imagebuf(self.file_path, layer=self.layer)
 
             # Apply preview scale

@@ -8,6 +8,7 @@ import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
 from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapEntry
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,9 @@ class ContactSheetGenerator:
         Returns:
             ImageBuf containing the composited grid
         """
-        reader = self.reader or ImageReaderFactory.create_reader(frame_path)
+        reader = self.reader or ImageReaderFactory.create_reader(
+            frame_path, image_cache=get_shared_image_cache()
+        )
         layers = self.layers or reader.get_layers(frame_path)
         layer_map = self.layer_map
         if layer_map is None and hasattr(reader, "get_layer_map"):
@@ -67,8 +70,48 @@ class ContactSheetGenerator:
 
         padding = self.config.padding
 
+        subimage_buffers: dict[int, oiio.ImageBuf] = {}
+        if layer_map:
+            subimage_indices = set()
+            for layer_name in layers:
+                entry = layer_map.get(layer_name)
+                if entry is not None and entry.subimage_index is not None:
+                    subimage_indices.add(entry.subimage_index)
+            for subimage_index in subimage_indices:
+                try:
+                    if hasattr(reader, "read_subimagebuf"):
+                        subimage_buffers[subimage_index] = reader.read_subimagebuf(
+                            frame_path, subimage_index
+                        )
+                    else:
+                        subimage_buffers[subimage_index] = oiio.ImageBuf(
+                            str(frame_path), subimage_index, 0
+                        )
+                except Exception as e:
+                    logger.debug(f"Failed to cache subimage {subimage_index} for {frame_path}: {e}")
+                    subimage_buffers = {}
+                    break
+
+        def resolve_layer_buf(layer_name: str) -> oiio.ImageBuf:
+            if layer_map and subimage_buffers:
+                entry = layer_map.get(layer_name)
+                if entry is not None:
+                    base_buf = subimage_buffers.get(entry.subimage_index)
+                    if base_buf is not None:
+                        if entry.channel_indices:
+                            try:
+                                return oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
+                            except Exception as e:
+                                logger.debug(
+                                    f"Failed to slice channels for {layer_name} in {frame_path}: {e}"
+                                )
+                        else:
+                            return base_buf
+
+            return reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map)
+
         # We'll calculate thumb_h based on the first layer's aspect ratio
-        first_buf = reader.read_imagebuf(frame_path, layer=layers[0], layer_map=layer_map)
+        first_buf = resolve_layer_buf(layers[0])
         spec = first_buf.spec()
         h, w = spec.height, spec.width
         thumb_w, thumb_h = self.config.resolve_layer_size(w, h)
@@ -103,9 +146,7 @@ class ContactSheetGenerator:
                 if layer_name == layers[0]:
                     layer_buf = first_buf
                 else:
-                    layer_buf = reader.read_imagebuf(
-                        frame_path, layer=layer_name, layer_map=layer_map
-                    )
+                    layer_buf = resolve_layer_buf(layer_name)
 
                 if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
                     scaled_buf = layer_buf

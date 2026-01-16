@@ -11,6 +11,7 @@ from renderkit import constants
 from renderkit.exceptions import ImageReadError
 from renderkit.io.file_info import FileInfo
 from renderkit.io.file_utils import FileUtils
+from renderkit.io.oiio_cache import get_shared_image_cache
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +75,19 @@ class OIIOReader(ImageReader):
     important for heavy EXR files accessed over network paths.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, image_cache: Optional[Any] = None) -> None:
         """Initialize the reader with caching."""
         super().__init__()
         # Cache: (path, mtime) -> FileInfo
         self._file_info_cache: dict[tuple[str, float], FileInfo] = {}
         # Cache: (path, mtime) -> layer map
         self._layer_map_cache: dict[tuple[str, float], dict[str, LayerMapEntry]] = {}
+        self._image_cache = image_cache
+
+    def _get_image_cache(self):
+        if self._image_cache is None:
+            self._image_cache = get_shared_image_cache()
+        return self._image_cache
 
     def _get_cache_key(self, path: Path) -> tuple[str, float]:
         """Generate cache key based on path and modification time."""
@@ -119,16 +126,30 @@ class OIIOReader(ImageReader):
             raise ImageReadError(f"File does not exist: {path}")
 
         try:
-            # Open file once and extract everything
-            buf = oiio.ImageBuf(str(path))
-            if buf.has_error:
-                raise ImageReadError(f"OIIO failed to read {path}: {buf.geterror()}")
+            cache = self._get_image_cache()
+            spec = None
+            if cache is not None:
+                spec = cache.get_imagespec(str(path), 0)
+                if cache.has_error or spec is None or spec.width == 0 or spec.height == 0:
+                    spec = None
 
-            spec = buf.spec()
-            width = spec.width
-            height = spec.height
-            channels = spec.nchannels
-            subimages = buf.nsubimages
+            if spec is None:
+                # Open file once and extract everything
+                buf = oiio.ImageBuf(str(path))
+                if buf.has_error:
+                    raise ImageReadError(f"OIIO failed to read {path}: {buf.geterror()}")
+
+                spec = buf.spec()
+                width = spec.width
+                height = spec.height
+                channels = spec.nchannels
+                subimages = buf.nsubimages
+            else:
+                width = spec.width
+                height = spec.height
+                channels = spec.nchannels
+                subimages = spec.getattribute("oiio:subimages") or 1
+                subimages = int(subimages)
 
             # Extract FPS metadata
             fps = None
@@ -163,8 +184,17 @@ class OIIOReader(ImageReader):
             # Extract layers from all subimages
             layers = set()
             for i in range(subimages):
-                sub_buf = oiio.ImageBuf(str(path), i, 0)
-                sub_spec = sub_buf.spec()
+                if i == 0:
+                    sub_spec = spec
+                else:
+                    sub_spec = None
+                    if cache is not None:
+                        sub_spec = cache.get_imagespec(str(path), i)
+                        if cache.has_error or sub_spec is None:
+                            sub_spec = None
+                    if sub_spec is None:
+                        sub_buf = oiio.ImageBuf(str(path), i, 0)
+                        sub_spec = sub_buf.spec()
 
                 # Check subimage name
                 part_name = sub_spec.getattribute("name")
@@ -224,17 +254,36 @@ class OIIOReader(ImageReader):
             raise ImageReadError(f"File does not exist: {path}")
 
         try:
-            temp_buf = oiio.ImageBuf(str(path))
-            if temp_buf.has_error:
-                raise ImageReadError(f"OIIO failed to read {path}: {temp_buf.geterror()}")
+            cache = self._get_image_cache()
+            spec0 = None
+            if cache is not None:
+                spec0 = cache.get_imagespec(str(path), 0)
+                if cache.has_error or spec0 is None or spec0.width == 0 or spec0.height == 0:
+                    spec0 = None
 
-            subimages = temp_buf.nsubimages
+            if spec0 is None:
+                temp_buf = oiio.ImageBuf(str(path))
+                if temp_buf.has_error:
+                    raise ImageReadError(f"OIIO failed to read {path}: {temp_buf.geterror()}")
+                subimages = temp_buf.nsubimages
+            else:
+                subimages = spec0.getattribute("oiio:subimages") or 1
+                subimages = int(subimages)
             layer_map: dict[str, LayerMapEntry] = {}
             default_entry: Optional[LayerMapEntry] = None
 
             for i in range(subimages):
-                sub_buf = oiio.ImageBuf(str(path), i, 0)
-                sub_spec = sub_buf.spec()
+                if spec0 is not None and i == 0:
+                    sub_spec = spec0
+                else:
+                    sub_spec = None
+                    if cache is not None:
+                        sub_spec = cache.get_imagespec(str(path), i)
+                        if cache.has_error or sub_spec is None:
+                            sub_spec = None
+                    if sub_spec is None:
+                        sub_buf = oiio.ImageBuf(str(path), i, 0)
+                        sub_spec = sub_buf.spec()
                 part_name = sub_spec.getattribute("name")
                 if isinstance(part_name, bytes):
                     part_name = part_name.decode("utf-8")
@@ -380,6 +429,69 @@ class OIIOReader(ImageReader):
         except Exception as e:
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
 
+    def read_subimagebuf(self, path: Path, subimage_index: int):
+        """Read a specific subimage as an OIIO ImageBuf."""
+        try:
+            import OpenImageIO as oiio
+        except ImportError as e:
+            raise ImageReadError("OpenImageIO library not available.") from e
+
+        if not path.exists():
+            raise ImageReadError(f"File does not exist: {path}")
+
+        try:
+            cache = self._get_image_cache()
+            if cache is not None:
+                spec = cache.get_imagespec(str(path), subimage_index)
+                if not cache.has_error and spec is not None and spec.width and spec.height:
+                    roi = oiio.ROI(
+                        0,
+                        spec.width,
+                        0,
+                        spec.height,
+                        0,
+                        1,
+                        0,
+                        spec.nchannels,
+                    )
+                    pixels = cache.get_pixels(str(path), subimage_index, 0, roi, oiio.FLOAT)
+                    if pixels is not None:
+                        float_spec = oiio.ImageSpec(
+                            spec.width,
+                            spec.height,
+                            spec.nchannels,
+                            oiio.FLOAT,
+                        )
+                        buf = oiio.ImageBuf(float_spec)
+                        if buf.set_pixels(roi, pixels):
+                            return buf
+
+            buf = oiio.ImageBuf(str(path), subimage_index, 0)
+            if buf.has_error:
+                raise ImageReadError(
+                    f"OIIO failed to read {path} (part {subimage_index}): {buf.geterror()}"
+                )
+
+            spec = buf.spec()
+            if spec.format != oiio.FLOAT:
+                float_spec = oiio.ImageSpec(
+                    spec.width,
+                    spec.height,
+                    spec.nchannels,
+                    oiio.FLOAT,
+                )
+                float_buf = oiio.ImageBuf(float_spec)
+                if not oiio.ImageBufAlgo.copy(float_buf, buf):
+                    raise ImageReadError(f"Failed to convert {path} to float32: {buf.geterror()}")
+                buf = float_buf
+
+            return buf
+
+        except Exception as e:
+            raise ImageReadError(
+                f"Failed to read subimage {subimage_index} with OIIO: {path} - {e}"
+            ) from e
+
     def get_layers(self, path: Path) -> list[str]:
         """Get available layers from the image file, including multi-part AOVs.
 
@@ -450,11 +562,14 @@ class ImageReaderFactory:
     }
 
     @classmethod
-    def create_reader(cls, path: Path) -> ImageReader:
+    def create_reader(cls, path: Path, image_cache: Optional[Any] = None) -> ImageReader:
         """Create an OIIO reader for the given file."""
         extension = FileUtils.get_file_extension(path)
         reader_class = cls._readers.get(extension, OIIOReader)
-        return reader_class()
+        try:
+            return reader_class(image_cache=image_cache)
+        except TypeError:
+            return reader_class()
 
     @classmethod
     def register_reader(cls, extension: str, reader_class: type[ImageReader]) -> None:

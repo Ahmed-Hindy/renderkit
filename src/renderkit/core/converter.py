@@ -15,6 +15,7 @@ from renderkit.exceptions import (
     VideoEncodingError,
 )
 from renderkit.io.image_reader import ImageReader, ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.contact_sheet import ContactSheetGenerator
@@ -92,7 +93,9 @@ class SequenceConverter:
 
         # Step 4: Read first frame to get dimensions and metadata (batched for efficiency)
         first_frame_path = self.sequence.get_file_path(frame_numbers[0])
-        self.reader = ImageReaderFactory.create_reader(first_frame_path)
+        self.reader = ImageReaderFactory.create_reader(
+            first_frame_path, image_cache=get_shared_image_cache()
+        )
 
         # Get all file info in a single batched operation (reduces network I/O)
         file_info = self.reader.get_file_info(first_frame_path)
@@ -241,7 +244,9 @@ class SequenceConverter:
                 def _get_thread_resources(frame_path: Path):
                     reader = getattr(thread_state, "reader", None)
                     if reader is None:
-                        reader = ImageReaderFactory.create_reader(frame_path)
+                        reader = ImageReaderFactory.create_reader(
+                            frame_path, image_cache=get_shared_image_cache()
+                        )
                         thread_state.reader = reader
 
                     if not hasattr(thread_state, "color_converter"):
