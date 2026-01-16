@@ -40,6 +40,15 @@ class TestConversionConfig:
                 end_frame=5,  # Invalid: start > end
             )
 
+    def test_config_validation_prefetch_workers(self) -> None:
+        """Test prefetch workers validation."""
+        with pytest.raises(ConfigurationError):
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                prefetch_workers=0,
+            )
+
 
 class TestConversionConfigBuilder:
     """Tests for ConversionConfigBuilder."""
@@ -91,3 +100,15 @@ class TestConversionConfigBuilder:
 
         assert config.start_frame == 100
         assert config.end_frame == 200
+
+    def test_builder_with_prefetch_workers(self) -> None:
+        """Test builder with prefetch workers."""
+        config = (
+            ConversionConfigBuilder()
+            .with_input_pattern("render.%04d.exr")
+            .with_output_path("output.mp4")
+            .with_prefetch_workers(4)
+            .build()
+        )
+
+        assert config.prefetch_workers == 4

@@ -1,5 +1,7 @@
 import logging
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +14,9 @@ from renderkit.exceptions import (
     SequenceDetectionError,
     VideoEncodingError,
 )
-from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.file_info import FileInfo
+from renderkit.io.image_reader import ImageReader, ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.contact_sheet import ContactSheetGenerator
@@ -20,6 +24,59 @@ from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
+
+
+class _FramePrefetcher:
+    """Manage a bounded set of in-flight frame futures."""
+
+    def __init__(
+        self,
+        prefetch_fn: Callable[[int], object],
+        frames: list[int],
+        max_workers: int,
+        thread_name_prefix: str = "renderkit-prefetch",
+    ) -> None:
+        self._prefetch_fn = prefetch_fn
+        self._frames = frames
+        self._max_pending = max_workers
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix=thread_name_prefix,
+        )
+        self._pending: dict[int, object] = {}
+        self._next_index = 0
+        self._prime()
+
+    def _submit_next(self) -> bool:
+        if self._next_index >= len(self._frames):
+            return False
+        frame_num = self._frames[self._next_index]
+        self._next_index += 1
+        self._pending[frame_num] = self._executor.submit(self._prefetch_fn, frame_num)
+        return True
+
+    def _prime(self) -> None:
+        while len(self._pending) < self._max_pending and self._submit_next():
+            pass
+
+    def get_future(self, frame_num: int):
+        future = self._pending.pop(frame_num, None)
+        if future is None:
+            future = self._executor.submit(self._prefetch_fn, frame_num)
+        self._prime()
+        return future
+
+    def close(self) -> None:
+        try:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+        except TypeError:
+            self._executor.shutdown(wait=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
 
 
 class SequenceConverter:
@@ -52,47 +109,76 @@ class SequenceConverter:
             f"Starting conversion: {self.config.input_pattern} -> {self.config.output_path}"
         )
 
-        # Step 1: Detect sequence
+        self.sequence = self._detect_sequence()
+        self._resolve_fps(self.sequence)
+
+        frame_numbers = self._filter_frame_numbers(self.sequence.frame_numbers)
+        if not frame_numbers:
+            raise ValueError("No frames found in specified range")
+
+        file_info, width, height, detected_color_space = self._initialize_reader_and_metadata(
+            frame_numbers[0]
+        )
+        output_width, output_height = self._resolve_output_resolution(file_info, width, height)
+        input_space = self._configure_color_converter(detected_color_space)
+        self._initialize_encoder(output_width, output_height)
+
+        self._process_frames(
+            frame_numbers,
+            output_width,
+            output_height,
+            width,
+            height,
+            input_space,
+            file_info,
+            progress_callback,
+        )
+
+    def _detect_sequence(self) -> FrameSequence:
+        """Detect and return the frame sequence."""
         try:
-            self.sequence = SequenceDetector.detect_sequence(self.config.input_pattern)
-            logger.info(f"Detected sequence: {self.sequence}")
+            sequence = SequenceDetector.detect_sequence(self.config.input_pattern)
+            logger.info(f"Detected sequence: {sequence}")
+            return sequence
         except SequenceDetectionError as e:
             logger.error(f"Sequence detection failed: {e}")
             raise
 
-        # Step 2: Auto-detect FPS if not provided
-        if self.config.fps is None:
-            # Use first frame as sample for metadata detection
-            fps = None
-            if self.sequence.frame_numbers:
-                sample_path = self.sequence.get_file_path(self.sequence.frame_numbers[0])
-                fps = SequenceDetector.auto_detect_fps(
-                    self.sequence.frame_numbers, sample_path=sample_path
-                )
+    def _resolve_fps(self, sequence: FrameSequence) -> None:
+        """Resolve FPS from metadata when not explicitly provided."""
+        if self.config.fps is not None:
+            return
 
-            if fps is None:
-                raise ValueError(
-                    "FPS is required but could not be auto-detected. "
-                    "Please provide --fps option or set fps in configuration."
-                )
-            self.config.fps = fps
-            logger.info(f"Auto-detected FPS: {fps}")
+        fps = None
+        if sequence.frame_numbers:
+            sample_path = sequence.get_file_path(sequence.frame_numbers[0])
+            fps = SequenceDetector.auto_detect_fps(sequence.frame_numbers, sample_path=sample_path)
 
-        # Step 3: Filter frame range if specified
-        frame_numbers = self.sequence.frame_numbers
+        if fps is None:
+            raise ValueError(
+                "FPS is required but could not be auto-detected. "
+                "Please provide --fps option or set fps in configuration."
+            )
+        self.config.fps = fps
+        logger.info(f"Auto-detected FPS: {fps}")
+
+    def _filter_frame_numbers(self, frame_numbers: list[int]) -> list[int]:
+        """Apply frame range limits to a list of frames."""
         if self.config.start_frame is not None:
             frame_numbers = [f for f in frame_numbers if f >= self.config.start_frame]
         if self.config.end_frame is not None:
             frame_numbers = [f for f in frame_numbers if f <= self.config.end_frame]
+        return frame_numbers
 
-        if not frame_numbers:
-            raise ValueError("No frames found in specified range")
+    def _initialize_reader_and_metadata(
+        self, first_frame_num: int
+    ) -> tuple[FileInfo, int, int, Optional[str]]:
+        """Initialize reader, metadata caches, and contact sheet generator."""
+        first_frame_path = self.sequence.get_file_path(first_frame_num)
+        self.reader = ImageReaderFactory.create_reader(
+            first_frame_path, image_cache=get_shared_image_cache()
+        )
 
-        # Step 4: Read first frame to get dimensions and metadata (batched for efficiency)
-        first_frame_path = self.sequence.get_file_path(frame_numbers[0])
-        self.reader = ImageReaderFactory.create_reader(first_frame_path)
-
-        # Get all file info in a single batched operation (reduces network I/O)
         file_info = self.reader.get_file_info(first_frame_path)
         width = file_info.width
         height = file_info.height
@@ -121,12 +207,16 @@ class SequenceConverter:
                 layer_map=self._layer_map,
             )
 
-        # Step 5: Determine output resolution
+        return file_info, width, height, detected_color_space
+
+    def _resolve_output_resolution(
+        self, file_info: FileInfo, width: int, height: int
+    ) -> tuple[int, int]:
+        """Resolve output dimensions including contact sheet overrides."""
         output_width = self.config.width or width
         output_height = self.config.height or height
 
         if self.config.contact_sheet_mode and self.contact_sheet_generator:
-            # We need to calculate the actual composite size
             layers = file_info.layers
             if layers:
                 cols = self.config.contact_sheet_config.columns
@@ -144,33 +234,32 @@ class SequenceConverter:
                 cell_w = thumb_w + (padding * 2)
                 cell_h = thumb_h + (padding * 2) + label_h
 
-                composite_w = cell_w * cols
-                composite_h = cell_h * rows
-
-                output_width = composite_w
-                output_height = composite_h
+                output_width = cell_w * cols
+                output_height = cell_h * rows
 
                 logger.info(f"Targeting contact sheet resolution: {output_width}x{output_height}")
 
-        # Step 6: Initialize color space converter
+        return output_width, output_height
+
+    def _configure_color_converter(self, detected_color_space: Optional[str]) -> Optional[str]:
+        """Initialize color conversion and return resolved input space."""
         preset = self.config.color_space_preset
         input_space = self.config.explicit_input_color_space
 
-        # If no explicit input space set, but we detected one, use it if we are in a flexible mode or OCIO mode
         if not input_space and detected_color_space:
-            # Check if we should upgrade to OCIO
             if (
                 preset == ColorSpacePreset.LINEAR_TO_SRGB
                 or preset == ColorSpacePreset.OCIO_CONVERSION
             ):
-                # If we found metadata, prefer OCIO if available
                 if "ocio_conversion" in [p.value for p in ColorSpacePreset]:
                     preset = ColorSpacePreset.OCIO_CONVERSION
                     input_space = detected_color_space
 
         self.color_converter = ColorSpaceConverter(preset)
+        return input_space
 
-        # Step 7: Initialize video encoder
+    def _initialize_encoder(self, output_width: int, output_height: int) -> None:
+        """Initialize the video encoder for output."""
         self.encoder = VideoEncoder(
             Path(self.config.output_path),
             self.config.fps,
@@ -180,26 +269,25 @@ class SequenceConverter:
         )
         self.encoder.initialize(output_width, output_height)
 
-        # Step 8: Process frames with freeze-frame for missing frames
+    def _process_frames(
+        self,
+        frame_numbers: list[int],
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        input_space: Optional[str],
+        file_info: FileInfo,
+        progress_callback: Optional[Callable[[int, int], None]],
+    ) -> None:
+        """Process all frames and write them to the encoder."""
         logger.debug(f"Processing {len(frame_numbers)} frames...")
 
-        # Determine the actual frame range to process
-        start_frame = (
-            self.config.start_frame if self.config.start_frame is not None else frame_numbers[0]
-        )
-        end_frame = (
-            self.config.end_frame if self.config.end_frame is not None else frame_numbers[-1]
+        all_frames, existing_frames, start_frame, end_frame, total_frames = self._build_frame_range(
+            frame_numbers
         )
 
-        # Create a set of existing frames for fast lookup
-        existing_frames = set(frame_numbers)
-
-        # Generate complete frame range
-        all_frames = list(range(start_frame, end_frame + 1))
-        total_frames = len(all_frames)
-
-        # Count missing frames for logging
-        missing_count = total_frames - len([f for f in all_frames if f in existing_frames])
+        missing_count = total_frames - len(existing_frames)
         if missing_count > 0:
             logger.warning(
                 f"Detected {missing_count} missing frames in range {start_frame}-{end_frame}. "
@@ -209,58 +297,99 @@ class SequenceConverter:
         scaler = ImageScaler()
         success_count = 0
         last_valid_buf = None
+        prefetch_workers = max(1, self.config.prefetch_workers)
+        contact_sheet_enabled = (
+            self.config.contact_sheet_mode and self.config.contact_sheet_config is not None
+        )
+        pbar = None
+
+        def _tick_progress(current_index: int) -> None:
+            if progress_callback:
+                if progress_callback(current_index, total_frames) is False:
+                    logger.info("Conversion cancelled by progress callback")
+                    raise ConversionCancelledError("Conversion cancelled by user")
+            elif pbar is not None:
+                pbar.update(1)
 
         try:
-            if progress_callback:
-                # Use provided callback
-                for i, frame_num in enumerate(all_frames):
-                    # Check for cancellation via callback return value
-                    if progress_callback(i, total_frames) is False:
-                        logger.info("Conversion cancelled by progress callback")
-                        raise ConversionCancelledError("Conversion cancelled by user")
-
-                    if frame_num in existing_frames:
-                        # Process actual frame
-                        result = self._process_single_frame_buf(
-                            frame_num,
-                            output_width,
-                            output_height,
-                            width,
-                            height,
-                            scaler,
-                            input_space,
-                            self.contact_sheet_generator
-                            if self.config.contact_sheet_mode
-                            else None,
-                        )
-                        if result is not None:
-                            last_valid_buf = result
-                            success_count += 1
-                    else:
-                        # Missing frame - use freeze-frame
-                        if last_valid_buf is not None:
-                            try:
-                                self.encoder.write_frame(last_valid_buf)
-                                success_count += 1
-                                if i == 0 or (i + 1) % 10 == 0:  # Log occasionally to avoid spam
-                                    logger.debug(f"Frame {frame_num} missing, using freeze-frame")
-                            except VideoEncodingError as e:
-                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
-                                raise
-                        else:
-                            logger.warning(
-                                f"Frame {frame_num} missing and no previous frame available. Skipping."
-                            )
-
-                # Final progress update
-                progress_callback(total_frames, total_frames)
-            else:
-                # Use tqdm for console
+            if progress_callback is None:
                 from tqdm import tqdm
 
-                for frame_num in tqdm(all_frames, desc="Converting frames"):
+                pbar = tqdm(total=total_frames, desc="Converting frames")
+
+            if prefetch_workers > 1:
+                thread_state = threading.local()
+                layers_for_cs = file_info.layers if contact_sheet_enabled else None
+
+                def _get_thread_resources(frame_path: Path):
+                    reader = getattr(thread_state, "reader", None)
+                    if reader is None:
+                        reader = ImageReaderFactory.create_reader(
+                            frame_path, image_cache=get_shared_image_cache()
+                        )
+                        thread_state.reader = reader
+
+                    if not hasattr(thread_state, "color_converter"):
+                        thread_state.color_converter = ColorSpaceConverter(
+                            self.config.color_space_preset
+                        )
+
+                    if self.config.burnin_config and not hasattr(thread_state, "burnin_processor"):
+                        thread_state.burnin_processor = BurnInProcessor()
+
+                    if contact_sheet_enabled and not hasattr(
+                        thread_state, "contact_sheet_generator"
+                    ):
+                        thread_state.contact_sheet_generator = ContactSheetGenerator(
+                            self.config.contact_sheet_config,
+                            reader=reader,
+                            layers=layers_for_cs,
+                            layer_map=self._layer_map,
+                        )
+
+                    return thread_state
+
+                def _prefetch_frame(frame_num: int):
+                    frame_path = self.sequence.get_file_path(frame_num)
+                    resources = _get_thread_resources(frame_path)
+                    return self._prepare_frame_buf(
+                        frame_num,
+                        output_width,
+                        output_height,
+                        width,
+                        height,
+                        scaler,
+                        input_space,
+                        resources.reader,
+                        resources.color_converter,
+                        getattr(resources, "burnin_processor", None),
+                        contact_sheet_generator=getattr(resources, "contact_sheet_generator", None),
+                    )
+
+                with _FramePrefetcher(
+                    _prefetch_frame, frame_numbers, prefetch_workers
+                ) as prefetcher:
+                    for i, frame_num in enumerate(all_frames):
+                        _tick_progress(i)
+                        if frame_num in existing_frames:
+                            future = prefetcher.get_future(frame_num)
+                            try:
+                                result = future.result()
+                            except Exception as e:
+                                logger.warning(f"Failed to process frame {frame_num}: {e}")
+                                result = None
+
+                            if result is not None:
+                                last_valid_buf = result
+                                self._write_frame_buf(frame_num, result)
+                                success_count += 1
+                        else:
+                            if self._write_freeze_frame(frame_num, last_valid_buf, i):
+                                success_count += 1
+            else:
+                for i, frame_num in enumerate(all_frames):
+                    _tick_progress(i)
                     if frame_num in existing_frames:
-                        # Process actual frame
                         result = self._process_single_frame_buf(
                             frame_num,
                             output_width,
@@ -269,26 +398,17 @@ class SequenceConverter:
                             height,
                             scaler,
                             input_space,
-                            self.contact_sheet_generator
-                            if self.config.contact_sheet_mode
-                            else None,
+                            self.contact_sheet_generator if contact_sheet_enabled else None,
                         )
                         if result is not None:
                             last_valid_buf = result
                             success_count += 1
                     else:
-                        # Missing frame - use freeze-frame
-                        if last_valid_buf is not None:
-                            try:
-                                self.encoder.write_frame(last_valid_buf)
-                                success_count += 1
-                            except VideoEncodingError as e:
-                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
-                                raise
-                        else:
-                            logger.warning(
-                                f"Frame {frame_num} missing and no previous frame available. Skipping."
-                            )
+                        if self._write_freeze_frame(frame_num, last_valid_buf, i):
+                            success_count += 1
+
+            if progress_callback:
+                progress_callback(total_frames, total_frames)
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -299,9 +419,108 @@ class SequenceConverter:
             logger.info(f"{success_count} frames written")
 
         finally:
-            # Clean up
+            if pbar is not None:
+                pbar.close()
             if self.encoder:
                 self.encoder.close()
+
+    def _prepare_frame_buf(
+        self,
+        frame_num: int,
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+        reader: "ImageReader",
+        color_converter: ColorSpaceConverter,
+        burnin_processor: Optional[BurnInProcessor],
+        contact_sheet_generator: Optional[ContactSheetGenerator] = None,
+    ):
+        """Prepare a single frame buffer without writing it to the encoder."""
+        frame_path = self.sequence.get_file_path(frame_num)
+
+        try:
+            if contact_sheet_generator:
+                buf = contact_sheet_generator.composite_layers(frame_path)
+                spec = buf.spec()
+                width, height = spec.width, spec.height
+            else:
+                buf = reader.read_imagebuf(
+                    frame_path,
+                    layer=self.config.layer,
+                    layer_map=self._layer_map,
+                )
+        except (ImageReadError, Exception) as e:
+            logger.warning(f"Failed to process frame {frame_num}: {e}")
+            return None
+
+        try:
+            buf = color_converter.convert_buf(buf, input_space=input_space)
+        except ColorSpaceError as e:
+            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
+            return None
+
+        if output_width != width or output_height != height:
+            buf = scaler.scale_buf(buf, output_width, output_height)
+
+        if self.config.burnin_config and burnin_processor:
+            try:
+                metadata = {
+                    "frame": frame_num,
+                    "file": frame_path.name,
+                    "fps": self.config.fps,
+                    "layer": self.config.layer or "RGBA",
+                    "colorspace": input_space or "Unknown",
+                }
+                buf = burnin_processor.apply_burnins(
+                    buf,
+                    metadata,
+                    self.config.burnin_config,
+                )
+            except Exception as e:
+                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
+
+        return buf
+
+    def _build_frame_range(
+        self, frame_numbers: list[int]
+    ) -> tuple[list[int], set[int], int, int, int]:
+        """Build the full frame range and lookup set."""
+        start_frame = (
+            self.config.start_frame if self.config.start_frame is not None else frame_numbers[0]
+        )
+        end_frame = (
+            self.config.end_frame if self.config.end_frame is not None else frame_numbers[-1]
+        )
+        existing_frames = set(frame_numbers)
+        all_frames = list(range(start_frame, end_frame + 1))
+        total_frames = len(all_frames)
+        return all_frames, existing_frames, start_frame, end_frame, total_frames
+
+    def _write_frame_buf(self, frame_num: int, buf, label: str = "frame") -> None:
+        """Write an ImageBuf to the encoder with consistent error handling."""
+        try:
+            self.encoder.write_frame(buf)
+        except VideoEncodingError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to write {label} {frame_num}: {e}")
+            raise VideoEncodingError(f"Failed to write {label} {frame_num}: {e}") from e
+
+    def _write_freeze_frame(
+        self, frame_num: int, last_valid_buf, index: int, log_every: int = 10
+    ) -> bool:
+        """Write a freeze-frame if available, otherwise log and skip."""
+        if last_valid_buf is None:
+            logger.warning(f"Frame {frame_num} missing and no previous frame available. Skipping.")
+            return False
+
+        self._write_frame_buf(frame_num, last_valid_buf, label="freeze-frame")
+        if index == 0 or (index + 1) % log_every == 0:
+            logger.debug(f"Frame {frame_num} missing, using freeze-frame")
+        return True
 
     def _process_single_frame_buf(
         self,
@@ -315,55 +534,22 @@ class SequenceConverter:
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
     ):
         """Process a single frame using ImageBuf-first operations."""
-        frame_path = self.sequence.get_file_path(frame_num)
-
-        try:
-            if contact_sheet_generator:
-                buf = contact_sheet_generator.composite_layers(frame_path)
-                spec = buf.spec()
-                width, height = spec.width, spec.height
-            else:
-                buf = self.reader.read_imagebuf(
-                    frame_path,
-                    layer=self.config.layer,
-                    layer_map=self._layer_map,
-                )
-        except (ImageReadError, Exception) as e:
-            logger.warning(f"Failed to process frame {frame_num}: {e}")
+        buf = self._prepare_frame_buf(
+            frame_num,
+            output_width,
+            output_height,
+            width,
+            height,
+            scaler,
+            input_space,
+            self.reader,
+            self.color_converter,
+            self.burnin_processor,
+            contact_sheet_generator=contact_sheet_generator,
+        )
+        if buf is None:
             return None
 
-        try:
-            buf = self.color_converter.convert_buf(buf, input_space=input_space)
-        except ColorSpaceError as e:
-            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-            return None
-
-        if output_width != width or output_height != height:
-            buf = scaler.scale_buf(buf, output_width, output_height)
-
-        if self.config.burnin_config:
-            try:
-                metadata = {
-                    "frame": frame_num,
-                    "file": frame_path.name,
-                    "fps": self.config.fps,
-                    "layer": self.config.layer or "RGBA",
-                    "colorspace": input_space or "Unknown",
-                }
-                buf = self.burnin_processor.apply_burnins(
-                    buf,
-                    metadata,
-                    self.config.burnin_config,
-                )
-            except Exception as e:
-                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
-
-        try:
-            self.encoder.write_frame(buf)
-        except VideoEncodingError:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to write frame {frame_num}: {e}")
-            raise VideoEncodingError(f"Failed to write frame {frame_num}: {e}") from e
+        self._write_frame_buf(frame_num, buf)
 
         return buf

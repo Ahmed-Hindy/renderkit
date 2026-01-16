@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- (nothing yet)
+
+### Changed
+- (nothing yet)
+
+### Fixed
+- (nothing yet)
+
+## [0.7.0] - 2026-01-16
+
+### Added
+- Shared OIIO ImageCache singleton to reuse EXR file handles and decoded tiles across reads.
+- Prefetch workers to overlap network IO during conversion with configurable worker counts (CLI/UI/config).
+- Contact sheet subimage caching per frame to avoid re-opening EXRs per layer.
+- Tests covering prefetch workers, contact sheet caching, and shared OIIO cache behavior.
+
+### Changed
+- Switched FFmpeg resolution to an internal resolver and updated override documentation.
+- Refactored OIIO reader layer parsing and metadata helpers for clarity and reuse.
+- Contact sheet layout and label calculations extracted for readability.
+- Contact sheet thumbnail width now respects "Keep Resolution" paths when enabled.
+
+### Removed
+- Removed `imageio` and `imageio-ffmpeg` runtime dependencies and PyInstaller metadata payload.
+
 ## [0.5.0] - 2026-01-12
 
 ### Added
@@ -29,16 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Offloaded contact sheet preview generation to a background thread to prevent UI hangs.
 - Implemented robust thread management with worker pooling to prevent crashes during rapid UI interactions.
 - Added real-time configuration updates for the contact sheet preview with debouncing.
-
-## [Unreleased]
-
-### Changed
-- Replaced imageio-ffmpeg usage with an internal FFmpeg resolver for bundled/PATH binaries.
-- Updated FFmpeg override docs to match bundled/PATH behavior.
-
-### Removed
-- Removed `imageio` and `imageio-ffmpeg` runtime dependencies and PyInstaller metadata payload.
-
 
 ## [0.4.0] - 2026-01-09
 

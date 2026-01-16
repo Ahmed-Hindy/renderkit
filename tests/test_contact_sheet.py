@@ -1,6 +1,7 @@
 import pytest
 
 from renderkit.core.config import ContactSheetConfigBuilder
+from renderkit.io.image_reader import LayerMapEntry
 from renderkit.processing.contact_sheet import ContactSheetGenerator
 
 
@@ -102,3 +103,55 @@ def test_contact_sheet_full_conversion(tmp_path):
     # 4. Verify output
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+def test_contact_sheet_uses_subimage_cache(tmp_path):
+    """Ensure contact sheet avoids per-layer reads when layer map is available."""
+    try:
+        import OpenImageIO as oiio
+    except ImportError:
+        pytest.skip("OpenImageIO not available")
+
+    class FakeReader:
+        def __init__(self) -> None:
+            self.subimage_calls: list[int] = []
+            self.image_calls: list[str] = []
+
+        def read_subimagebuf(self, path, subimage_index: int):
+            self.subimage_calls.append(subimage_index)
+            spec = oiio.ImageSpec(16, 8, 3, oiio.FLOAT)
+            buf = oiio.ImageBuf(spec)
+            oiio.ImageBufAlgo.fill(buf, (0.2, 0.3, 0.4))
+            return buf
+
+        def read_imagebuf(self, path, layer=None, layer_map=None):
+            self.image_calls.append(str(layer))
+            spec = oiio.ImageSpec(16, 8, 3, oiio.FLOAT)
+            buf = oiio.ImageBuf(spec)
+            oiio.ImageBufAlgo.fill(buf, (0.1, 0.1, 0.1))
+            return buf
+
+    layers = ["RGBA", "diffuse", "specular", "mask"]
+    layer_map = {
+        "RGBA": LayerMapEntry(0, None),
+        "diffuse": LayerMapEntry(0, (0, 1, 2)),
+        "specular": LayerMapEntry(0, (0, 1, 2)),
+        "mask": LayerMapEntry(1, (0,)),
+    }
+
+    config = (
+        ContactSheetConfigBuilder()
+        .with_columns(2)
+        .with_thumbnail_width(16)
+        .with_padding(2)
+        .with_labels(False)
+        .build()
+    )
+
+    reader = FakeReader()
+    generator = ContactSheetGenerator(config, reader=reader, layers=layers, layer_map=layer_map)
+    composite = generator.composite_layers(tmp_path / "dummy.exr")
+
+    assert composite is not None
+    assert reader.image_calls == []
+    assert set(reader.subimage_calls) == {0, 1}

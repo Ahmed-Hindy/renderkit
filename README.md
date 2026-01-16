@@ -21,6 +21,7 @@ Targets the VFX Platform CY2026 spec (Python 3.13.x, Qt 6.8/PySide6 6.8, OpenCol
 - **Multi-AOV Contact Sheets**: Generate a video grid of all AOVs (layers) for every frame.
 - **Color Space**: Professional color management including **Linear-to-sRGB** and **Rec.709** presets.
 - **Interfaces**: Python API, CLI (`renderkit`), and PySide6 UI.
+- **Shared ImageCache**: Reuses OIIO cache across frames for faster network reads.
 
 ## Installation
 

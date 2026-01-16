@@ -769,6 +769,14 @@ class MainWindowUiMixin:
         self.overwrite_check.setChecked(True)
         form_layout.addRow(self.overwrite_check)
 
+        self.prefetch_workers_spin = NoWheelSpinBox()
+        self.prefetch_workers_spin.setRange(1, 16)
+        self.prefetch_workers_spin.setValue(2)
+        self.prefetch_workers_spin.setToolTip(
+            "Concurrent frame reads to saturate network bandwidth (1 disables prefetch)."
+        )
+        form_layout.addRow("Prefetch Workers:", self.prefetch_workers_spin)
+
         # Preview Scale
         self.preview_scale_spin = NoWheelSpinBox()
         self.preview_scale_spin.setRange(5, 100)

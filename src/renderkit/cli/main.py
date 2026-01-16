@@ -36,6 +36,13 @@ def main() -> None:
 @click.argument("input_pattern", type=str)
 @click.argument("output_path", type=click.Path())
 @click.option(
+    "--prefetch-workers",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Number of frame prefetch workers (set to 1 to disable).",
+)
+@click.option(
     "--fps",
     type=float,
     default=None,
@@ -114,6 +121,7 @@ def main() -> None:
 def convert_exr_sequence(
     input_pattern: str,
     output_path: str,
+    prefetch_workers: int,
     fps: Optional[float],
     color_space: str,
     width: Optional[int],
@@ -178,6 +186,7 @@ def convert_exr_sequence(
         ConversionConfigBuilder()
         .with_input_pattern(input_pattern)
         .with_output_path(output_path)
+        .with_prefetch_workers(prefetch_workers)
         .with_color_space_preset(color_space_preset)
         .with_codec(codec)
         .with_quality(quality)

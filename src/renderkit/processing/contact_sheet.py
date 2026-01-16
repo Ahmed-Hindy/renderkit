@@ -8,6 +8,7 @@ import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
 from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapEntry
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,9 @@ class ContactSheetGenerator:
         Returns:
             ImageBuf containing the composited grid
         """
-        reader = self.reader or ImageReaderFactory.create_reader(frame_path)
+        reader = self.reader or ImageReaderFactory.create_reader(
+            frame_path, image_cache=get_shared_image_cache()
+        )
         layers = self.layers or reader.get_layers(frame_path)
         layer_map = self.layer_map
         if layer_map is None and hasattr(reader, "get_layer_map"):
@@ -60,31 +63,28 @@ class ContactSheetGenerator:
             # Fallback to just reading the image if no layers detected
             return oiio.ImageBuf(str(frame_path))
 
-        # Calculate grid dimensions
-        num_layers = len(layers)
-        cols = self.config.columns
-        rows = (num_layers + cols - 1) // cols
-
-        padding = self.config.padding
+        subimage_buffers = self._build_subimage_buffers(reader, frame_path, layers, layer_map)
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
-        first_buf = reader.read_imagebuf(frame_path, layer=layers[0], layer_map=layer_map)
+        first_buf = self._resolve_layer_buf(
+            reader,
+            frame_path,
+            layers[0],
+            layer_map,
+            subimage_buffers,
+        )
         spec = first_buf.spec()
         h, w = spec.height, spec.width
-        thumb_w, thumb_h = self.config.resolve_layer_size(w, h)
-
-        # Label height
-        label_h = 0
-        label_gap = 0
-        if self.config.show_labels:
-            label_gap = max(4, int(self.config.font_size * 0.01))
-            label_h = label_gap + int(self.config.font_size * 1.4)
-
-        cell_w = thumb_w + (padding * 2)
-        cell_h = thumb_h + (padding * 2) + label_h
-
-        canvas_w = cell_w * cols
-        canvas_h = cell_h * rows
+        layout = self._compute_layout(len(layers), w, h)
+        thumb_w = layout["thumb_w"]
+        thumb_h = layout["thumb_h"]
+        cell_w = layout["cell_w"]
+        cell_h = layout["cell_h"]
+        canvas_w = layout["canvas_w"]
+        canvas_h = layout["canvas_h"]
+        label_gap = layout["label_gap"]
+        padding = layout["padding"]
+        cols = layout["cols"]
 
         # Create canvas
         canvas_spec = oiio.ImageSpec(canvas_w, canvas_h, 3, oiio.FLOAT)
@@ -103,8 +103,12 @@ class ContactSheetGenerator:
                 if layer_name == layers[0]:
                     layer_buf = first_buf
                 else:
-                    layer_buf = reader.read_imagebuf(
-                        frame_path, layer=layer_name, layer_map=layer_map
+                    layer_buf = self._resolve_layer_buf(
+                        reader,
+                        frame_path,
+                        layer_name,
+                        layer_map,
+                        subimage_buffers,
                     )
 
                 if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
@@ -137,6 +141,95 @@ class ContactSheetGenerator:
                 logger.error(f"Failed to process layer {layer_name} for contact sheet: {e}")
 
         return canvas
+
+    def _compute_layout(self, num_layers: int, source_w: int, source_h: int) -> dict[str, int]:
+        cols = self.config.columns
+        rows = (num_layers + cols - 1) // cols
+        padding = self.config.padding
+        thumb_w, thumb_h = self.config.resolve_layer_size(source_w, source_h)
+        label_gap, label_h = self._compute_label_metrics()
+        cell_w = thumb_w + (padding * 2)
+        cell_h = thumb_h + (padding * 2) + label_h
+        canvas_w = cell_w * cols
+        canvas_h = cell_h * rows
+        return {
+            "cols": cols,
+            "rows": rows,
+            "padding": padding,
+            "thumb_w": thumb_w,
+            "thumb_h": thumb_h,
+            "cell_w": cell_w,
+            "cell_h": cell_h,
+            "canvas_w": canvas_w,
+            "canvas_h": canvas_h,
+            "label_gap": label_gap,
+            "label_h": label_h,
+        }
+
+    def _compute_label_metrics(self) -> tuple[int, int]:
+        if not self.config.show_labels:
+            return 0, 0
+        label_gap = max(4, int(self.config.font_size * 0.01))
+        label_h = label_gap + int(self.config.font_size * 1.4)
+        return label_gap, label_h
+
+    def _build_subimage_buffers(
+        self,
+        reader: ImageReader,
+        frame_path: Path,
+        layers: list[str],
+        layer_map: Optional[dict[str, LayerMapEntry]],
+    ) -> dict[int, oiio.ImageBuf]:
+        if not layer_map or not layers:
+            return {}
+
+        subimage_indices = set()
+        for layer_name in layers:
+            entry = layer_map.get(layer_name)
+            if entry is not None and entry.subimage_index is not None:
+                subimage_indices.add(entry.subimage_index)
+
+        subimage_buffers: dict[int, oiio.ImageBuf] = {}
+        for subimage_index in subimage_indices:
+            try:
+                if hasattr(reader, "read_subimagebuf"):
+                    subimage_buffers[subimage_index] = reader.read_subimagebuf(
+                        frame_path, subimage_index
+                    )
+                else:
+                    subimage_buffers[subimage_index] = oiio.ImageBuf(
+                        str(frame_path), subimage_index, 0
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to cache subimage {subimage_index} for {frame_path}: {e}")
+                return {}
+
+        return subimage_buffers
+
+    def _resolve_layer_buf(
+        self,
+        reader: ImageReader,
+        frame_path: Path,
+        layer_name: str,
+        layer_map: Optional[dict[str, LayerMapEntry]],
+        subimage_buffers: dict[int, oiio.ImageBuf],
+    ) -> oiio.ImageBuf:
+        if layer_map and subimage_buffers:
+            entry = layer_map.get(layer_name)
+            if entry is not None:
+                base_buf = subimage_buffers.get(entry.subimage_index)
+                if base_buf is not None:
+                    if entry.channel_indices:
+                        try:
+                            return oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to slice channels for {layer_name} in {frame_path}: {e}"
+                            )
+                    else:
+                        return base_buf
+
+        return reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map)
 
     def _scale_to_thumbnail(self, buf: oiio.ImageBuf, width: int, height: int) -> oiio.ImageBuf:
         """Scale ImageBuf to thumbnail dimensions and return ImageBuf."""

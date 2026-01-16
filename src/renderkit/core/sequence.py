@@ -243,8 +243,11 @@ class SequenceDetector:
         if sample_path and sample_path.exists():
             try:
                 from renderkit.io.image_reader import ImageReaderFactory
+                from renderkit.io.oiio_cache import get_shared_image_cache
 
-                reader = ImageReaderFactory.create_reader(sample_path)
+                reader = ImageReaderFactory.create_reader(
+                    sample_path, image_cache=get_shared_image_cache()
+                )
                 fps = reader.get_metadata_fps(sample_path)
                 if fps is not None:
                     return round(fps, 3)  # Round to avoid precision issues (e.g. 23.976)
