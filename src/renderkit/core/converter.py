@@ -101,25 +101,17 @@ class SequenceConverter:
         if detected_color_space:
             logger.info(f"Detected input color space: {detected_color_space}")
 
+        if self.config.contact_sheet_mode and self.config.contact_sheet_config:
+            self.contact_sheet_generator = ContactSheetGenerator(
+                self.config.contact_sheet_config,
+                reader=self.reader,
+                layers=file_info.layers,
+            )
         if hasattr(self.reader, "get_layer_map"):
             try:
                 self._layer_map = self.reader.get_layer_map(first_frame_path)
             except Exception as e:
                 logger.debug(f"Failed to build layer map for {first_frame_path}: {e}")
-
-        if self.config.contact_sheet_mode and self.config.contact_sheet_config:
-            cs_config = self.config.contact_sheet_config
-            if cs_config.layer_width is None and cs_config.layer_height is None:
-                if self.config.width is not None or self.config.height is not None:
-                    cs_config.layer_width = self.config.width
-                    cs_config.layer_height = self.config.height
-
-            self.contact_sheet_generator = ContactSheetGenerator(
-                cs_config,
-                reader=self.reader,
-                layers=file_info.layers,
-                layer_map=self._layer_map,
-            )
 
         # Step 5: Determine output resolution
         output_width = self.config.width or width
@@ -132,9 +124,9 @@ class SequenceConverter:
                 cols = self.config.contact_sheet_config.columns
                 rows = (len(layers) + cols - 1) // cols
 
-                thumb_w, thumb_h = self.config.contact_sheet_config.resolve_layer_size(
-                    width, height
-                )
+                thumb_w = self.config.contact_sheet_config.thumbnail_width
+                aspect = height / width
+                thumb_h = int(thumb_w * aspect)
 
                 padding = self.config.contact_sheet_config.padding
                 label_h = 0
@@ -147,8 +139,11 @@ class SequenceConverter:
                 composite_w = cell_w * cols
                 composite_h = cell_h * rows
 
-                output_width = composite_w
-                output_height = composite_h
+                # If explicit resolution not set, use composite size
+                if not self.config.width:
+                    output_width = composite_w
+                if not self.config.height:
+                    output_height = composite_h
 
                 logger.info(f"Targeting contact sheet resolution: {output_width}x{output_height}")
 
