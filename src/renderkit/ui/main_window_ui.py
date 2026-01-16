@@ -22,6 +22,7 @@ from renderkit.ui.qt_compat import (
     QFont,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -291,24 +292,6 @@ class MainWindowUiMixin:
         input_pattern_layout.setStretch(1, 0)
         form_layout.addRow("Pattern:", input_pattern_layout)
 
-        # Frame Range
-        frame_range_layout = QHBoxLayout()
-        self.start_frame_spin = NoWheelSpinBox()
-        self.start_frame_spin.setMinimum(1)
-        self.start_frame_spin.setMaximum(999999)
-        self.start_frame_spin.setValue(1)
-        frame_range_layout.addWidget(QLabel("Start:"))
-        frame_range_layout.addWidget(self.start_frame_spin)
-
-        self.end_frame_spin = NoWheelSpinBox()
-        self.end_frame_spin.setMinimum(1)
-        self.end_frame_spin.setMaximum(999999)
-        self.end_frame_spin.setValue(1)
-        frame_range_layout.addWidget(QLabel("End:"))
-        frame_range_layout.addWidget(self.end_frame_spin)
-        frame_range_layout.addStretch()
-        form_layout.addRow("Frame Range:", frame_range_layout)
-
         # Sequence Info
         self.sequence_info_label = QLabel("No sequence detected")
         self.sequence_info_label.setWordWrap(True)
@@ -362,9 +345,19 @@ class MainWindowUiMixin:
         layout.setSpacing(10)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-        self._set_form_growth_policy(form_layout)
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(10)
+        grid_layout.setColumnStretch(1, 0)
+        grid_layout.setColumnStretch(2, 0)
+        grid_layout.setColumnStretch(3, 1)
+
+        def _row_layout(spacing: int = 6) -> QHBoxLayout:
+            layout = QHBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(spacing)
+            return layout
+
+        align_left = Qt.AlignmentFlag.AlignLeft
 
         # Output path
         output_path_layout = QHBoxLayout()
@@ -379,9 +372,95 @@ class MainWindowUiMixin:
         output_path_layout.addWidget(self.browse_output_btn)
         output_path_layout.setStretch(0, 1)
         output_path_layout.setStretch(1, 0)
-        form_layout.addRow("Output Path:", output_path_layout)
+        grid_layout.addWidget(QLabel("Output Path:"), 0, 0)
+        grid_layout.addLayout(output_path_layout, 0, 1, 1, 3)
 
-        layout.addLayout(form_layout)
+        # Frame Range
+        frame_range_layout = _row_layout()
+        self.start_frame_spin = NoWheelSpinBox()
+        self.start_frame_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.start_frame_spin.setMinimum(1)
+        self.start_frame_spin.setMaximum(999999)
+        self.start_frame_spin.setValue(1)
+        frame_range_layout.addWidget(QLabel("Start:"))
+        frame_range_layout.addWidget(self.start_frame_spin)
+
+        self.end_frame_spin = NoWheelSpinBox()
+        self.end_frame_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.end_frame_spin.setMinimum(1)
+        self.end_frame_spin.setMaximum(999999)
+        self.end_frame_spin.setValue(1)
+        frame_range_layout.addWidget(QLabel("End:"))
+        frame_range_layout.addWidget(self.end_frame_spin)
+        self.keep_source_frame_range_check = QCheckBox("Keep source framerange")
+        self.keep_source_frame_range_check.setChecked(True)
+        self.keep_source_frame_range_check.toggled.connect(self._on_keep_frame_range_toggled)
+        grid_layout.addWidget(QLabel("Frame Range:"), 1, 0)
+        grid_layout.addLayout(frame_range_layout, 1, 1, alignment=align_left)
+        grid_layout.addWidget(
+            self.keep_source_frame_range_check,
+            1,
+            2,
+            alignment=align_left,
+        )
+        stretch_spacer = QWidget()
+        stretch_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        grid_layout.addWidget(stretch_spacer, 1, 3, 3, 1)
+
+        # Frame rate
+        self.fps_spin = NoWheelDoubleSpinBox()
+        self.fps_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.fps_spin.setRange(0.01, 120.0)
+        self.fps_spin.setDecimals(3)
+        self.fps_spin.setValue(24.0)
+        self.fps_spin.setSuffix(" fps")
+        fps_layout = _row_layout()
+        fps_layout.addWidget(self.fps_spin)
+        self.keep_source_fps_check = QCheckBox("Keep Source FPS")
+        self.keep_source_fps_check.setChecked(True)
+        self.keep_source_fps_check.toggled.connect(self._on_keep_source_fps_toggled)
+        grid_layout.addWidget(QLabel("Frame Rate:"), 2, 0)
+        grid_layout.addLayout(fps_layout, 2, 1, alignment=align_left)
+        grid_layout.addWidget(
+            self.keep_source_fps_check,
+            2,
+            2,
+            alignment=align_left,
+        )
+
+        # Resolution
+        resolution_layout = _row_layout()
+        self.width_spin = NoWheelSpinBox()
+        self.width_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.width_spin.setMinimum(1)
+        self.width_spin.setMaximum(7680)
+        self.width_spin.setValue(1920)
+        self.width_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Width:"))
+        resolution_layout.addWidget(self.width_spin)
+
+        self.height_spin = NoWheelSpinBox()
+        self.height_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.height_spin.setMinimum(1)
+        self.height_spin.setMaximum(4320)
+        self.height_spin.setValue(1080)
+        self.height_spin.setSuffix(" px")
+        resolution_layout.addWidget(QLabel("Height:"))
+        resolution_layout.addWidget(self.height_spin)
+
+        self.keep_resolution_check = QCheckBox("Keep source resolution")
+        self.keep_resolution_check.setChecked(True)
+        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
+        grid_layout.addWidget(QLabel("Resolution:"), 3, 0)
+        grid_layout.addLayout(resolution_layout, 3, 1, alignment=align_left)
+        grid_layout.addWidget(
+            self.keep_resolution_check,
+            3,
+            2,
+            alignment=align_left,
+        )
+
+        layout.addLayout(grid_layout)
 
         if not hasattr(self, "play_btn") or self.play_btn is None:
             self.play_btn = QPushButton("Play Result (Flipbook)")
@@ -663,40 +742,6 @@ class MainWindowUiMixin:
         self._set_form_growth_policy(form_layout)
 
         # Video Encoding Settings (merged from separate section)
-        # FPS
-        self.fps_spin = NoWheelDoubleSpinBox()
-        self.fps_spin.setRange(0.01, 120.0)
-        self.fps_spin.setDecimals(3)
-        self.fps_spin.setValue(24.0)
-        self.fps_spin.setSuffix(" fps")
-        form_layout.addRow("Frame Rate:", self.fps_spin)
-
-        # Resolution
-        resolution_layout = QHBoxLayout()
-        self.width_spin = NoWheelSpinBox()
-        self.width_spin.setMinimum(1)
-        self.width_spin.setMaximum(7680)
-        self.width_spin.setValue(1920)
-        self.width_spin.setSuffix(" px")
-        resolution_layout.addWidget(QLabel("Width:"))
-        resolution_layout.addWidget(self.width_spin)
-
-        self.height_spin = NoWheelSpinBox()
-        self.height_spin.setMinimum(1)
-        self.height_spin.setMaximum(4320)
-        self.height_spin.setValue(1080)
-        self.height_spin.setSuffix(" px")
-        resolution_layout.addWidget(QLabel("Height:"))
-        resolution_layout.addWidget(self.height_spin)
-
-        self.keep_resolution_check = QCheckBox("Keep source resolution")
-        self.keep_resolution_check.setChecked(True)
-        self.keep_resolution_check.toggled.connect(self._on_keep_resolution_toggled)
-        resolution_layout.addWidget(self.keep_resolution_check)
-        resolution_layout.addStretch()
-        form_layout.addRow("Resolution:", resolution_layout)
-
-        # Codec
         self.codec_combo = NoWheelComboBox()
         self._populate_codecs()
         form_layout.addRow("Codec:", self.codec_combo)

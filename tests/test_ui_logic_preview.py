@@ -42,6 +42,9 @@ class _DummyWindow(main_window_logic.MainWindowLogicMixin):
     def __init__(self, cs_enabled: bool) -> None:
         self.preview_widget = _DummyPreviewWidget()
         self.preview_scale_spin = _DummyValue(100)
+        self.keep_resolution_check = _DummyCheck(True)
+        self.width_spin = _DummyValue(1920)
+        self.height_spin = _DummyValue(1080)
         self.cs_enable_check = _DummyCheck(cs_enabled)
         self.cs_show_labels_check = _DummyCheck(True)
         self.cs_columns_spin = _DummyValue(4)
@@ -85,6 +88,6 @@ def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> N
     cs_config = kwargs["cs_config"]
     assert cs_config is not None
     assert cs_config.columns == 4
-    assert cs_config.thumbnail_width == 512
+    assert cs_config.thumbnail_width is None
     assert cs_config.padding == 4
     assert cs_config.show_labels is True

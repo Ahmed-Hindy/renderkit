@@ -7,7 +7,7 @@ from typing import Optional
 import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
-from renderkit.io.image_reader import ImageReader, ImageReaderFactory
+from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapEntry
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ class ContactSheetGenerator:
         config: ContactSheetConfig,
         reader: Optional[ImageReader] = None,
         layers: Optional[list[str]] = None,
+        layer_map: Optional[dict[str, LayerMapEntry]] = None,
     ) -> None:
         """Initialize generator.
 
@@ -32,6 +33,9 @@ class ContactSheetGenerator:
         self.config = config
         self.reader = reader
         self.layers = layers
+        self.layer_map = layer_map
+        if layer_map is not None:
+            logger.debug("Contact sheet layer map cached at init.")
 
     def composite_layers(self, frame_path: Path) -> oiio.ImageBuf:
         """Composite all layers of a frame into a grid.
@@ -44,10 +48,11 @@ class ContactSheetGenerator:
         """
         reader = self.reader or ImageReaderFactory.create_reader(frame_path)
         layers = self.layers or reader.get_layers(frame_path)
-        layer_map = None
-        if hasattr(reader, "get_layer_map"):
+        layer_map = self.layer_map
+        if layer_map is None and hasattr(reader, "get_layer_map"):
             try:
                 layer_map = reader.get_layer_map(frame_path)
+                self.layer_map = layer_map
             except Exception as e:
                 logger.debug(f"Failed to precompute layer map for {frame_path}: {e}")
 
@@ -60,15 +65,13 @@ class ContactSheetGenerator:
         cols = self.config.columns
         rows = (num_layers + cols - 1) // cols
 
-        thumb_w = self.config.thumbnail_width
         padding = self.config.padding
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
         first_buf = reader.read_imagebuf(frame_path, layer=layers[0], layer_map=layer_map)
         spec = first_buf.spec()
         h, w = spec.height, spec.width
-        aspect = h / w
-        thumb_h = int(thumb_w * aspect)
+        thumb_w, thumb_h = self.config.resolve_layer_size(w, h)
 
         # Label height
         label_h = 0
@@ -103,7 +106,11 @@ class ContactSheetGenerator:
                     layer_buf = reader.read_imagebuf(
                         frame_path, layer=layer_name, layer_map=layer_map
                     )
-                scaled_buf = self._scale_to_thumbnail(layer_buf, thumb_w, thumb_h)
+
+                if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
+                    scaled_buf = layer_buf
+                else:
+                    scaled_buf = self._scale_to_thumbnail(layer_buf, thumb_w, thumb_h)
 
                 # Paste onto canvas
                 oiio.ImageBufAlgo.paste(canvas, x_offset, y_offset, 0, 0, scaled_buf)

@@ -92,7 +92,10 @@ def main() -> None:
 )
 @click.option("--cs-columns", type=int, default=4, help="Contact sheet columns (default: 4)")
 @click.option(
-    "--cs-thumb-width", type=int, default=512, help="Contact sheet thumbnail width (default: 512)"
+    "--cs-thumb-width",
+    type=int,
+    default=None,
+    help="Contact sheet thumbnail width (default: source resolution)",
 )
 @click.option("--cs-padding", type=int, default=10, help="Contact sheet padding (default: 10)")
 @click.option("--cs-no-labels", is_flag=True, default=False, help="Disable contact sheet labels")
@@ -270,7 +273,12 @@ def convert_exr_sequence(
 @click.argument("input_pattern", type=str)
 @click.argument("output_path", type=click.Path())
 @click.option("--columns", type=int, default=4, help="Number of columns in the grid (default: 4)")
-@click.option("--thumb-width", type=int, default=512, help="Width of each thumbnail (default: 512)")
+@click.option(
+    "--thumb-width",
+    type=int,
+    default=None,
+    help="Width of each thumbnail (default: source resolution)",
+)
 @click.option("--padding", type=int, default=10, help="Padding between thumbnails (default: 10)")
 @click.option(
     "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
@@ -323,10 +331,12 @@ def contact_sheet(
         .with_input_pattern(input_pattern)
         .with_output_path(output_path)
         .with_columns(columns)
-        .with_thumbnail_width(thumb_width)
         .with_padding(padding)
         .with_labels(not no_labels, font_size=font_size)
     )
+
+    if thumb_width is not None:
+        config_builder = config_builder.with_thumbnail_width(thumb_width)
 
     if layer:
         config_builder.with_layer(layer)
