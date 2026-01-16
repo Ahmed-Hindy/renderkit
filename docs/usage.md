@@ -91,7 +91,7 @@ config = (
     .with_codec("libx264")
     .with_contact_sheet(
         True,
-        ContactSheetConfig(columns=4, padding=10, show_labels=True),
+        ContactSheetConfig(columns=4, thumbnail_width=512, padding=10, show_labels=True),
     )
     .build()
 )

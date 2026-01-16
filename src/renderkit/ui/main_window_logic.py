@@ -349,8 +349,6 @@ class MainWindowLogicMixin:
             return
 
         self.fps_spin.setValue(24)
-        self.keep_source_fps_check.setChecked(True)
-        self.keep_source_frame_range_check.setChecked(True)
         self.width_spin.setValue(1920)
         self.height_spin.setValue(1080)
         self.codec_combo.setCurrentIndex(0)
@@ -380,15 +378,6 @@ class MainWindowLogicMixin:
         """Handle keep resolution checkbox toggle."""
         self.width_spin.setEnabled(not checked)
         self.height_spin.setEnabled(not checked)
-
-    def _on_keep_frame_range_toggled(self, checked: bool) -> None:
-        """Handle keep source frame range checkbox toggle."""
-        self.start_frame_spin.setEnabled(not checked)
-        self.end_frame_spin.setEnabled(not checked)
-
-    def _on_keep_source_fps_toggled(self, checked: bool) -> None:
-        """Handle keep source FPS checkbox toggle."""
-        self.fps_spin.setEnabled(not checked)
 
     def _on_burnin_enable_toggled(self, checked: bool) -> None:
         """Handle burn-in enable checkbox toggle."""
@@ -427,8 +416,7 @@ class MainWindowLogicMixin:
                 self._load_preview()
 
         self.cs_columns_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setEnabled(False)
-        self.cs_thumb_width_spin.setToolTip("Layer size is controlled by the Resolution settings.")
+        self.cs_thumb_width_spin.setEnabled(checked)
         self.cs_padding_spin.setEnabled(checked)
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
@@ -567,21 +555,13 @@ class MainWindowLogicMixin:
 
         if self.cs_enable_check.isChecked():
             # Build config from UI
-            layer_width = None
-            layer_height = None
-            if not self.keep_resolution_check.isChecked():
-                layer_width = self.width_spin.value()
-                layer_height = self.height_spin.value()
-
             cs_config = ContactSheetConfig(
                 columns=self.cs_columns_spin.value(),
-                thumbnail_width=None,
+                thumbnail_width=self.cs_thumb_width_spin.value(),
                 padding=self.cs_padding_spin.value(),
                 show_labels=self.cs_show_labels_check.isChecked(),
                 font_size=self.cs_font_size_spin.value(),
                 background_color=(0.1, 0.1, 0.1, 1.0),  # Dark background for preview
-                layer_width=layer_width,
-                layer_height=layer_height,
             )
             # Set layer to None to avoid "Layer not found" warnings when generator handles it
             layer = None
@@ -859,14 +839,6 @@ class MainWindowLogicMixin:
             else:
                 logger.info("No FPS information found in metadata.")
 
-            # Update resolution from metadata
-            if file_info.width and file_info.height:
-                self.width_spin.setValue(file_info.width)
-                self.height_spin.setValue(file_info.height)
-                logger.info(
-                    f"Auto-detected resolution from metadata: {file_info.width}x{file_info.height}"
-                )
-
             # Update sequence info with final text
             info_text = (
                 f"Detected {frame_count} frames\n"
@@ -1022,20 +994,12 @@ class MainWindowLogicMixin:
 
             # Contact Sheet Mode
             if self.cs_enable_check.isChecked():
-                layer_width = None
-                layer_height = None
-                if not self.keep_resolution_check.isChecked():
-                    layer_width = self.width_spin.value()
-                    layer_height = self.height_spin.value()
-
                 cs_config = ContactSheetConfig(
                     columns=self.cs_columns_spin.value(),
-                    thumbnail_width=None,
+                    thumbnail_width=self.cs_thumb_width_spin.value(),
                     padding=self.cs_padding_spin.value(),
                     show_labels=self.cs_show_labels_check.isChecked(),
                     font_size=self.cs_font_size_spin.value(),
-                    layer_width=layer_width,
-                    layer_height=layer_height,
                 )
                 config_builder.with_contact_sheet(True, cs_config)
 
@@ -1293,10 +1257,6 @@ class MainWindowLogicMixin:
     def _save_settings(self) -> None:
         """Save current settings."""
         self.settings.setValue("fps", self.fps_spin.value())
-        self.settings.setValue("keep_source_fps", self.keep_source_fps_check.isChecked())
-        self.settings.setValue(
-            "keep_source_frame_range", self.keep_source_frame_range_check.isChecked()
-        )
         self.settings.setValue("width", self.width_spin.value())
         self.settings.setValue("height", self.height_spin.value())
         self.settings.setValue("codec_text", self.codec_combo.currentText())
@@ -1338,12 +1298,6 @@ class MainWindowLogicMixin:
     def _load_settings(self) -> None:
         """Load saved settings."""
         self.fps_spin.setValue(self.settings.value("fps", 24, type=int))
-        self.keep_source_fps_check.setChecked(
-            self.settings.value("keep_source_fps", True, type=bool)
-        )
-        self.keep_source_frame_range_check.setChecked(
-            self.settings.value("keep_source_frame_range", True, type=bool)
-        )
         self.width_spin.setValue(self.settings.value("width", 1920, type=int))
         self.height_spin.setValue(self.settings.value("height", 1080, type=int))
 
@@ -1357,8 +1311,6 @@ class MainWindowLogicMixin:
         )
         self.quality_slider.setValue(self.settings.value("quality", 10, type=int))
         # Trigger initial toggle states
-        self._on_keep_source_fps_toggled(self.keep_source_fps_check.isChecked())
-        self._on_keep_frame_range_toggled(self.keep_source_frame_range_check.isChecked())
         self._on_keep_resolution_toggled(self.keep_resolution_check.isChecked())
         self._on_quality_changed(self.quality_slider.value())
         self._update_play_button_state()  # Call it here
