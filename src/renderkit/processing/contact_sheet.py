@@ -70,48 +70,16 @@ class ContactSheetGenerator:
 
         padding = self.config.padding
 
-        subimage_buffers: dict[int, oiio.ImageBuf] = {}
-        if layer_map:
-            subimage_indices = set()
-            for layer_name in layers:
-                entry = layer_map.get(layer_name)
-                if entry is not None and entry.subimage_index is not None:
-                    subimage_indices.add(entry.subimage_index)
-            for subimage_index in subimage_indices:
-                try:
-                    if hasattr(reader, "read_subimagebuf"):
-                        subimage_buffers[subimage_index] = reader.read_subimagebuf(
-                            frame_path, subimage_index
-                        )
-                    else:
-                        subimage_buffers[subimage_index] = oiio.ImageBuf(
-                            str(frame_path), subimage_index, 0
-                        )
-                except Exception as e:
-                    logger.debug(f"Failed to cache subimage {subimage_index} for {frame_path}: {e}")
-                    subimage_buffers = {}
-                    break
-
-        def resolve_layer_buf(layer_name: str) -> oiio.ImageBuf:
-            if layer_map and subimage_buffers:
-                entry = layer_map.get(layer_name)
-                if entry is not None:
-                    base_buf = subimage_buffers.get(entry.subimage_index)
-                    if base_buf is not None:
-                        if entry.channel_indices:
-                            try:
-                                return oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
-                            except Exception as e:
-                                logger.debug(
-                                    f"Failed to slice channels for {layer_name} in {frame_path}: {e}"
-                                )
-                        else:
-                            return base_buf
-
-            return reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map)
+        subimage_buffers = self._build_subimage_buffers(reader, frame_path, layers, layer_map)
 
         # We'll calculate thumb_h based on the first layer's aspect ratio
-        first_buf = resolve_layer_buf(layers[0])
+        first_buf = self._resolve_layer_buf(
+            reader,
+            frame_path,
+            layers[0],
+            layer_map,
+            subimage_buffers,
+        )
         spec = first_buf.spec()
         h, w = spec.height, spec.width
         thumb_w, thumb_h = self.config.resolve_layer_size(w, h)
@@ -146,7 +114,13 @@ class ContactSheetGenerator:
                 if layer_name == layers[0]:
                     layer_buf = first_buf
                 else:
-                    layer_buf = resolve_layer_buf(layer_name)
+                    layer_buf = self._resolve_layer_buf(
+                        reader,
+                        frame_path,
+                        layer_name,
+                        layer_map,
+                        subimage_buffers,
+                    )
 
                 if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
                     scaled_buf = layer_buf
@@ -178,6 +152,64 @@ class ContactSheetGenerator:
                 logger.error(f"Failed to process layer {layer_name} for contact sheet: {e}")
 
         return canvas
+
+    def _build_subimage_buffers(
+        self,
+        reader: ImageReader,
+        frame_path: Path,
+        layers: list[str],
+        layer_map: Optional[dict[str, LayerMapEntry]],
+    ) -> dict[int, oiio.ImageBuf]:
+        if not layer_map or not layers:
+            return {}
+
+        subimage_indices = set()
+        for layer_name in layers:
+            entry = layer_map.get(layer_name)
+            if entry is not None and entry.subimage_index is not None:
+                subimage_indices.add(entry.subimage_index)
+
+        subimage_buffers: dict[int, oiio.ImageBuf] = {}
+        for subimage_index in subimage_indices:
+            try:
+                if hasattr(reader, "read_subimagebuf"):
+                    subimage_buffers[subimage_index] = reader.read_subimagebuf(
+                        frame_path, subimage_index
+                    )
+                else:
+                    subimage_buffers[subimage_index] = oiio.ImageBuf(
+                        str(frame_path), subimage_index, 0
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to cache subimage {subimage_index} for {frame_path}: {e}")
+                return {}
+
+        return subimage_buffers
+
+    def _resolve_layer_buf(
+        self,
+        reader: ImageReader,
+        frame_path: Path,
+        layer_name: str,
+        layer_map: Optional[dict[str, LayerMapEntry]],
+        subimage_buffers: dict[int, oiio.ImageBuf],
+    ) -> oiio.ImageBuf:
+        if layer_map and subimage_buffers:
+            entry = layer_map.get(layer_name)
+            if entry is not None:
+                base_buf = subimage_buffers.get(entry.subimage_index)
+                if base_buf is not None:
+                    if entry.channel_indices:
+                        try:
+                            return oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to slice channels for {layer_name} in {frame_path}: {e}"
+                            )
+                    else:
+                        return base_buf
+
+        return reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map)
 
     def _scale_to_thumbnail(self, buf: oiio.ImageBuf, width: int, height: int) -> oiio.ImageBuf:
         """Scale ImageBuf to thumbnail dimensions and return ImageBuf."""

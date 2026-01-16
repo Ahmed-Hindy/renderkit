@@ -15,6 +15,23 @@ from renderkit.io.oiio_cache import get_shared_image_cache
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_PART_NAMES = {"rgba", "beauty", "default"}
+
+
+def _normalize_part_name(part_name: Any) -> Optional[str]:
+    if part_name is None:
+        return None
+    if isinstance(part_name, bytes):
+        part_name = part_name.decode("utf-8", errors="ignore")
+    part_name = str(part_name).strip()
+    return part_name or None
+
+
+def _is_default_part(part_name: Optional[str]) -> bool:
+    if not part_name:
+        return False
+    return part_name.lower() in _DEFAULT_PART_NAMES
+
 
 class ImageReader(ABC):
     """Abstract base class for image readers."""
@@ -89,6 +106,19 @@ class OIIOReader(ImageReader):
             self._image_cache = get_shared_image_cache()
         return self._image_cache
 
+    def _get_cached_spec(
+        self,
+        cache: Optional[Any],
+        path: Path,
+        subimage_index: int,
+    ) -> Optional[Any]:
+        if cache is None:
+            return None
+        spec = cache.get_imagespec(str(path), subimage_index)
+        if cache.has_error or spec is None or spec.width == 0 or spec.height == 0:
+            return None
+        return spec
+
     def _get_cache_key(self, path: Path) -> tuple[str, float]:
         """Generate cache key based on path and modification time."""
         try:
@@ -127,11 +157,7 @@ class OIIOReader(ImageReader):
 
         try:
             cache = self._get_image_cache()
-            spec = None
-            if cache is not None:
-                spec = cache.get_imagespec(str(path), 0)
-                if cache.has_error or spec is None or spec.width == 0 or spec.height == 0:
-                    spec = None
+            spec = self._get_cached_spec(cache, path, 0)
 
             if spec is None:
                 # Open file once and extract everything
@@ -188,20 +214,15 @@ class OIIOReader(ImageReader):
                     sub_spec = spec
                 else:
                     sub_spec = None
-                    if cache is not None:
-                        sub_spec = cache.get_imagespec(str(path), i)
-                        if cache.has_error or sub_spec is None:
-                            sub_spec = None
+                    sub_spec = self._get_cached_spec(cache, path, i)
                     if sub_spec is None:
                         sub_buf = oiio.ImageBuf(str(path), i, 0)
                         sub_spec = sub_buf.spec()
 
                 # Check subimage name
-                part_name = sub_spec.getattribute("name")
+                part_name = _normalize_part_name(sub_spec.getattribute("name"))
                 if part_name:
-                    if isinstance(part_name, bytes):
-                        part_name = part_name.decode("utf-8")
-                    if part_name.lower() not in ("rgba", "beauty", "default"):
+                    if not _is_default_part(part_name):
                         layers.add(part_name)
                     else:
                         layers.add("RGBA")
@@ -211,7 +232,7 @@ class OIIOReader(ImageReader):
                     if "." in channel_name:
                         layers.add(channel_name.rsplit(".", 1)[0])
                     else:
-                        if not part_name or part_name.lower() in ("rgba", "beauty", "default"):
+                        if not part_name or _is_default_part(part_name):
                             layers.add("RGBA")
 
             # Sort layers with RGBA first
@@ -255,11 +276,7 @@ class OIIOReader(ImageReader):
 
         try:
             cache = self._get_image_cache()
-            spec0 = None
-            if cache is not None:
-                spec0 = cache.get_imagespec(str(path), 0)
-                if cache.has_error or spec0 is None or spec0.width == 0 or spec0.height == 0:
-                    spec0 = None
+            spec0 = self._get_cached_spec(cache, path, 0)
 
             if spec0 is None:
                 temp_buf = oiio.ImageBuf(str(path))
@@ -276,19 +293,13 @@ class OIIOReader(ImageReader):
                 if spec0 is not None and i == 0:
                     sub_spec = spec0
                 else:
-                    sub_spec = None
-                    if cache is not None:
-                        sub_spec = cache.get_imagespec(str(path), i)
-                        if cache.has_error or sub_spec is None:
-                            sub_spec = None
+                    sub_spec = self._get_cached_spec(cache, path, i)
                     if sub_spec is None:
                         sub_buf = oiio.ImageBuf(str(path), i, 0)
                         sub_spec = sub_buf.spec()
-                part_name = sub_spec.getattribute("name")
-                if isinstance(part_name, bytes):
-                    part_name = part_name.decode("utf-8")
+                part_name = _normalize_part_name(sub_spec.getattribute("name"))
 
-                if part_name and part_name.lower() not in ("rgba", "beauty", "default"):
+                if part_name and not _is_default_part(part_name):
                     if part_name not in layer_map:
                         layer_map[part_name] = LayerMapEntry(i, None)
                 elif default_entry is None:
@@ -329,86 +340,25 @@ class OIIOReader(ImageReader):
             raise ImageReadError(f"File does not exist: {path}")
 
         try:
-            # First, find which subimage (part) contains the requested layer
-            subimage_index = 0
-            channel_indices: Optional[tuple[int, ...]] = None
-            use_layer_map = False
+            subimage_index, channel_indices, use_layer_map = self._resolve_subimage_for_layer(
+                path, layer, layer_map, oiio
+            )
 
-            if layer_map is not None:
-                lookup = layer if layer else "RGBA"
-                entry = layer_map.get(lookup)
-                if entry is not None:
-                    subimage_index = entry.subimage_index
-                    channel_indices = entry.channel_indices
-                    use_layer_map = True
-
-            if not use_layer_map and layer and layer != "RGBA":
-                # Quick scan to find the part
-                temp_buf = oiio.ImageBuf(str(path))
-                for i in range(temp_buf.nsubimages):
-                    sub_buf = oiio.ImageBuf(str(path), i, 0)
-                    spec = sub_buf.spec()
-                    part_name = spec.getattribute("name")
-                    if part_name:
-                        if isinstance(part_name, bytes):
-                            part_name = part_name.decode("utf-8")
-                        if part_name == layer:
-                            subimage_index = i
-                            break
-
-                    # Also check channel prefixes in this part
-                    if any(c.startswith(f"{layer}.") for c in spec.channelnames):
-                        subimage_index = i
-                        break
-
-            # Load the correct subimage
             buf = oiio.ImageBuf(str(path), subimage_index, 0)
             if buf.has_error:
                 raise ImageReadError(
                     f"OIIO failed to read {path} (part {subimage_index}): {buf.geterror()}"
                 )
 
-            # Handle layer selection for multi-layer EXRs within the part
-            spec = buf.spec()
-            if not use_layer_map and layer and layer != "RGBA":
-                channel_names = spec.channelnames
-                # Check if we need to filter channels (if it's a grouped layer in this part)
-                indices = []
-                new_names = []
-                found_exact_match = False
-
-                # If the part name IS the layer, we usually want all channels of this part
-                part_name = spec.getattribute("name")
-                if part_name and isinstance(part_name, bytes):
-                    part_name = part_name.decode("utf-8")
-
-                if part_name == layer:
-                    # Keep all channels but clean up prefixes if they exist
-                    for i, name in enumerate(channel_names):
-                        indices.append(i)
-                        new_names.append(name.split(".", 1)[1] if "." in name else name)
-                    found_exact_match = True
-                else:
-                    # Look for prefixed channels
-                    for i, name in enumerate(channel_names):
-                        if name.startswith(f"{layer}."):
-                            indices.append(i)
-                            new_names.append(name.split(".", 1)[1])
-                            found_exact_match = True
-
-                if found_exact_match and indices:
-                    buf = oiio.ImageBufAlgo.channels(buf, tuple(indices), tuple(new_names))
-                    if buf.has_error:
-                        raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
-                elif subimage_index == 0 and not found_exact_match:
-                    logger.warning(
-                        f"Layer {layer} not found in any part of {path}, falling back to beauty."
-                    )
-
-            if use_layer_map and channel_indices:
-                buf = oiio.ImageBufAlgo.channels(buf, channel_indices)
-                if buf.has_error:
-                    raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
+            buf = self._slice_layer_from_buf(
+                buf,
+                layer,
+                subimage_index,
+                use_layer_map,
+                channel_indices,
+                oiio,
+                path,
+            )
 
             # Ensure float32 for downstream processing
             spec = buf.spec()
@@ -429,6 +379,92 @@ class OIIOReader(ImageReader):
         except Exception as e:
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
 
+    def _resolve_subimage_for_layer(
+        self,
+        path: Path,
+        layer: Optional[str],
+        layer_map: Optional[dict[str, LayerMapEntry]],
+        oiio,
+    ) -> tuple[int, Optional[tuple[int, ...]], bool]:
+        subimage_index = 0
+        channel_indices: Optional[tuple[int, ...]] = None
+        use_layer_map = False
+
+        if layer_map is not None:
+            lookup = layer if layer else "RGBA"
+            entry = layer_map.get(lookup)
+            if entry is not None:
+                subimage_index = entry.subimage_index
+                channel_indices = entry.channel_indices
+                use_layer_map = True
+
+        if not use_layer_map and layer and layer != "RGBA":
+            subimage_index = self._scan_subimage_index(path, layer, oiio)
+
+        return subimage_index, channel_indices, use_layer_map
+
+    def _scan_subimage_index(self, path: Path, layer: str, oiio) -> int:
+        temp_buf = oiio.ImageBuf(str(path))
+        for i in range(temp_buf.nsubimages):
+            sub_buf = oiio.ImageBuf(str(path), i, 0)
+            spec = sub_buf.spec()
+            part_name = _normalize_part_name(spec.getattribute("name"))
+            if part_name and part_name == layer:
+                return i
+
+            if any(c.startswith(f"{layer}.") for c in spec.channelnames):
+                return i
+
+        return 0
+
+    def _slice_layer_from_buf(
+        self,
+        buf,
+        layer: Optional[str],
+        subimage_index: int,
+        use_layer_map: bool,
+        channel_indices: Optional[tuple[int, ...]],
+        oiio,
+        path: Path,
+    ):
+        if use_layer_map and channel_indices:
+            buf = oiio.ImageBufAlgo.channels(buf, channel_indices)
+            if buf.has_error:
+                raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
+            return buf
+
+        if not use_layer_map and layer and layer != "RGBA":
+            spec = buf.spec()
+            channel_names = spec.channelnames
+            indices = []
+            new_names = []
+            found_exact_match = False
+
+            part_name = _normalize_part_name(spec.getattribute("name"))
+
+            if part_name == layer:
+                for i, name in enumerate(channel_names):
+                    indices.append(i)
+                    new_names.append(name.split(".", 1)[1] if "." in name else name)
+                found_exact_match = True
+            else:
+                for i, name in enumerate(channel_names):
+                    if name.startswith(f"{layer}."):
+                        indices.append(i)
+                        new_names.append(name.split(".", 1)[1])
+                        found_exact_match = True
+
+            if found_exact_match and indices:
+                buf = oiio.ImageBufAlgo.channels(buf, tuple(indices), tuple(new_names))
+                if buf.has_error:
+                    raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
+            elif subimage_index == 0 and not found_exact_match:
+                logger.warning(
+                    f"Layer {layer} not found in any part of {path}, falling back to beauty."
+                )
+
+        return buf
+
     def read_subimagebuf(self, path: Path, subimage_index: int):
         """Read a specific subimage as an OIIO ImageBuf."""
         try:
@@ -441,30 +477,29 @@ class OIIOReader(ImageReader):
 
         try:
             cache = self._get_image_cache()
-            if cache is not None:
-                spec = cache.get_imagespec(str(path), subimage_index)
-                if not cache.has_error and spec is not None and spec.width and spec.height:
-                    roi = oiio.ROI(
-                        0,
+            spec = self._get_cached_spec(cache, path, subimage_index)
+            if spec is not None and cache is not None:
+                roi = oiio.ROI(
+                    0,
+                    spec.width,
+                    0,
+                    spec.height,
+                    0,
+                    1,
+                    0,
+                    spec.nchannels,
+                )
+                pixels = cache.get_pixels(str(path), subimage_index, 0, roi, oiio.FLOAT)
+                if pixels is not None:
+                    float_spec = oiio.ImageSpec(
                         spec.width,
-                        0,
                         spec.height,
-                        0,
-                        1,
-                        0,
                         spec.nchannels,
+                        oiio.FLOAT,
                     )
-                    pixels = cache.get_pixels(str(path), subimage_index, 0, roi, oiio.FLOAT)
-                    if pixels is not None:
-                        float_spec = oiio.ImageSpec(
-                            spec.width,
-                            spec.height,
-                            spec.nchannels,
-                            oiio.FLOAT,
-                        )
-                        buf = oiio.ImageBuf(float_spec)
-                        if buf.set_pixels(roi, pixels):
-                            return buf
+                    buf = oiio.ImageBuf(float_spec)
+                    if buf.set_pixels(roi, pixels):
+                        return buf
 
             buf = oiio.ImageBuf(str(path), subimage_index, 0)
             if buf.has_error:
