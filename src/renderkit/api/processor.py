@@ -24,6 +24,7 @@ class RenderKit:
         self,
         input_pattern: str,
         output_path: str,
+        prefetch_workers: int = 1,
         fps: Optional[float] = None,
         color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB,
         width: Optional[int] = None,
@@ -41,6 +42,7 @@ class RenderKit:
         Args:
             input_pattern: Input file pattern (e.g., "render.%04d.exr")
             output_path: Output video file path
+            prefetch_workers: Number of concurrent frame reads (1 disables prefetch)
             fps: Frame rate (optional, will try to auto-detect if not provided)
             color_space_preset: Color space conversion preset
             width: Output width (optional, uses source width if not provided)
@@ -65,6 +67,7 @@ class RenderKit:
             ConversionConfigBuilder()
             .with_input_pattern(input_pattern)
             .with_output_path(output_path)
+            .with_prefetch_workers(prefetch_workers)
             .with_fps(fps)
             .with_color_space_preset(color_space_preset)
             .with_codec(codec)

@@ -138,6 +138,7 @@ class ConversionConfig:
 
     input_pattern: str
     output_path: str
+    prefetch_workers: int = 1
     fps: Optional[float] = None
     color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
     width: Optional[int] = None
@@ -157,6 +158,8 @@ class ConversionConfig:
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
+        if self.prefetch_workers <= 0:
+            raise ConfigurationError("Prefetch workers must be greater than 0")
         if self.fps is not None and self.fps <= 0:
             raise ConfigurationError("FPS must be greater than 0")
         if self.width is not None and self.width <= 0:
@@ -175,6 +178,7 @@ class ConversionConfigBuilder:
         """Initialize the builder."""
         self._input_pattern: Optional[str] = None
         self._output_path: Optional[str] = None
+        self._prefetch_workers: int = 1
         self._fps: Optional[float] = None
         self._color_space_preset: ColorSpacePreset = ColorSpacePreset.LINEAR_TO_SRGB
         self._width: Optional[int] = None
@@ -198,6 +202,11 @@ class ConversionConfigBuilder:
     def with_output_path(self, path: str) -> "ConversionConfigBuilder":
         """Set the output video path."""
         self._output_path = path
+        return self
+
+    def with_prefetch_workers(self, workers: int) -> "ConversionConfigBuilder":
+        """Set number of prefetch worker threads for frame reads."""
+        self._prefetch_workers = workers
         return self
 
     def with_fps(self, fps: float) -> "ConversionConfigBuilder":
@@ -270,6 +279,7 @@ class ConversionConfigBuilder:
         return ConversionConfig(
             input_pattern=self._input_pattern,
             output_path=self._output_path,
+            prefetch_workers=self._prefetch_workers,
             fps=self._fps,
             color_space_preset=self._color_space_preset,
             width=self._width,

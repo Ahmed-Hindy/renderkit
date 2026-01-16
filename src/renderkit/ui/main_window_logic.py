@@ -356,6 +356,8 @@ class MainWindowLogicMixin:
         self.codec_combo.setCurrentIndex(0)
         self.keep_resolution_check.setChecked(True)
         self.quality_slider.setValue(10)
+        if hasattr(self, "prefetch_workers_spin"):
+            self.prefetch_workers_spin.setValue(2)
 
         self.burnin_enable_check.setChecked(True)
         self.burnin_frame_check.setChecked(True)
@@ -427,8 +429,10 @@ class MainWindowLogicMixin:
                 self._load_preview()
 
         self.cs_columns_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setEnabled(False)
-        self.cs_thumb_width_spin.setToolTip("Layer size is controlled by the Resolution settings.")
+        self.cs_thumb_width_spin.setEnabled(checked)
+        self.cs_thumb_width_spin.setToolTip(
+            "Thumbnail width for contact sheet layers (ignored if custom resolution is set)."
+        )
         self.cs_padding_spin.setEnabled(checked)
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
@@ -971,6 +975,8 @@ class MainWindowLogicMixin:
                 .with_quality(self.quality_slider.value())
                 .with_layer(self.layer_combo.currentText())
             )
+            if hasattr(self, "prefetch_workers_spin"):
+                config_builder.with_prefetch_workers(self.prefetch_workers_spin.value())
 
             # Color space
             preset, input_space = self._get_current_color_space_config()
@@ -1024,13 +1030,16 @@ class MainWindowLogicMixin:
             if self.cs_enable_check.isChecked():
                 layer_width = None
                 layer_height = None
+                thumbnail_width = None
                 if not self.keep_resolution_check.isChecked():
                     layer_width = self.width_spin.value()
                     layer_height = self.height_spin.value()
+                else:
+                    thumbnail_width = self.cs_thumb_width_spin.value()
 
                 cs_config = ContactSheetConfig(
                     columns=self.cs_columns_spin.value(),
-                    thumbnail_width=None,
+                    thumbnail_width=thumbnail_width,
                     padding=self.cs_padding_spin.value(),
                     show_labels=self.cs_show_labels_check.isChecked(),
                     font_size=self.cs_font_size_spin.value(),
@@ -1302,6 +1311,8 @@ class MainWindowLogicMixin:
         self.settings.setValue("codec_text", self.codec_combo.currentText())
         self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
         self.settings.setValue("quality", self.quality_slider.value())
+        if hasattr(self, "prefetch_workers_spin"):
+            self.settings.setValue("prefetch_workers", self.prefetch_workers_spin.value())
         self.settings.setValue("burnin_enable", self.burnin_enable_check.isChecked())
         self.settings.setValue("burnin_frame", self.burnin_frame_check.isChecked())
         self.settings.setValue("burnin_layer", self.burnin_layer_check.isChecked())
@@ -1356,6 +1367,10 @@ class MainWindowLogicMixin:
             self.settings.value("keep_resolution", True, type=bool)
         )
         self.quality_slider.setValue(self.settings.value("quality", 10, type=int))
+        if hasattr(self, "prefetch_workers_spin"):
+            self.prefetch_workers_spin.setValue(
+                self.settings.value("prefetch_workers", 2, type=int)
+            )
         # Trigger initial toggle states
         self._on_keep_source_fps_toggled(self.keep_source_fps_check.isChecked())
         self._on_keep_frame_range_toggled(self.keep_source_frame_range_check.isChecked())

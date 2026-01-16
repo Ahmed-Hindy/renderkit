@@ -1,5 +1,7 @@
 import logging
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +14,7 @@ from renderkit.exceptions import (
     SequenceDetectionError,
     VideoEncodingError,
 )
-from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.image_reader import ImageReader, ImageReaderFactory
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.contact_sheet import ContactSheetGenerator
@@ -209,16 +211,143 @@ class SequenceConverter:
         scaler = ImageScaler()
         success_count = 0
         last_valid_buf = None
+        prefetch_workers = max(1, self.config.prefetch_workers)
+        prefetch_depth = prefetch_workers
+        contact_sheet_enabled = (
+            self.config.contact_sheet_mode and self.config.contact_sheet_config is not None
+        )
+        pbar = None
+        executor = None
+
+        def _tick_progress(current_index: int) -> None:
+            if progress_callback:
+                if progress_callback(current_index, total_frames) is False:
+                    logger.info("Conversion cancelled by progress callback")
+                    raise ConversionCancelledError("Conversion cancelled by user")
+            elif pbar is not None:
+                pbar.update(1)
 
         try:
-            if progress_callback:
-                # Use provided callback
-                for i, frame_num in enumerate(all_frames):
-                    # Check for cancellation via callback return value
-                    if progress_callback(i, total_frames) is False:
-                        logger.info("Conversion cancelled by progress callback")
-                        raise ConversionCancelledError("Conversion cancelled by user")
+            if progress_callback is None:
+                # Use tqdm for console
+                from tqdm import tqdm
 
+                pbar = tqdm(total=total_frames, desc="Converting frames")
+
+            if prefetch_workers > 1:
+                thread_state = threading.local()
+                layers_for_cs = file_info.layers if contact_sheet_enabled else None
+
+                def _get_thread_resources(frame_path: Path):
+                    reader = getattr(thread_state, "reader", None)
+                    if reader is None:
+                        reader = ImageReaderFactory.create_reader(frame_path)
+                        thread_state.reader = reader
+
+                    if not hasattr(thread_state, "color_converter"):
+                        thread_state.color_converter = ColorSpaceConverter(
+                            self.config.color_space_preset
+                        )
+
+                    if self.config.burnin_config and not hasattr(thread_state, "burnin_processor"):
+                        thread_state.burnin_processor = BurnInProcessor()
+
+                    if contact_sheet_enabled and not hasattr(
+                        thread_state, "contact_sheet_generator"
+                    ):
+                        thread_state.contact_sheet_generator = ContactSheetGenerator(
+                            self.config.contact_sheet_config,
+                            reader=reader,
+                            layers=layers_for_cs,
+                            layer_map=self._layer_map,
+                        )
+
+                    return thread_state
+
+                def _prefetch_frame(frame_num: int):
+                    frame_path = self.sequence.get_file_path(frame_num)
+                    resources = _get_thread_resources(frame_path)
+                    return self._prepare_frame_buf(
+                        frame_num,
+                        output_width,
+                        output_height,
+                        width,
+                        height,
+                        scaler,
+                        input_space,
+                        resources.reader,
+                        resources.color_converter,
+                        getattr(resources, "burnin_processor", None),
+                        contact_sheet_generator=getattr(resources, "contact_sheet_generator", None),
+                    )
+
+                executor = ThreadPoolExecutor(
+                    max_workers=prefetch_workers,
+                    thread_name_prefix="renderkit-prefetch",
+                )
+                pending = {}
+                next_index = 0
+                existing_list = frame_numbers
+
+                def submit_next() -> bool:
+                    nonlocal next_index
+                    if next_index >= len(existing_list):
+                        return False
+                    next_frame = existing_list[next_index]
+                    next_index += 1
+                    pending[next_frame] = executor.submit(_prefetch_frame, next_frame)
+                    return True
+
+                while len(pending) < prefetch_depth and submit_next():
+                    pass
+
+                for i, frame_num in enumerate(all_frames):
+                    _tick_progress(i)
+                    if frame_num in existing_frames:
+                        future = pending.pop(frame_num, None)
+                        if future is None:
+                            future = executor.submit(_prefetch_frame, frame_num)
+
+                        while len(pending) < prefetch_depth and submit_next():
+                            pass
+
+                        try:
+                            result = future.result()
+                        except Exception as e:
+                            logger.warning(f"Failed to process frame {frame_num}: {e}")
+                            result = None
+
+                        if result is not None:
+                            last_valid_buf = result
+                            try:
+                                self.encoder.write_frame(result)
+                                success_count += 1
+                            except VideoEncodingError as e:
+                                logger.error(f"Failed to write frame {frame_num}: {e}")
+                                raise
+                            except Exception as e:
+                                logger.error(f"Failed to write frame {frame_num}: {e}")
+                                raise VideoEncodingError(
+                                    f"Failed to write frame {frame_num}: {e}"
+                                ) from e
+                    else:
+                        # Missing frame - use freeze-frame
+                        if last_valid_buf is not None:
+                            try:
+                                self.encoder.write_frame(last_valid_buf)
+                                success_count += 1
+                                if i == 0 or (i + 1) % 10 == 0:  # Log occasionally
+                                    logger.debug(f"Frame {frame_num} missing, using freeze-frame")
+                            except VideoEncodingError as e:
+                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
+                                raise
+                        else:
+                            logger.warning(
+                                f"Frame {frame_num} missing and no previous frame available. Skipping."
+                            )
+            else:
+                for i, frame_num in enumerate(all_frames):
+                    _tick_progress(i)
                     if frame_num in existing_frames:
                         # Process actual frame
                         result = self._process_single_frame_buf(
@@ -229,9 +358,7 @@ class SequenceConverter:
                             height,
                             scaler,
                             input_space,
-                            self.contact_sheet_generator
-                            if self.config.contact_sheet_mode
-                            else None,
+                            self.contact_sheet_generator if contact_sheet_enabled else None,
                         )
                         if result is not None:
                             last_valid_buf = result
@@ -242,7 +369,7 @@ class SequenceConverter:
                             try:
                                 self.encoder.write_frame(last_valid_buf)
                                 success_count += 1
-                                if i == 0 or (i + 1) % 10 == 0:  # Log occasionally to avoid spam
+                                if i == 0 or (i + 1) % 10 == 0:  # Log occasionally
                                     logger.debug(f"Frame {frame_num} missing, using freeze-frame")
                             except VideoEncodingError as e:
                                 logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
@@ -252,43 +379,8 @@ class SequenceConverter:
                                 f"Frame {frame_num} missing and no previous frame available. Skipping."
                             )
 
-                # Final progress update
+            if progress_callback:
                 progress_callback(total_frames, total_frames)
-            else:
-                # Use tqdm for console
-                from tqdm import tqdm
-
-                for frame_num in tqdm(all_frames, desc="Converting frames"):
-                    if frame_num in existing_frames:
-                        # Process actual frame
-                        result = self._process_single_frame_buf(
-                            frame_num,
-                            output_width,
-                            output_height,
-                            width,
-                            height,
-                            scaler,
-                            input_space,
-                            self.contact_sheet_generator
-                            if self.config.contact_sheet_mode
-                            else None,
-                        )
-                        if result is not None:
-                            last_valid_buf = result
-                            success_count += 1
-                    else:
-                        # Missing frame - use freeze-frame
-                        if last_valid_buf is not None:
-                            try:
-                                self.encoder.write_frame(last_valid_buf)
-                                success_count += 1
-                            except VideoEncodingError as e:
-                                logger.error(f"Failed to write freeze-frame for {frame_num}: {e}")
-                                raise
-                        else:
-                            logger.warning(
-                                f"Frame {frame_num} missing and no previous frame available. Skipping."
-                            )
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -299,9 +391,76 @@ class SequenceConverter:
             logger.info(f"{success_count} frames written")
 
         finally:
+            if executor is not None:
+                try:
+                    executor.shutdown(wait=True, cancel_futures=True)
+                except TypeError:
+                    executor.shutdown(wait=True)
+            if pbar is not None:
+                pbar.close()
             # Clean up
             if self.encoder:
                 self.encoder.close()
+
+    def _prepare_frame_buf(
+        self,
+        frame_num: int,
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+        reader: "ImageReader",
+        color_converter: ColorSpaceConverter,
+        burnin_processor: Optional[BurnInProcessor],
+        contact_sheet_generator: Optional[ContactSheetGenerator] = None,
+    ):
+        """Prepare a single frame buffer without writing it to the encoder."""
+        frame_path = self.sequence.get_file_path(frame_num)
+
+        try:
+            if contact_sheet_generator:
+                buf = contact_sheet_generator.composite_layers(frame_path)
+                spec = buf.spec()
+                width, height = spec.width, spec.height
+            else:
+                buf = reader.read_imagebuf(
+                    frame_path,
+                    layer=self.config.layer,
+                    layer_map=self._layer_map,
+                )
+        except (ImageReadError, Exception) as e:
+            logger.warning(f"Failed to process frame {frame_num}: {e}")
+            return None
+
+        try:
+            buf = color_converter.convert_buf(buf, input_space=input_space)
+        except ColorSpaceError as e:
+            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
+            return None
+
+        if output_width != width or output_height != height:
+            buf = scaler.scale_buf(buf, output_width, output_height)
+
+        if self.config.burnin_config and burnin_processor:
+            try:
+                metadata = {
+                    "frame": frame_num,
+                    "file": frame_path.name,
+                    "fps": self.config.fps,
+                    "layer": self.config.layer or "RGBA",
+                    "colorspace": input_space or "Unknown",
+                }
+                buf = burnin_processor.apply_burnins(
+                    buf,
+                    metadata,
+                    self.config.burnin_config,
+                )
+            except Exception as e:
+                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
+
+        return buf
 
     def _process_single_frame_buf(
         self,
@@ -315,48 +474,21 @@ class SequenceConverter:
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
     ):
         """Process a single frame using ImageBuf-first operations."""
-        frame_path = self.sequence.get_file_path(frame_num)
-
-        try:
-            if contact_sheet_generator:
-                buf = contact_sheet_generator.composite_layers(frame_path)
-                spec = buf.spec()
-                width, height = spec.width, spec.height
-            else:
-                buf = self.reader.read_imagebuf(
-                    frame_path,
-                    layer=self.config.layer,
-                    layer_map=self._layer_map,
-                )
-        except (ImageReadError, Exception) as e:
-            logger.warning(f"Failed to process frame {frame_num}: {e}")
+        buf = self._prepare_frame_buf(
+            frame_num,
+            output_width,
+            output_height,
+            width,
+            height,
+            scaler,
+            input_space,
+            self.reader,
+            self.color_converter,
+            self.burnin_processor,
+            contact_sheet_generator=contact_sheet_generator,
+        )
+        if buf is None:
             return None
-
-        try:
-            buf = self.color_converter.convert_buf(buf, input_space=input_space)
-        except ColorSpaceError as e:
-            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-            return None
-
-        if output_width != width or output_height != height:
-            buf = scaler.scale_buf(buf, output_width, output_height)
-
-        if self.config.burnin_config:
-            try:
-                metadata = {
-                    "frame": frame_num,
-                    "file": frame_path.name,
-                    "fps": self.config.fps,
-                    "layer": self.config.layer or "RGBA",
-                    "colorspace": input_space or "Unknown",
-                }
-                buf = self.burnin_processor.apply_burnins(
-                    buf,
-                    metadata,
-                    self.config.burnin_config,
-                )
-            except Exception as e:
-                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
 
         try:
             self.encoder.write_frame(buf)
