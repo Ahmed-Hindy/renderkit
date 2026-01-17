@@ -115,7 +115,7 @@ class MainWindowLogicMixin:
         self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
 
-        # Contact sheet real-time updates
+        # Preview real-time updates
         self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.cs_padding_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.cs_show_labels_check.toggled.connect(self._on_cs_setting_changed)
@@ -123,6 +123,11 @@ class MainWindowLogicMixin:
         self.preview_scale_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
+        self.burnin_enable_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_frame_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_layer_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_fps_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_opacity_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         self.convert_btn.clicked.connect(self._start_conversion)
@@ -537,6 +542,21 @@ class MainWindowLogicMixin:
             i -= 1
         return i < len(stem) - 1
 
+    def _extract_frame_number(self, path: Path) -> Optional[int]:
+        """Extract trailing frame number from a filename."""
+        stem = path.stem
+        if not stem:
+            return None
+        import re
+
+        match = re.search(r"(\d+)$", stem)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
     def _validate_input_pattern(self, pattern: str) -> tuple[bool, str]:
         if not pattern:
             return False, "No pattern specified."
@@ -624,6 +644,56 @@ class MainWindowLogicMixin:
             # Set layer to None to avoid "Layer not found" warnings when generator handles it
             layer = None
 
+        burnin_config = None
+        burnin_metadata = None
+        if self.burnin_enable_check.isChecked():
+            burnin_elements = []
+            font_size = 20
+            if self.burnin_frame_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="Frame: {frame}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="left",
+                    )
+                )
+            if self.burnin_layer_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="Layer: {layer}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="center",
+                    )
+                )
+            if self.burnin_fps_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="FPS: {fps:.2f}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="right",
+                    )
+                )
+
+            if burnin_elements:
+                burnin_config = BurnInConfig(
+                    elements=burnin_elements,
+                    background_opacity=self.burnin_opacity_spin.value(),
+                )
+                frame_number = self._extract_frame_number(sample_path)
+                burnin_metadata = {
+                    "frame": frame_number if frame_number is not None else 0,
+                    "file": sample_path.name,
+                    "fps": float(self.fps_spin.value()),
+                    "layer": layer or "RGBA",
+                    "colorspace": input_space or "Unknown",
+                }
+
         self._last_preview_path = sample_path
         preview_scale = self.preview_scale_spin.value() / 100.0
         self.preview_widget.load_preview(
@@ -632,6 +702,8 @@ class MainWindowLogicMixin:
             input_space=input_space,
             layer=layer,
             cs_config=cs_config,
+            burnin_config=burnin_config,
+            burnin_metadata=burnin_metadata,
             preview_scale=preview_scale,
         )
 
