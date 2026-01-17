@@ -51,14 +51,21 @@ def test_contact_sheet_toggle_sync(qtbot, qapp):
     # Initially disabled
     window.cs_enable_check.setChecked(False)
     assert window.cs_columns_spin.isEnabled() is False
-    assert window.cs_thumb_width_spin.isEnabled() is False
+    assert window.cs_padding_spin.isEnabled() is False
+    assert window.cs_show_labels_check.isEnabled() is False
+    assert window.cs_font_size_spin.isEnabled() is False
 
     # Enable
     window.cs_enable_check.setChecked(True)
     assert window.cs_columns_spin.isEnabled() is True
-    assert window.cs_thumb_width_spin.isEnabled() is True
+    assert window.cs_padding_spin.isEnabled() is True
+    assert window.cs_show_labels_check.isEnabled() is True
+    assert window.cs_font_size_spin.isEnabled() is True
     assert window.layer_combo.isEnabled() is False
 
     # Disable again
     window.cs_enable_check.setChecked(False)
     assert window.cs_columns_spin.isEnabled() is False
+    assert window.cs_padding_spin.isEnabled() is False
+    assert window.cs_show_labels_check.isEnabled() is False
+    assert window.cs_font_size_spin.isEnabled() is False

@@ -117,7 +117,6 @@ class MainWindowLogicMixin:
 
         # Contact sheet real-time updates
         self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
-        self.cs_thumb_width_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.cs_padding_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.cs_show_labels_check.toggled.connect(self._on_cs_setting_changed)
         self.cs_font_size_spin.valueChanged.connect(self._on_cs_setting_changed)
@@ -367,7 +366,6 @@ class MainWindowLogicMixin:
 
         self.cs_enable_check.setChecked(False)
         self.cs_columns_spin.setValue(4)
-        self.cs_thumb_width_spin.setValue(512)
         self.cs_padding_spin.setValue(4)
         self.cs_show_labels_check.setChecked(True)
         self.cs_font_size_spin.setValue(16)
@@ -382,15 +380,32 @@ class MainWindowLogicMixin:
         """Handle keep resolution checkbox toggle."""
         self.width_spin.setEnabled(not checked)
         self.height_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source resolution. Uncheck to set custom width/height."
+        else:
+            tooltip = "Set custom output resolution."
+        self.width_spin.setToolTip(tooltip)
+        self.height_spin.setToolTip(tooltip)
 
     def _on_keep_frame_range_toggled(self, checked: bool) -> None:
         """Handle keep source frame range checkbox toggle."""
         self.start_frame_spin.setEnabled(not checked)
         self.end_frame_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source frame range. Uncheck to set custom start/end."
+        else:
+            tooltip = "Set custom frame range."
+        self.start_frame_spin.setToolTip(tooltip)
+        self.end_frame_spin.setToolTip(tooltip)
 
     def _on_keep_source_fps_toggled(self, checked: bool) -> None:
         """Handle keep source FPS checkbox toggle."""
         self.fps_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source FPS. Uncheck to set a custom FPS."
+        else:
+            tooltip = "Set custom output FPS."
+        self.fps_spin.setToolTip(tooltip)
 
     def _on_burnin_enable_toggled(self, checked: bool) -> None:
         """Handle burn-in enable checkbox toggle."""
@@ -429,13 +444,20 @@ class MainWindowLogicMixin:
                 self._load_preview()
 
         self.cs_columns_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setToolTip(
-            "Thumbnail width for contact sheet layers (ignored if custom resolution is set)."
-        )
         self.cs_padding_spin.setEnabled(checked)
         self.cs_show_labels_check.setEnabled(checked)
         self.cs_font_size_spin.setEnabled(checked)
+        if checked:
+            self.cs_columns_spin.setToolTip("Number of columns in the contact sheet grid.")
+            self.cs_padding_spin.setToolTip("Padding between thumbnails.")
+            self.cs_show_labels_check.setToolTip("Show layer labels below thumbnails.")
+            self.cs_font_size_spin.setToolTip("Label font size.")
+        else:
+            reason = "Enable Contact Sheet to edit."
+            self.cs_columns_spin.setToolTip(reason)
+            self.cs_padding_spin.setToolTip(reason)
+            self.cs_show_labels_check.setToolTip(reason)
+            self.cs_font_size_spin.setToolTip(reason)
 
     def _on_cs_setting_changed(self, *args) -> None:
         """Handle contact sheet or preview setting changes with debouncing."""
@@ -465,20 +487,32 @@ class MainWindowLogicMixin:
         output_path = self.output_path_edit.text().strip()
         if not output_path:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(False)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(False)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(False)
             return
 
         try:
             path = Path(output_path)
             enabled = path.exists() and path.is_file()
             self.play_btn.setEnabled(enabled)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(enabled)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(enabled)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(enabled)
         except Exception:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(False)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(False)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(False)
 
     def _pattern_has_frame_token(self, filename: str) -> bool:
         if "%" in filename:
@@ -1030,16 +1064,12 @@ class MainWindowLogicMixin:
             if self.cs_enable_check.isChecked():
                 layer_width = None
                 layer_height = None
-                thumbnail_width = None
                 if not self.keep_resolution_check.isChecked():
                     layer_width = self.width_spin.value()
                     layer_height = self.height_spin.value()
-                else:
-                    thumbnail_width = self.cs_thumb_width_spin.value()
 
                 cs_config = ContactSheetConfig(
                     columns=self.cs_columns_spin.value(),
-                    thumbnail_width=thumbnail_width,
                     padding=self.cs_padding_spin.value(),
                     show_labels=self.cs_show_labels_check.isChecked(),
                     font_size=self.cs_font_size_spin.value(),
@@ -1105,6 +1135,8 @@ class MainWindowLogicMixin:
         self._is_cancelling = False
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_label.setText("Starting conversion...")
@@ -1168,6 +1200,8 @@ class MainWindowLogicMixin:
                 self._set_status_icons("cancelled")
                 if hasattr(self, "progress_play_btn"):
                     self.progress_play_btn.setVisible(False)
+                if hasattr(self, "progress_folder_btn"):
+                    self.progress_folder_btn.setVisible(False)
         else:
             QApplication.instance().quit()
 
@@ -1198,7 +1232,9 @@ class MainWindowLogicMixin:
         self._set_status_icons("success")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(True)
-            self._update_play_button_state()
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(True)
+        self._update_play_button_state()
 
         output_path = Path(self.output_path_edit.text().strip()).absolute()
         self._ping_user("Conversion completed", f"Output: {output_path}")
@@ -1254,6 +1290,8 @@ class MainWindowLogicMixin:
         self._set_status_icons("cancelled")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
 
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
@@ -1270,6 +1308,8 @@ class MainWindowLogicMixin:
         self._set_status_icons("error")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
 
         # Determine error type for better messaging if possible
         full_msg = f"Conversion failed:\n\n{error_msg}"
@@ -1291,6 +1331,22 @@ class MainWindowLogicMixin:
             QMessageBox.warning(
                 self, "Error", f"Could not open the file with the default player:\n{path}"
             )
+
+    def _open_output_folder(self) -> None:
+        """Open the output folder in the system file browser."""
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            return
+
+        path = Path(output_path).absolute()
+        if not path.exists():
+            QMessageBox.warning(self, "File Not Found", f"Output file does not exist:\n{path}")
+            return
+
+        folder = path.parent
+        success = QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        if not success:
+            QMessageBox.warning(self, "Error", f"Could not open the output folder:\n{folder}")
 
     def _on_log_message(self, message: str) -> None:
         """Handle log message from worker."""
@@ -1322,7 +1378,6 @@ class MainWindowLogicMixin:
         # Contact Sheet settings
         self.settings.setValue("cs_enable", self.cs_enable_check.isChecked())
         self.settings.setValue("cs_columns", self.cs_columns_spin.value())
-        self.settings.setValue("cs_thumb_width", self.cs_thumb_width_spin.value())
         self.settings.setValue("cs_padding", self.cs_padding_spin.value())
         self.settings.setValue("cs_show_labels", self.cs_show_labels_check.isChecked())
         self.settings.setValue("cs_font_size", self.cs_font_size_spin.value())
@@ -1387,7 +1442,6 @@ class MainWindowLogicMixin:
         # Contact Sheet settings
         self.cs_enable_check.setChecked(self.settings.value("cs_enable", False, type=bool))
         self.cs_columns_spin.setValue(self.settings.value("cs_columns", 4, type=int))
-        self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
         self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
         self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 16, type=int))

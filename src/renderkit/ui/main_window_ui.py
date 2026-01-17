@@ -469,7 +469,21 @@ class MainWindowUiMixin:
             self.play_btn.setToolTip("Open the conversion result in the default system player.")
             self.play_btn.setObjectName("IconButton")
             self.play_btn.setIcon(icon_manager.get_icon("play"))
-        layout.addWidget(self.play_btn)
+        if not hasattr(self, "open_output_btn") or self.open_output_btn is None:
+            self.open_output_btn = QPushButton("Open Output Folder")
+            self.open_output_btn.setEnabled(False)
+            self.open_output_btn.clicked.connect(self._open_output_folder)
+            self.open_output_btn.setToolTip("Open the output folder in the system file browser.")
+            self.open_output_btn.setObjectName("IconButton")
+            self.open_output_btn.setIcon(icon_manager.get_icon("file_folder"))
+
+        output_actions_layout = QHBoxLayout()
+        output_actions_layout.setContentsMargins(0, 0, 0, 0)
+        output_actions_layout.setSpacing(8)
+        output_actions_layout.addWidget(self.play_btn)
+        output_actions_layout.addWidget(self.open_output_btn)
+        output_actions_layout.addStretch()
+        layout.addLayout(output_actions_layout)
 
         return layout
 
@@ -511,6 +525,13 @@ class MainWindowUiMixin:
         self.progress_play_btn.setToolTip("Play output")
         self.progress_play_btn.setVisible(False)
         self.progress_play_btn.clicked.connect(self._play_output)
+        self.progress_folder_btn = QPushButton()
+        self.progress_folder_btn.setFixedSize(22, 22)
+        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder"))
+        self.progress_folder_btn.setIconSize(QSize(14, 14))
+        self.progress_folder_btn.setToolTip("Open output folder")
+        self.progress_folder_btn.setVisible(False)
+        self.progress_folder_btn.clicked.connect(self._open_output_folder)
 
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -518,6 +539,7 @@ class MainWindowUiMixin:
         status_layout.addStretch()
         status_layout.addWidget(self.progress_label)
         status_layout.addWidget(self.progress_play_btn)
+        status_layout.addWidget(self.progress_folder_btn)
         status_layout.addStretch()
         progress_layout.addLayout(status_layout)
 
@@ -705,12 +727,6 @@ class MainWindowUiMixin:
         self.cs_columns_spin.setRange(1, 20)
         self.cs_columns_spin.setValue(4)
         form_layout.addRow("Columns:", self.cs_columns_spin)
-
-        self.cs_thumb_width_spin = NoWheelSpinBox()
-        self.cs_thumb_width_spin.setRange(128, 4096)
-        self.cs_thumb_width_spin.setValue(512)
-        self.cs_thumb_width_spin.setSuffix(" px")
-        form_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
 
         self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
