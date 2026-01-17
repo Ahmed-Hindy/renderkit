@@ -1,12 +1,13 @@
 """Custom widgets for the UI."""
 
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import OpenImageIO as oiio
 
-from renderkit.core.config import ContactSheetConfig
+from renderkit.core.config import BurnInConfig, ContactSheetConfig
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
@@ -30,6 +31,8 @@ from renderkit.ui.qt_compat import (
     Signal,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class PreviewWorker(QThread):
     """Worker thread for loading preview image."""
@@ -44,6 +47,8 @@ class PreviewWorker(QThread):
         input_space: Optional[str] = None,
         layer: Optional[str] = None,
         cs_config: Optional[ContactSheetConfig] = None,
+        burnin_config: Optional[BurnInConfig] = None,
+        burnin_metadata: Optional[dict[str, Any]] = None,
         preview_scale: float = 1.0,
     ) -> None:
         """Initialize preview worker.
@@ -54,6 +59,8 @@ class PreviewWorker(QThread):
             input_space: Optional explicit input color space
             layer: Optional EXR layer to load
             cs_config: Optional contact sheet configuration
+            burnin_config: Optional burn-in configuration
+            burnin_metadata: Optional burn-in metadata for token replacement
         """
         super().__init__()
         self.file_path = file_path
@@ -61,6 +68,8 @@ class PreviewWorker(QThread):
         self.input_space = input_space
         self.layer = layer
         self.cs_config = cs_config
+        self.burnin_config = burnin_config
+        self.burnin_metadata = burnin_metadata
         self.preview_scale = preview_scale
 
     def run(self) -> None:
@@ -90,6 +99,19 @@ class PreviewWorker(QThread):
             # Convert color space
             converter = ColorSpaceConverter(self.color_space)
             buf = converter.convert_buf(buf, input_space=self.input_space)
+
+            if self.burnin_config and self.burnin_metadata:
+                try:
+                    from renderkit.processing.burnin import BurnInProcessor
+
+                    processor = BurnInProcessor()
+                    buf = processor.apply_burnins(
+                        buf,
+                        self.burnin_metadata,
+                        self.burnin_config,
+                    )
+                except Exception as e:
+                    logger.warning(f"Preview burn-in failed: {e}")
 
             image = buf.get_pixels(oiio.FLOAT)
             if image is None or image.size == 0:
@@ -430,6 +452,8 @@ class PreviewWidget(QWidget):
         input_space: Optional[str] = None,
         layer: Optional[str] = None,
         cs_config: Optional[ContactSheetConfig] = None,
+        burnin_config: Optional[BurnInConfig] = None,
+        burnin_metadata: Optional[dict[str, Any]] = None,
         preview_scale: float = 1.0,
     ) -> None:
         """Load preview from file.
@@ -440,6 +464,8 @@ class PreviewWidget(QWidget):
             input_space: Optional explicit input color space
             layer: Optional EXR layer
             cs_config: Optional contact sheet configuration
+            burnin_config: Optional burn-in configuration
+            burnin_metadata: Optional burn-in metadata for token replacement
             preview_scale: Scaling factor for preview performance
         """
         # Safety: Never terminate() a thread busy with I/O (like OIIO).
@@ -476,6 +502,8 @@ class PreviewWidget(QWidget):
             input_space=input_space,
             layer=layer,
             cs_config=cs_config,
+            burnin_config=burnin_config,
+            burnin_metadata=burnin_metadata,
             preview_scale=preview_scale,
         )
         self.worker.preview_ready.connect(self._on_preview_ready)

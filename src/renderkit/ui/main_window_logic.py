@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 from pathlib import Path
@@ -115,15 +116,18 @@ class MainWindowLogicMixin:
         self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
 
-        # Contact sheet real-time updates
+        # Preview real-time updates
         self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
-        self.cs_thumb_width_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.cs_padding_spin.valueChanged.connect(self._on_cs_setting_changed)
-        self.cs_show_labels_check.toggled.connect(self._on_cs_setting_changed)
-        self.cs_font_size_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.preview_scale_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
+        self.burnin_enable_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_frame_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_layer_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_fps_check.toggled.connect(self._on_cs_setting_changed)
+        self.burnin_opacity_spin.valueChanged.connect(self._on_cs_setting_changed)
+        self.burnin_font_size_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         self.convert_btn.clicked.connect(self._start_conversion)
@@ -363,14 +367,12 @@ class MainWindowLogicMixin:
         self.burnin_frame_check.setChecked(True)
         self.burnin_layer_check.setChecked(True)
         self.burnin_fps_check.setChecked(True)
+        self.burnin_font_size_spin.setValue(20)
         self.burnin_opacity_spin.setValue(30)
 
         self.cs_enable_check.setChecked(False)
         self.cs_columns_spin.setValue(4)
-        self.cs_thumb_width_spin.setValue(512)
         self.cs_padding_spin.setValue(4)
-        self.cs_show_labels_check.setChecked(True)
-        self.cs_font_size_spin.setValue(16)
         self.preview_scale_spin.setValue(75)
         if hasattr(self, "overwrite_check"):
             self.overwrite_check.setChecked(True)
@@ -382,21 +384,39 @@ class MainWindowLogicMixin:
         """Handle keep resolution checkbox toggle."""
         self.width_spin.setEnabled(not checked)
         self.height_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source resolution. Uncheck to set custom width/height."
+        else:
+            tooltip = "Set custom output resolution."
+        self.width_spin.setToolTip(tooltip)
+        self.height_spin.setToolTip(tooltip)
 
     def _on_keep_frame_range_toggled(self, checked: bool) -> None:
         """Handle keep source frame range checkbox toggle."""
         self.start_frame_spin.setEnabled(not checked)
         self.end_frame_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source frame range. Uncheck to set custom start/end."
+        else:
+            tooltip = "Set custom frame range."
+        self.start_frame_spin.setToolTip(tooltip)
+        self.end_frame_spin.setToolTip(tooltip)
 
     def _on_keep_source_fps_toggled(self, checked: bool) -> None:
         """Handle keep source FPS checkbox toggle."""
         self.fps_spin.setEnabled(not checked)
+        if checked:
+            tooltip = "Using source FPS. Uncheck to set a custom FPS."
+        else:
+            tooltip = "Set custom output FPS."
+        self.fps_spin.setToolTip(tooltip)
 
     def _on_burnin_enable_toggled(self, checked: bool) -> None:
         """Handle burn-in enable checkbox toggle."""
         self.burnin_frame_check.setEnabled(checked)
         self.burnin_layer_check.setEnabled(checked)
         self.burnin_fps_check.setEnabled(checked)
+        self.burnin_font_size_spin.setEnabled(checked)
         self.burnin_opacity_spin.setEnabled(checked)
 
     def _on_cs_enable_toggled(self, checked: bool) -> None:
@@ -429,13 +449,14 @@ class MainWindowLogicMixin:
                 self._load_preview()
 
         self.cs_columns_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setEnabled(checked)
-        self.cs_thumb_width_spin.setToolTip(
-            "Thumbnail width for contact sheet layers (ignored if custom resolution is set)."
-        )
         self.cs_padding_spin.setEnabled(checked)
-        self.cs_show_labels_check.setEnabled(checked)
-        self.cs_font_size_spin.setEnabled(checked)
+        if checked:
+            self.cs_columns_spin.setToolTip("Number of columns in the contact sheet grid.")
+            self.cs_padding_spin.setToolTip("Padding between thumbnails.")
+        else:
+            reason = "Enable Contact Sheet to edit."
+            self.cs_columns_spin.setToolTip(reason)
+            self.cs_padding_spin.setToolTip(reason)
 
     def _on_cs_setting_changed(self, *args) -> None:
         """Handle contact sheet or preview setting changes with debouncing."""
@@ -465,20 +486,32 @@ class MainWindowLogicMixin:
         output_path = self.output_path_edit.text().strip()
         if not output_path:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(False)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(False)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(False)
             return
 
         try:
             path = Path(output_path)
             enabled = path.exists() and path.is_file()
             self.play_btn.setEnabled(enabled)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(enabled)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(enabled)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(enabled)
         except Exception:
             self.play_btn.setEnabled(False)
+            if hasattr(self, "open_output_btn"):
+                self.open_output_btn.setEnabled(False)
             if hasattr(self, "progress_play_btn"):
                 self.progress_play_btn.setEnabled(False)
+            if hasattr(self, "progress_folder_btn"):
+                self.progress_folder_btn.setEnabled(False)
 
     def _pattern_has_frame_token(self, filename: str) -> bool:
         if "%" in filename:
@@ -502,6 +535,21 @@ class MainWindowLogicMixin:
         while i >= 0 and stem[i].isdigit():
             i -= 1
         return i < len(stem) - 1
+
+    def _extract_frame_number(self, path: Path) -> Optional[int]:
+        """Extract trailing frame number from a filename."""
+        stem = path.stem
+        if not stem:
+            return None
+        import re
+
+        match = re.search(r"(\d+)$", stem)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
 
     def _validate_input_pattern(self, pattern: str) -> tuple[bool, str]:
         if not pattern:
@@ -545,7 +593,6 @@ class MainWindowLogicMixin:
         """Load preview of first frame."""
         pattern = self.input_pattern_combo.currentText().strip()
         if not pattern:
-            QMessageBox.warning(self, "No Pattern", "Please specify an input pattern first.")
             return
 
         try:
@@ -577,18 +624,72 @@ class MainWindowLogicMixin:
                 layer_width = self.width_spin.value()
                 layer_height = self.height_spin.value()
 
+            show_labels = (
+                self.burnin_enable_check.isChecked() and self.burnin_layer_check.isChecked()
+            )
             cs_config = ContactSheetConfig(
                 columns=self.cs_columns_spin.value(),
                 thumbnail_width=None,
                 padding=self.cs_padding_spin.value(),
-                show_labels=self.cs_show_labels_check.isChecked(),
-                font_size=self.cs_font_size_spin.value(),
+                show_labels=show_labels,
+                font_size=self.burnin_font_size_spin.value(),
                 background_color=(0.1, 0.1, 0.1, 1.0),  # Dark background for preview
                 layer_width=layer_width,
                 layer_height=layer_height,
             )
             # Set layer to None to avoid "Layer not found" warnings when generator handles it
             layer = None
+
+        burnin_config = None
+        burnin_metadata = None
+        if self.burnin_enable_check.isChecked():
+            burnin_elements = []
+            font_size = self.burnin_font_size_spin.value()
+            if self.burnin_frame_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="Frame: {frame}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="left",
+                    )
+                )
+            if self.burnin_layer_check.isChecked():
+                if not self.cs_enable_check.isChecked():
+                    burnin_elements.append(
+                        BurnInElement(
+                            text_template="Layer: {layer}",
+                            x=0,
+                            y=10,
+                            font_size=font_size,
+                            alignment="center",
+                        )
+                    )
+            if self.burnin_fps_check.isChecked():
+                burnin_elements.append(
+                    BurnInElement(
+                        text_template="FPS: {fps:.2f}",
+                        x=0,
+                        y=10,
+                        font_size=font_size,
+                        alignment="right",
+                    )
+                )
+
+            if burnin_elements:
+                burnin_config = BurnInConfig(
+                    elements=burnin_elements,
+                    background_opacity=self.burnin_opacity_spin.value(),
+                )
+                frame_number = self._extract_frame_number(sample_path)
+                burnin_metadata = {
+                    "frame": frame_number if frame_number is not None else 0,
+                    "file": sample_path.name,
+                    "fps": float(self.fps_spin.value()),
+                    "layer": layer or "RGBA",
+                    "colorspace": input_space or "Unknown",
+                }
 
         self._last_preview_path = sample_path
         preview_scale = self.preview_scale_spin.value() / 100.0
@@ -598,6 +699,8 @@ class MainWindowLogicMixin:
             input_space=input_space,
             layer=layer,
             cs_config=cs_config,
+            burnin_config=burnin_config,
+            burnin_metadata=burnin_metadata,
             preview_scale=preview_scale,
         )
 
@@ -839,7 +942,7 @@ class MainWindowLogicMixin:
                 logger.info("No specific Color Space metadata found.")
 
             # Update layers
-            layers = file_info.layers
+            layers = file_info.layers or ["RGBA"]
             self.layer_combo.blockSignals(True)
             self.layer_combo.clear()
             self.layer_combo.addItems(layers)
@@ -855,6 +958,16 @@ class MainWindowLogicMixin:
             if len(layers) > 1:
                 logger.info(f"Found {len(layers)} layers.")
                 logger.debug(f"Found {len(layers)} layers: {', '.join(layers)}")
+
+            # Contact sheet columns: cap by AOV count and auto-pick a reasonable default.
+            max_cols = max(1, len(layers))
+            suggested_cols = max(1, min(max_cols, int(math.ceil(math.sqrt(max_cols)))))
+            self.cs_columns_spin.setMaximum(max_cols)
+            current_cols = self.cs_columns_spin.value()
+            if current_cols > max_cols:
+                self.cs_columns_spin.setValue(max_cols)
+            elif current_cols == 4:
+                self.cs_columns_spin.setValue(suggested_cols)
 
             # Update FPS if available
             if file_info.fps:
@@ -908,6 +1021,13 @@ class MainWindowLogicMixin:
         self.layer_combo.setEnabled(False)
         self.layer_combo.blockSignals(False)
 
+        # Contact sheet columns: fallback to a single layer.
+        self.cs_columns_spin.setMaximum(1)
+        if self.cs_columns_spin.value() > 1:
+            self.cs_columns_spin.setValue(1)
+        elif self.cs_columns_spin.value() == 4:
+            self.cs_columns_spin.setValue(1)
+
         # Update sequence info
         info_text = (
             f"Detected {frame_count} frames\n"
@@ -944,7 +1064,6 @@ class MainWindowLogicMixin:
         """Start the conversion process."""
         # Validate inputs
         if not self.input_pattern_combo.currentText().strip():
-            QMessageBox.warning(self, "Validation Error", "Please specify an input pattern.")
             return
 
         output_path_str = self.output_path_edit.text().strip()
@@ -1030,19 +1149,18 @@ class MainWindowLogicMixin:
             if self.cs_enable_check.isChecked():
                 layer_width = None
                 layer_height = None
-                thumbnail_width = None
                 if not self.keep_resolution_check.isChecked():
                     layer_width = self.width_spin.value()
                     layer_height = self.height_spin.value()
-                else:
-                    thumbnail_width = self.cs_thumb_width_spin.value()
 
+                show_labels = (
+                    self.burnin_enable_check.isChecked() and self.burnin_layer_check.isChecked()
+                )
                 cs_config = ContactSheetConfig(
                     columns=self.cs_columns_spin.value(),
-                    thumbnail_width=thumbnail_width,
                     padding=self.cs_padding_spin.value(),
-                    show_labels=self.cs_show_labels_check.isChecked(),
-                    font_size=self.cs_font_size_spin.value(),
+                    show_labels=show_labels,
+                    font_size=self.burnin_font_size_spin.value(),
                     layer_width=layer_width,
                     layer_height=layer_height,
                 )
@@ -1050,7 +1168,7 @@ class MainWindowLogicMixin:
 
             # Setup burn-ins
             burnin_elements = []
-            font_size = 20
+            font_size = self.burnin_font_size_spin.value()
             if self.burnin_frame_check.isChecked():
                 burnin_elements.append(
                     BurnInElement(
@@ -1062,15 +1180,16 @@ class MainWindowLogicMixin:
                     )
                 )
             if self.burnin_layer_check.isChecked():
-                burnin_elements.append(
-                    BurnInElement(
-                        text_template="Layer: {layer}",
-                        x=0,
-                        y=10,
-                        font_size=font_size,
-                        alignment="center",
+                if not self.cs_enable_check.isChecked():
+                    burnin_elements.append(
+                        BurnInElement(
+                            text_template="Layer: {layer}",
+                            x=0,
+                            y=10,
+                            font_size=font_size,
+                            alignment="center",
+                        )
                     )
-                )
             if self.burnin_fps_check.isChecked():
                 burnin_elements.append(
                     BurnInElement(
@@ -1105,6 +1224,8 @@ class MainWindowLogicMixin:
         self._is_cancelling = False
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_label.setText("Starting conversion...")
@@ -1168,6 +1289,8 @@ class MainWindowLogicMixin:
                 self._set_status_icons("cancelled")
                 if hasattr(self, "progress_play_btn"):
                     self.progress_play_btn.setVisible(False)
+                if hasattr(self, "progress_folder_btn"):
+                    self.progress_folder_btn.setVisible(False)
         else:
             QApplication.instance().quit()
 
@@ -1198,7 +1321,9 @@ class MainWindowLogicMixin:
         self._set_status_icons("success")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(True)
-            self._update_play_button_state()
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(True)
+        self._update_play_button_state()
 
         output_path = Path(self.output_path_edit.text().strip()).absolute()
         self._ping_user("Conversion completed", f"Output: {output_path}")
@@ -1254,6 +1379,8 @@ class MainWindowLogicMixin:
         self._set_status_icons("cancelled")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
 
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
@@ -1270,6 +1397,8 @@ class MainWindowLogicMixin:
         self._set_status_icons("error")
         if hasattr(self, "progress_play_btn"):
             self.progress_play_btn.setVisible(False)
+        if hasattr(self, "progress_folder_btn"):
+            self.progress_folder_btn.setVisible(False)
 
         # Determine error type for better messaging if possible
         full_msg = f"Conversion failed:\n\n{error_msg}"
@@ -1291,6 +1420,22 @@ class MainWindowLogicMixin:
             QMessageBox.warning(
                 self, "Error", f"Could not open the file with the default player:\n{path}"
             )
+
+    def _open_output_folder(self) -> None:
+        """Open the output folder in the system file browser."""
+        output_path = self.output_path_edit.text().strip()
+        if not output_path:
+            return
+
+        path = Path(output_path).absolute()
+        if not path.exists():
+            QMessageBox.warning(self, "File Not Found", f"Output file does not exist:\n{path}")
+            return
+
+        folder = path.parent
+        success = QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        if not success:
+            QMessageBox.warning(self, "Error", f"Could not open the output folder:\n{folder}")
 
     def _on_log_message(self, message: str) -> None:
         """Handle log message from worker."""
@@ -1317,15 +1462,13 @@ class MainWindowLogicMixin:
         self.settings.setValue("burnin_frame", self.burnin_frame_check.isChecked())
         self.settings.setValue("burnin_layer", self.burnin_layer_check.isChecked())
         self.settings.setValue("burnin_fps", self.burnin_fps_check.isChecked())
+        self.settings.setValue("burnin_font_size", self.burnin_font_size_spin.value())
         self.settings.setValue("burnin_opacity", self.burnin_opacity_spin.value())
 
         # Contact Sheet settings
         self.settings.setValue("cs_enable", self.cs_enable_check.isChecked())
         self.settings.setValue("cs_columns", self.cs_columns_spin.value())
-        self.settings.setValue("cs_thumb_width", self.cs_thumb_width_spin.value())
         self.settings.setValue("cs_padding", self.cs_padding_spin.value())
-        self.settings.setValue("cs_show_labels", self.cs_show_labels_check.isChecked())
-        self.settings.setValue("cs_font_size", self.cs_font_size_spin.value())
         self.settings.setValue("preview_scale", self.preview_scale_spin.value())
 
     def _on_progress_update(self, current: int, total: int) -> None:
@@ -1382,15 +1525,13 @@ class MainWindowLogicMixin:
         self.burnin_frame_check.setChecked(self.settings.value("burnin_frame", True, type=bool))
         self.burnin_layer_check.setChecked(self.settings.value("burnin_layer", True, type=bool))
         self.burnin_fps_check.setChecked(self.settings.value("burnin_fps", True, type=bool))
+        self.burnin_font_size_spin.setValue(self.settings.value("burnin_font_size", 20, type=int))
         self.burnin_opacity_spin.setValue(self.settings.value("burnin_opacity", 30, type=int))
 
         # Contact Sheet settings
         self.cs_enable_check.setChecked(self.settings.value("cs_enable", False, type=bool))
         self.cs_columns_spin.setValue(self.settings.value("cs_columns", 4, type=int))
-        self.cs_thumb_width_spin.setValue(self.settings.value("cs_thumb_width", 512, type=int))
         self.cs_padding_spin.setValue(self.settings.value("cs_padding", 4, type=int))
-        self.cs_show_labels_check.setChecked(self.settings.value("cs_show_labels", True, type=bool))
-        self.cs_font_size_spin.setValue(self.settings.value("cs_font_size", 16, type=int))
         self.preview_scale_spin.setValue(self.settings.value("preview_scale", 75, type=int))
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())

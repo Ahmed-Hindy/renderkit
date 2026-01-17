@@ -104,7 +104,7 @@ def main() -> None:
     default=None,
     help="Contact sheet thumbnail width (default: source resolution)",
 )
-@click.option("--cs-padding", type=int, default=10, help="Contact sheet padding (default: 10)")
+@click.option("--cs-padding", type=int, default=4, help="Contact sheet padding (default: 4)")
 @click.option("--cs-no-labels", is_flag=True, default=False, help="Disable contact sheet labels")
 @click.option(
     "--profile",
@@ -288,7 +288,7 @@ def convert_exr_sequence(
     default=None,
     help="Width of each thumbnail (default: source resolution)",
 )
-@click.option("--padding", type=int, default=10, help="Padding between thumbnails (default: 10)")
+@click.option("--padding", type=int, default=4, help="Padding between thumbnails (default: 4)")
 @click.option(
     "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
 )

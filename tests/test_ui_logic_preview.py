@@ -39,20 +39,24 @@ class _DummyPreviewWidget:
 
 
 class _DummyWindow(main_window_logic.MainWindowLogicMixin):
-    def __init__(self, cs_enabled: bool) -> None:
+    def __init__(self, cs_enabled: bool, burnin_enabled: bool = False) -> None:
         self.preview_widget = _DummyPreviewWidget()
         self.preview_scale_spin = _DummyValue(100)
         self.keep_resolution_check = _DummyCheck(True)
         self.width_spin = _DummyValue(1920)
         self.height_spin = _DummyValue(1080)
         self.cs_enable_check = _DummyCheck(cs_enabled)
-        self.cs_show_labels_check = _DummyCheck(True)
         self.cs_columns_spin = _DummyValue(4)
-        self.cs_thumb_width_spin = _DummyValue(512)
         self.cs_padding_spin = _DummyValue(4)
-        self.cs_font_size_spin = _DummyValue(12)
         self.layer_combo = _DummyCombo("RGBA")
         self.color_space_combo = _DummyCombo("Linear")
+        self.fps_spin = _DummyValue(24)
+        self.burnin_enable_check = _DummyCheck(burnin_enabled)
+        self.burnin_frame_check = _DummyCheck(True)
+        self.burnin_layer_check = _DummyCheck(True)
+        self.burnin_fps_check = _DummyCheck(True)
+        self.burnin_font_size_spin = _DummyValue(20)
+        self.burnin_opacity_spin = _DummyValue(30)
         self._ocio_role_display_map = {}
         self._last_preview_path = None
 
@@ -62,7 +66,7 @@ def test_load_preview_from_path_uses_load_preview(tmp_path: Path) -> None:
     sample_path = tmp_path / "render.0001.exr"
     sample_path.write_text("data")
 
-    window = _DummyWindow(cs_enabled=False)
+    window = _DummyWindow(cs_enabled=False, burnin_enabled=False)
     window._load_preview_from_path(sample_path)
 
     assert window.preview_widget.calls
@@ -71,6 +75,8 @@ def test_load_preview_from_path_uses_load_preview(tmp_path: Path) -> None:
     assert args[1] == ColorSpacePreset.OCIO_CONVERSION
     assert kwargs["layer"] == "RGBA"
     assert kwargs["cs_config"] is None
+    assert kwargs["burnin_config"] is None
+    assert kwargs["burnin_metadata"] is None
     assert kwargs["preview_scale"] == 1
 
 
@@ -79,7 +85,7 @@ def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> N
     sample_path = tmp_path / "render.0001.exr"
     sample_path.write_text("data")
 
-    window = _DummyWindow(cs_enabled=True)
+    window = _DummyWindow(cs_enabled=True, burnin_enabled=True)
     window._load_preview_from_path(sample_path)
 
     args, kwargs = window.preview_widget.calls[-1]
@@ -91,3 +97,22 @@ def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> N
     assert cs_config.thumbnail_width is None
     assert cs_config.padding == 4
     assert cs_config.show_labels is True
+    assert cs_config.font_size == 20
+
+
+def test_load_preview_from_path_builds_burnin_config(tmp_path: Path) -> None:
+    """Ensure burn-in config is passed when enabled."""
+    sample_path = tmp_path / "render.0100.exr"
+    sample_path.write_text("data")
+
+    window = _DummyWindow(cs_enabled=False, burnin_enabled=True)
+    window._load_preview_from_path(sample_path)
+
+    _, kwargs = window.preview_widget.calls[-1]
+    burnin_config = kwargs["burnin_config"]
+    assert burnin_config is not None
+    assert burnin_config.background_opacity == 30
+    metadata = kwargs["burnin_metadata"]
+    assert metadata is not None
+    assert metadata["frame"] == 100
+    assert metadata["file"] == "render.0100.exr"

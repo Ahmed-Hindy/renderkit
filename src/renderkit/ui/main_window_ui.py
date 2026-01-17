@@ -469,7 +469,21 @@ class MainWindowUiMixin:
             self.play_btn.setToolTip("Open the conversion result in the default system player.")
             self.play_btn.setObjectName("IconButton")
             self.play_btn.setIcon(icon_manager.get_icon("play"))
-        layout.addWidget(self.play_btn)
+        if not hasattr(self, "open_output_btn") or self.open_output_btn is None:
+            self.open_output_btn = QPushButton("Open Output Folder")
+            self.open_output_btn.setEnabled(False)
+            self.open_output_btn.clicked.connect(self._open_output_folder)
+            self.open_output_btn.setToolTip("Open the output folder in the system file browser.")
+            self.open_output_btn.setObjectName("IconButton")
+            self.open_output_btn.setIcon(icon_manager.get_icon("file_folder"))
+
+        output_actions_layout = QHBoxLayout()
+        output_actions_layout.setContentsMargins(0, 0, 0, 0)
+        output_actions_layout.setSpacing(8)
+        output_actions_layout.addWidget(self.play_btn)
+        output_actions_layout.addWidget(self.open_output_btn)
+        output_actions_layout.addStretch()
+        layout.addLayout(output_actions_layout)
 
         return layout
 
@@ -511,6 +525,13 @@ class MainWindowUiMixin:
         self.progress_play_btn.setToolTip("Play output")
         self.progress_play_btn.setVisible(False)
         self.progress_play_btn.clicked.connect(self._play_output)
+        self.progress_folder_btn = QPushButton()
+        self.progress_folder_btn.setFixedSize(22, 22)
+        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder"))
+        self.progress_folder_btn.setIconSize(QSize(14, 14))
+        self.progress_folder_btn.setToolTip("Open output folder")
+        self.progress_folder_btn.setVisible(False)
+        self.progress_folder_btn.clicked.connect(self._open_output_folder)
 
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -518,6 +539,7 @@ class MainWindowUiMixin:
         status_layout.addStretch()
         status_layout.addWidget(self.progress_label)
         status_layout.addWidget(self.progress_play_btn)
+        status_layout.addWidget(self.progress_folder_btn)
         status_layout.addStretch()
         progress_layout.addLayout(status_layout)
 
@@ -669,7 +691,9 @@ class MainWindowUiMixin:
         layout.addWidget(self.burnin_frame_check)
 
         self.burnin_layer_check = QCheckBox("EXR Layer Name")
-        self.burnin_layer_check.setToolTip("Overlay the active EXR layer name (top-left)")
+        self.burnin_layer_check.setToolTip(
+            "Overlay the active EXR layer name (top-left) and toggle contact sheet labels."
+        )
         self.burnin_layer_check.setChecked(True)
         layout.addWidget(self.burnin_layer_check)
 
@@ -677,6 +701,20 @@ class MainWindowUiMixin:
         self.burnin_fps_check.setToolTip("Overlay the video frame rate (top-left)")
         self.burnin_fps_check.setChecked(True)
         layout.addWidget(self.burnin_fps_check)
+
+        # Font size
+        font_size_layout = QHBoxLayout()
+        font_size_layout.addWidget(QLabel("Font Size:"))
+        self.burnin_font_size_spin = NoWheelSpinBox()
+        self.burnin_font_size_spin.setRange(6, 72)
+        self.burnin_font_size_spin.setValue(20)
+        self.burnin_font_size_spin.setSuffix(" pt")
+        self.burnin_font_size_spin.setToolTip(
+            "Font size for burn-ins and contact sheet layer labels."
+        )
+        font_size_layout.addWidget(self.burnin_font_size_spin)
+        font_size_layout.addStretch()
+        layout.addLayout(font_size_layout)
 
         # Opacity
         opacity_layout = QHBoxLayout()
@@ -706,27 +744,11 @@ class MainWindowUiMixin:
         self.cs_columns_spin.setValue(4)
         form_layout.addRow("Columns:", self.cs_columns_spin)
 
-        self.cs_thumb_width_spin = NoWheelSpinBox()
-        self.cs_thumb_width_spin.setRange(128, 4096)
-        self.cs_thumb_width_spin.setValue(512)
-        self.cs_thumb_width_spin.setSuffix(" px")
-        form_layout.addRow("Thumbnail Width:", self.cs_thumb_width_spin)
-
         self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
         self.cs_padding_spin.setValue(4)
         self.cs_padding_spin.setSuffix(" px")
         form_layout.addRow("Padding:", self.cs_padding_spin)
-
-        self.cs_show_labels_check = QCheckBox("Show Layer Labels")
-        self.cs_show_labels_check.setChecked(True)
-        form_layout.addRow(self.cs_show_labels_check)
-
-        self.cs_font_size_spin = NoWheelSpinBox()
-        self.cs_font_size_spin.setRange(6, 72)
-        self.cs_font_size_spin.setValue(16)
-        self.cs_font_size_spin.setSuffix(" pt")
-        form_layout.addRow("Font Size:", self.cs_font_size_spin)
 
         layout.addLayout(form_layout)
         return layout
