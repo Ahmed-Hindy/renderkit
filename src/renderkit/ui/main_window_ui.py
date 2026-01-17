@@ -691,7 +691,9 @@ class MainWindowUiMixin:
         layout.addWidget(self.burnin_frame_check)
 
         self.burnin_layer_check = QCheckBox("EXR Layer Name")
-        self.burnin_layer_check.setToolTip("Overlay the active EXR layer name (top-left)")
+        self.burnin_layer_check.setToolTip(
+            "Overlay the active EXR layer name (top-left) and toggle contact sheet labels."
+        )
         self.burnin_layer_check.setChecked(True)
         layout.addWidget(self.burnin_layer_check)
 
@@ -699,6 +701,20 @@ class MainWindowUiMixin:
         self.burnin_fps_check.setToolTip("Overlay the video frame rate (top-left)")
         self.burnin_fps_check.setChecked(True)
         layout.addWidget(self.burnin_fps_check)
+
+        # Font size
+        font_size_layout = QHBoxLayout()
+        font_size_layout.addWidget(QLabel("Font Size:"))
+        self.burnin_font_size_spin = NoWheelSpinBox()
+        self.burnin_font_size_spin.setRange(6, 72)
+        self.burnin_font_size_spin.setValue(20)
+        self.burnin_font_size_spin.setSuffix(" pt")
+        self.burnin_font_size_spin.setToolTip(
+            "Font size for burn-ins and contact sheet layer labels."
+        )
+        font_size_layout.addWidget(self.burnin_font_size_spin)
+        font_size_layout.addStretch()
+        layout.addLayout(font_size_layout)
 
         # Opacity
         opacity_layout = QHBoxLayout()
@@ -733,16 +749,6 @@ class MainWindowUiMixin:
         self.cs_padding_spin.setValue(4)
         self.cs_padding_spin.setSuffix(" px")
         form_layout.addRow("Padding:", self.cs_padding_spin)
-
-        self.cs_show_labels_check = QCheckBox("Show Layer Labels")
-        self.cs_show_labels_check.setChecked(True)
-        form_layout.addRow(self.cs_show_labels_check)
-
-        self.cs_font_size_spin = NoWheelSpinBox()
-        self.cs_font_size_spin.setRange(6, 72)
-        self.cs_font_size_spin.setValue(16)
-        self.cs_font_size_spin.setSuffix(" pt")
-        form_layout.addRow("Font Size:", self.cs_font_size_spin)
 
         layout.addLayout(form_layout)
         return layout

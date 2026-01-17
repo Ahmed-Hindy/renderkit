@@ -26,6 +26,10 @@ class CallbackHandler(logging.Handler):
             msg = record.getMessage()
         try:
             self._callback(msg)
+        except RuntimeError as exc:
+            if "SignalInstance object was already deleted" in str(exc):
+                return
+            self.handleError(record)
         except Exception:
             self.handleError(record)
 

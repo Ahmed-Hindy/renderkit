@@ -46,10 +46,8 @@ class _DummyWindow(main_window_logic.MainWindowLogicMixin):
         self.width_spin = _DummyValue(1920)
         self.height_spin = _DummyValue(1080)
         self.cs_enable_check = _DummyCheck(cs_enabled)
-        self.cs_show_labels_check = _DummyCheck(True)
         self.cs_columns_spin = _DummyValue(4)
         self.cs_padding_spin = _DummyValue(4)
-        self.cs_font_size_spin = _DummyValue(12)
         self.layer_combo = _DummyCombo("RGBA")
         self.color_space_combo = _DummyCombo("Linear")
         self.fps_spin = _DummyValue(24)
@@ -57,6 +55,7 @@ class _DummyWindow(main_window_logic.MainWindowLogicMixin):
         self.burnin_frame_check = _DummyCheck(True)
         self.burnin_layer_check = _DummyCheck(True)
         self.burnin_fps_check = _DummyCheck(True)
+        self.burnin_font_size_spin = _DummyValue(20)
         self.burnin_opacity_spin = _DummyValue(30)
         self._ocio_role_display_map = {}
         self._last_preview_path = None
@@ -86,7 +85,7 @@ def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> N
     sample_path = tmp_path / "render.0001.exr"
     sample_path.write_text("data")
 
-    window = _DummyWindow(cs_enabled=True, burnin_enabled=False)
+    window = _DummyWindow(cs_enabled=True, burnin_enabled=True)
     window._load_preview_from_path(sample_path)
 
     args, kwargs = window.preview_widget.calls[-1]
@@ -98,6 +97,7 @@ def test_load_preview_from_path_builds_contact_sheet_config(tmp_path: Path) -> N
     assert cs_config.thumbnail_width is None
     assert cs_config.padding == 4
     assert cs_config.show_labels is True
+    assert cs_config.font_size == 20
 
 
 def test_load_preview_from_path_builds_burnin_config(tmp_path: Path) -> None:

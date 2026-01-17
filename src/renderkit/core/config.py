@@ -35,7 +35,7 @@ class ContactSheetConfig:
 
     columns: int = 4
     thumbnail_width: Optional[int] = None
-    padding: int = 10
+    padding: int = 4
     background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
     show_labels: bool = True
     font_size: int = 16
@@ -82,7 +82,7 @@ class ContactSheetConfigBuilder:
         """Initialize builder."""
         self._columns: int = 4
         self._thumbnail_width: Optional[int] = None
-        self._padding: int = 10
+        self._padding: int = 4
         self._background_color: tuple[float, float, float] = (0.1, 0.1, 0.1)
         self._show_labels: bool = True
         self._font_size: int = 16
