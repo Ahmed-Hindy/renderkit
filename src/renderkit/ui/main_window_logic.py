@@ -52,14 +52,6 @@ class MainWindowLogicMixin:
 
     def _ensure_ocio_env(self) -> None:
         """Ensure OCIO environment variable is set, using bundled config if needed."""
-        if os.environ.get("OCIO"):
-            logger.info(f"Using existing OCIO environment variable: {os.environ['OCIO']}")
-            return
-
-        # Look for bundled config
-        # In PyInstaller, sys._MEIPASS is the root. We added it to 'renderkit/data/ocio/config.ocio'
-        bundled_config = None
-
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             candidate = Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio"
             if candidate.exists():
@@ -76,8 +68,13 @@ class MainWindowLogicMixin:
         if bundled_config:
             logger.info(f"Setting OCIO environment variable to bundled config: {bundled_config}")
             os.environ["OCIO"] = str(bundled_config.resolve())
-        else:
-            logger.warning("Could not find bundled ocio/config.ocio and OCIO env var is not set.")
+            return
+
+        if os.environ.get("OCIO"):
+            logger.info(f"Using existing OCIO environment variable: {os.environ['OCIO']}")
+            return
+
+        logger.warning("Could not find bundled ocio/config.ocio and OCIO env var is not set.")
 
     def keyPressEvent(self, event) -> None:
         """Handle global key presses for the main window."""

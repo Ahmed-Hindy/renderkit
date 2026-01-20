@@ -25,38 +25,52 @@ class TestOCIOEnvSetup(unittest.TestCase):
         elif "OCIO" in os.environ:
             del os.environ["OCIO"]
 
-    @patch(
-        "renderkit.ui.main_window.ModernMainWindow._setup_ui"
-    )  # Mock UI setup to assume headless
+    @patch("renderkit.ui.main_window.ModernMainWindow._setup_ui")
     @patch("renderkit.ui.main_window.ModernMainWindow._apply_theme")
     @patch("renderkit.ui.main_window.ModernMainWindow._setup_logging")
     @patch("renderkit.ui.main_window.ModernMainWindow._load_settings")
     @patch("renderkit.ui.main_window.ModernMainWindow._setup_connections")
-    @patch("renderkit.ui.main_window.QMainWindow.__init__")  # Mock QMainWindow
+    @patch("renderkit.ui.main_window.QMainWindow.__init__")
     def test_ensure_ocio_env_dev_mode(self, mock_init, *args):
-        # We need to mock QMainWindow because we can't create QApplication here easily without segfaults sometimes
+        # Ensure we have a dummy bundled config structure mocked or real
+        # If we run in dev mode, logic looks at ../data/ocio/config.ocio relative to main_window logic
+        # That path likely exists in this repo.
 
-        # Manually invoke the method since we mocked __init__
+        # Scenario: OCIO is NOT set. Should pick up bundled.
+        if "OCIO" in os.environ:
+            del os.environ["OCIO"]
+
         window = ModernMainWindow.__new__(ModernMainWindow)
         window._ensure_ocio_env()
 
         self.assertIn("OCIO", os.environ)
         self.assertTrue(os.environ["OCIO"].endswith("config.ocio"))
-        self.assertIn("ocio", os.environ["OCIO"])
         print(f"Verified OCIO detected at: {os.environ['OCIO']}")
 
+    @patch("renderkit.ui.main_window.ModernMainWindow._setup_ui")
+    @patch("renderkit.ui.main_window.ModernMainWindow._apply_theme")
+    @patch("renderkit.ui.main_window.ModernMainWindow._setup_logging")
+    @patch("renderkit.ui.main_window.ModernMainWindow._load_settings")
+    @patch("renderkit.ui.main_window.ModernMainWindow._setup_connections")
+    @patch("renderkit.ui.main_window.QMainWindow.__init__")
+    def test_ocio_env_overwrites_system_if_bundled_exists(self, mock_init, *args):
+        # Scenario: OCIO IS set to something else.
+        # Logic should overwrite it with bundled if bundled exists.
+
+        # We need to ensure bundled path 'exists' for the logic to trigger the overwrite.
+        # In this test environment (dev mode), the real file exists.
+
+        os.environ["OCIO"] = "C:/some/system/path/config.ocio"
+
+        window = ModernMainWindow.__new__(ModernMainWindow)
+        window._ensure_ocio_env()
+
+        self.assertNotEqual(os.environ["OCIO"], "C:/some/system/path/config.ocio")
+        self.assertTrue(os.environ["OCIO"].endswith("config.ocio"))
+        print(f"Verified system env was overridden by: {os.environ['OCIO']}")
+
     @patch("sys.frozen", True, create=True)
-    @patch(
-        "sys._MEIPASS", str(Path(__file__).parent.parent / "src"), create=True
-    )  # Mock pointing to src root for test
-    # logic expects sys._MEIPASS / renderkit / data / minimal_config.ocio
-    # so we need to mock _MEIPASS such that that path exists.
-    # We constructed the file at src/renderkit/data/minimal_config.ocio
-    # So if we set _MEIPASS to 'src', then 'src/renderkit/data/...' works?
-    # No, PyInstaller flattens or specific structure.
-    # In my code: Path(sys._MEIPASS) / "renderkit" / "data" / "minimal_config.ocio"
-    # So I need to set _MEIPASS to a dir containing 'renderkit/data/minimal_config.ocio'.
-    # That is 'src'.
+    @patch("sys._MEIPASS", str(Path(__file__).parent.parent / "src"), create=True)
     @patch("renderkit.ui.main_window.ModernMainWindow._setup_ui")
     @patch("renderkit.ui.main_window.ModernMainWindow._apply_theme")
     @patch("renderkit.ui.main_window.ModernMainWindow._setup_logging")

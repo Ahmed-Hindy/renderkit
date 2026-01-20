@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - (nothing yet)
+## [0.9.0] - 2026-01-20
+
+### Fixed
+- **OCIO Configuration**: Fixed a crash on systems with incompatible `OCIO` environment variables by prioritizing the packaged configuration within the application.
+
+
+### Added
+- Concurrency support for processing workflows.
+- Burn-ins applied to preview output.
+
+### Changed
+- Contact sheet UI and defaults refined.
+- Contact sheet output actions updated.
 
 ## [0.7.0] - 2026-01-16
 
