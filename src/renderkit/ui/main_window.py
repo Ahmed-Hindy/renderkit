@@ -3,6 +3,10 @@
 import sys
 from typing import Optional
 
+from renderkit.runtime import bootstrap_runtime
+
+bootstrap_runtime()
+
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.file_info_worker import FileInfoWorker

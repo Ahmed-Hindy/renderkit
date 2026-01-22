@@ -51,7 +51,8 @@ class MainWindowLogicMixin:
     """Signal handlers, validation, and worker orchestration."""
 
     def _ensure_ocio_env(self) -> None:
-        """Ensure OCIO environment variable is set, using bundled config if needed."""
+        """Force OCIO to the bundled config and ignore any global OCIO env vars."""
+        bundled_config: Optional[Path] = None
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             candidate = Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio"
             if candidate.exists():
@@ -65,13 +66,29 @@ class MainWindowLogicMixin:
             if candidate.exists():
                 bundled_config = candidate
 
+        # Remove external OCIO_* settings to avoid inheriting global environment.
+        for key in list(os.environ.keys()):
+            upper_key = key.upper()
+            if upper_key == "OCIO" or upper_key.startswith("OCIO_"):
+                os.environ.pop(key, None)
+
         if bundled_config:
+            luts_dir = bundled_config.parent / "luts"
+            required_luts = [
+                "InvRRT.sRGB.Log2_48_nits_Shaper.spi3d",
+                "Log2_48_nits_Shaper_to_linear.spi1d",
+                "Log2_48_nits_Shaper.RRT.sRGB.spi3d",
+                "linear_to_sRGB.spi1d",
+            ]
+            missing = [name for name in required_luts if not (luts_dir / name).is_file()]
+            if missing:
+                logger.error(
+                    "Missing OCIO LUTs in bundled config: %s",
+                    ", ".join(missing),
+                )
+            os.environ["OCIO_SEARCH_PATH"] = str(luts_dir.resolve())
             logger.info(f"Setting OCIO environment variable to bundled config: {bundled_config}")
             os.environ["OCIO"] = str(bundled_config.resolve())
-            return
-
-        if os.environ.get("OCIO"):
-            logger.info(f"Using existing OCIO environment variable: {os.environ['OCIO']}")
             return
 
         logger.warning("Could not find bundled ocio/config.ocio and OCIO env var is not set.")
@@ -1365,6 +1382,9 @@ class MainWindowLogicMixin:
 
     def _on_conversion_cancelled(self) -> None:
         """Handle conversion cancellation."""
+        if self._conversion_finished_flag:
+            return
+        self._conversion_finished_flag = True
         self._is_cancelling = False
         self.convert_btn.setEnabled(True)
         self._set_convert_button_state(False)
@@ -1381,6 +1401,9 @@ class MainWindowLogicMixin:
 
     def _on_conversion_error(self, error_msg: str) -> None:
         """Handle conversion error."""
+        if self._conversion_finished_flag:
+            return
+        self._conversion_finished_flag = True
         self._is_cancelling = False
         self.convert_btn.setEnabled(True)
         self._set_convert_button_state(False)
