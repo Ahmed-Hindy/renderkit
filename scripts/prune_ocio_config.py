@@ -95,6 +95,8 @@ def prune_config():
 
     # Prepare Output Config
     dst_config = OCIO.Config()
+    dst_config.setMajorVersion(2)
+    dst_config.setMinorVersion(4)
     dst_config.setSearchPath("luts")  # Relative path in bundle
     dst_config.setDescription("Pruned ACES 1.2 Config for RenderKit")
 
