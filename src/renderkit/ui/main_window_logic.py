@@ -797,11 +797,11 @@ class MainWindowLogicMixin:
         )
 
         if cs_config:
-            logger.info(f"Loading Contact Sheet preview: {sample_path.name}")
+            logger.debug(f"Loading Contact Sheet preview: {sample_path.name}")
         elif scrubbing:
-            logger.info(f"Loading scrub preview: {sample_path.name} (Layer: {layer})")
+            logger.debug(f"Loading scrub preview: {sample_path.name} (Layer: {layer})")
         else:
-            logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
+            logger.debug(f"Loading preview: {sample_path.name} (Layer: {layer})")
 
     def _derive_sequence_stem(self, pattern: str) -> str:
         if not pattern:
