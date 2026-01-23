@@ -379,6 +379,8 @@ class FullscreenPreviewWindow(QWidget):
 class PreviewWidget(QWidget):
     """Widget for displaying image preview."""
 
+    thumbnail_requested = Signal(QPixmap)
+
     def __init__(self) -> None:
         """Initialize preview widget."""
         super().__init__()
@@ -433,6 +435,15 @@ class PreviewWidget(QWidget):
         self.expand_btn.clicked.connect(self._open_fullscreen)
         self.expand_btn.hide()
 
+        self.export_btn = QPushButton(self.container)
+        self.export_btn.setObjectName("PreviewExportButton")
+        self.export_btn.setIcon(icon_manager.get_icon("file_image"))
+        self.export_btn.setFixedSize(30, 30)
+        self.export_btn.setToolTip("Export JPEG thumbnail")
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.clicked.connect(self._request_thumbnail_export)
+        self.export_btn.hide()
+
         layout.addWidget(self.container)
 
     def resizeEvent(self, event) -> None:
@@ -444,6 +455,8 @@ class PreviewWidget(QWidget):
         btn_x = self.container.width() - self.expand_btn.width() - 8
         btn_y = self.container.height() - self.expand_btn.height() - 8
         self.expand_btn.move(btn_x, btn_y)
+        export_x = btn_x - self.export_btn.width() - 6
+        self.export_btn.move(export_x, btn_y)
 
     def load_preview(
         self,
@@ -526,6 +539,7 @@ class PreviewWidget(QWidget):
         self.preview_label.setText("")
         self._update_scaled_pixmap()
         self.expand_btn.show()
+        self.export_btn.show()
 
     def _open_fullscreen(self) -> None:
         """Open fullscreen preview window."""
@@ -541,6 +555,7 @@ class PreviewWidget(QWidget):
         self._original_pixmap = None
         self.preview_label.setText(f"Preview error:\n{error}")
         self.expand_btn.hide()
+        self.export_btn.hide()
         self.preview_label.setStyleSheet("""
             QLabel {
                 background-color: #2b2b2b;
@@ -556,6 +571,7 @@ class PreviewWidget(QWidget):
         self.preview_label.clear()
         self.preview_label.setText("No preview")
         self.expand_btn.hide()
+        self.export_btn.hide()
         self.preview_label.setStyleSheet("""
             QLabel {
                 background-color: #2b2b2b;
@@ -564,6 +580,12 @@ class PreviewWidget(QWidget):
                 border-radius: 4px;
             }
         """)
+
+    def _request_thumbnail_export(self) -> None:
+        """Emit request to export a preview thumbnail."""
+        if not self._original_pixmap:
+            return
+        self.thumbnail_requested.emit(self._original_pixmap.copy())
 
     def _update_scaled_pixmap(self) -> None:
         """Scale stored pixmap to the label size, keeping aspect ratio."""
