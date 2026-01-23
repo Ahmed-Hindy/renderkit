@@ -1,6 +1,6 @@
 """Image and Video Processor package for VFX workflows."""
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from renderkit.api.processor import RenderKit
 
