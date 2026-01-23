@@ -32,6 +32,7 @@ from renderkit.ui.qt_compat import (
     QTimer,
     QWidget,
 )
+from renderkit.ui.timeline_controller import TimelineController
 
 RECENT_PATTERNS_CLEAR_LABEL = _RECENT_PATTERNS_CLEAR_LABEL
 RECENT_PATTERNS_KEY = _RECENT_PATTERNS_KEY
@@ -67,11 +68,11 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._last_detected_pattern = ""
         self._aspect_ratio: Optional[float] = None
         self._aspect_sync_guard = False
-
         # Debounce timer for real-time contact sheet preview updates
         self._cs_preview_timer = QTimer(self)
         self._cs_preview_timer.setSingleShot(True)
         self._cs_preview_timer.timeout.connect(self._load_preview)
+        self.timeline_controller: Optional[TimelineController] = None
 
         self._setup_logging()
         self._ensure_ocio_env()
@@ -86,6 +87,17 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._setup_ui()
         self._setup_tray_icon()
         self._load_settings()
+        self.timeline_controller = TimelineController(
+            slider=self.timeline_slider,
+            start_label=self.timeline_start_label,
+            end_label=self.timeline_end_label,
+            current_label=self.timeline_current_label,
+            container=self.timeline_widget,
+            load_preview=lambda path, scrubbing: self._load_preview_from_path(
+                path, scrubbing=scrubbing
+            ),
+            parent=self,
+        )
         self._setup_connections()
 
 

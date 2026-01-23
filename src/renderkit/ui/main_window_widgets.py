@@ -7,6 +7,8 @@ from renderkit.ui.qt_compat import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStyle,
+    QStyleOptionSlider,
     Qt,
     Signal,
 )
@@ -85,6 +87,49 @@ class NoWheelSlider(QSlider):
             event.ignore()
             return
         super().wheelEvent(event)
+
+
+class JumpToClickSlider(NoWheelSlider):
+    """Slider that jumps to the clicked position."""
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            position = event.position().toPoint() if hasattr(event, "position") else event.pos()
+
+            groove = self.style().subControlRect(
+                QStyle.ComplexControl.CC_Slider,
+                option,
+                QStyle.SubControl.SC_SliderGroove,
+                self,
+            )
+            handle = self.style().subControlRect(
+                QStyle.ComplexControl.CC_Slider,
+                option,
+                QStyle.SubControl.SC_SliderHandle,
+                self,
+            )
+
+            if self.orientation() == Qt.Orientation.Horizontal:
+                slider_min = groove.x()
+                slider_max = groove.right() - handle.width() + 1
+                pos = position.x()
+            else:
+                slider_min = groove.y()
+                slider_max = groove.bottom() - handle.height() + 1
+                pos = position.y()
+
+            span = max(1, slider_max - slider_min)
+            value = QStyle.sliderValueFromPosition(
+                self.minimum(),
+                self.maximum(),
+                int(pos - slider_min),
+                span,
+                option.upsideDown,
+            )
+            self.setValue(value)
+        super().mousePressEvent(event)
 
 
 class UiLogForwarder(QObject):

@@ -577,6 +577,63 @@ QProgressBar {
 }
 
 /* ============================================================================
+   TIMELINE SCRUBBER
+   ============================================================================ */
+
+#TimelineWidget {
+    padding-top: 2px;
+}
+
+#TimelineLabel {
+    font-size: 12px;
+    color: #656d76;
+}
+
+#TimelineCurrentLabel {
+    font-size: 12px;
+    color: #1f2328;
+    font-weight: 600;
+}
+
+[theme="dark"] #TimelineLabel {
+    color: #848d97;
+}
+
+[theme="dark"] #TimelineCurrentLabel {
+    color: #e6edf3;
+}
+
+#TimelineSlider::groove:horizontal {
+    height: 6px;
+    border-radius: 3px;
+    background-color: #d0d7de;
+}
+
+#TimelineSlider::handle:horizontal {
+    width: 14px;
+    height: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+    background-color: #0969da;
+}
+
+#TimelineSlider::handle:horizontal:hover {
+    background-color: #0550ae;
+}
+
+[theme="dark"] #TimelineSlider::groove:horizontal {
+    background-color: #30363d;
+}
+
+[theme="dark"] #TimelineSlider::handle:horizontal {
+    background-color: #4493f8;
+}
+
+[theme="dark"] #TimelineSlider::handle:horizontal:hover {
+    background-color: #1f6feb;
+}
+
+/* ============================================================================
    PREVIEW OVERLAY BUTTONS
    ============================================================================ */
 

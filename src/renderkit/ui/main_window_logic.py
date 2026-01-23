@@ -593,6 +593,16 @@ class MainWindowLogicMixin:
             if hasattr(self, "progress_folder_btn"):
                 self.progress_folder_btn.setEnabled(False)
 
+    def _reset_timeline_state(self) -> None:
+        controller = getattr(self, "timeline_controller", None)
+        if controller:
+            controller.reset()
+
+    def _set_timeline_sequence(self, sequence) -> None:
+        controller = getattr(self, "timeline_controller", None)
+        if controller:
+            controller.set_sequence(sequence)
+
     def _pattern_has_frame_token(self, filename: str) -> bool:
         if "%" in filename:
             percent_index = filename.find("%")
@@ -666,6 +676,7 @@ class MainWindowLogicMixin:
         self._input_pattern_valid = False
         self._input_pattern_validated = False
         self._aspect_ratio = None
+        self._reset_timeline_state()
         self._set_input_validation_state(None, "")
         self.sequence_info_label.setText("No sequence detected")
         self._update_convert_gate()
@@ -685,7 +696,7 @@ class MainWindowLogicMixin:
         except Exception as e:
             logger.error(f"Preview error: {str(e)}")
 
-    def _load_preview_from_path(self, sample_path: Path) -> None:
+    def _load_preview_from_path(self, sample_path: Path, *, scrubbing: bool = False) -> None:
         """Load preview using an already resolved frame path."""
         if not sample_path.exists():
             QMessageBox.warning(self, "File Not Found", f"Frame file not found:\n{sample_path}")
@@ -697,7 +708,7 @@ class MainWindowLogicMixin:
         cs_config = None
         layer = self.layer_combo.currentText()
 
-        if self.cs_enable_check.isChecked():
+        if self.cs_enable_check.isChecked() and not scrubbing:
             # Build config from UI
             layer_width = None
             layer_height = None
@@ -723,7 +734,7 @@ class MainWindowLogicMixin:
 
         burnin_config = None
         burnin_metadata = None
-        if self.burnin_enable_check.isChecked():
+        if self.burnin_enable_check.isChecked() and not scrubbing:
             burnin_elements = []
             font_size = self.burnin_font_size_spin.value()
             if self.burnin_frame_check.isChecked():
@@ -787,6 +798,8 @@ class MainWindowLogicMixin:
 
         if cs_config:
             logger.info(f"Loading Contact Sheet preview: {sample_path.name}")
+        elif scrubbing:
+            logger.info(f"Loading scrub preview: {sample_path.name} (Layer: {layer})")
         else:
             logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
 
@@ -1163,6 +1176,7 @@ class MainWindowLogicMixin:
         if not pattern:
             self.sequence_info_label.setText("No pattern specified")
             self.preview_widget.clear_preview()
+            self._reset_timeline_state()
             self._input_pattern_valid = False
             self._input_pattern_validated = True
             self._set_input_validation_state(None, "")
@@ -1175,6 +1189,7 @@ class MainWindowLogicMixin:
             self.sequence_info_label.setText(message)
             self.statusBar().showMessage(message, 3000)
             self.preview_widget.clear_preview()
+            self._reset_timeline_state()
             self._input_pattern_valid = False
             self._set_input_validation_state(False, message)
             self._update_convert_gate()
@@ -1206,6 +1221,8 @@ class MainWindowLogicMixin:
             self.end_frame_spin.setMinimum(min_frame)
             self.end_frame_spin.setMaximum(max_frame)
             self.end_frame_spin.setValue(max_frame)
+
+            self._set_timeline_sequence(sequence)
 
             # Create a loading state in the UI immediately
             self.sequence_info_label.setText(f"Detected {frame_count} frames (Loading metadata...)")
@@ -1256,6 +1273,7 @@ class MainWindowLogicMixin:
             logger.error(f"Sequence detection failed: {str(e)}")
             self.statusBar().showMessage("Sequence detection failed", 3000)
             self.preview_widget.clear_preview()
+            self._reset_timeline_state()
             self._input_pattern_valid = False
             self._set_input_validation_state(False, error_text)
             self._update_convert_gate()
