@@ -554,3 +554,24 @@ QProgressBar {
     font-size: 24px;
     font-weight: bold;
 }
+
+/* ============================================================================
+   DROP OVERLAY
+   ============================================================================ */
+
+#DropOverlay {
+    border: 2px dashed #0969da;
+    border-radius: 10px;
+    background-color: rgba(9, 105, 218, 30);
+    color: #1f2328;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 24px;
+}
+
+[theme="dark"] #DropOverlay {
+    border-color: #4493f8;
+    background-color: rgba(68, 147, 248, 35);
+    color: #e6edf3;
+}

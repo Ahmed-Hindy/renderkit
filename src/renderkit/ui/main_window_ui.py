@@ -74,10 +74,33 @@ class MainWindowUiMixin:
 
         # Central widget with splitter
         central_widget = QWidget()
+        central_widget.setAcceptDrops(True)
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+
+        root_layout = QGridLayout(central_widget)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+        root_layout.setRowStretch(0, 1)
+        root_layout.setColumnStretch(0, 1)
+
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
         main_layout.setContentsMargins(10, 10, 10, 5)  # Reduced bottom margin
         main_layout.setSpacing(5)  # Reduced spacing
+        root_layout.addWidget(content_widget, 0, 0)
+
+        self.drop_overlay = QLabel("Drop file or folder anywhere", central_widget)
+        self.drop_overlay.setObjectName("DropOverlay")
+        self.drop_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_overlay.setVisible(False)
+        self.drop_overlay.setAcceptDrops(True)
+        self.drop_overlay.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.drop_overlay.setWordWrap(True)
+        root_layout.addWidget(self.drop_overlay, 0, 0)
+
+        central_widget.installEventFilter(self)
+        self.drop_overlay.installEventFilter(self)
+        self.drop_overlay_host = central_widget
 
         # Create main splitter for resizable panels
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)

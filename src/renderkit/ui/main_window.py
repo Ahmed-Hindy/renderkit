@@ -43,6 +43,7 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
+        self.setAcceptDrops(True)
         self.settings = QSettings("RenderKit", "RenderKit")
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False

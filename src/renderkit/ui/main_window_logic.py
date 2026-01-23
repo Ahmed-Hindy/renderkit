@@ -33,6 +33,7 @@ from renderkit.ui.qt_compat import (
     QApplication,
     QComboBox,
     QDesktopServices,
+    QEvent,
     QFileDialog,
     QMessageBox,
     QSystemTrayIcon,
@@ -716,44 +717,265 @@ class MainWindowLogicMixin:
             "Image Files (*.exr *.png *.jpg *.jpeg);;All Files (*.*)",
         )
         if file_path:
-            path_obj = Path(file_path)
-            self.settings.setValue("last_input_dir", str(path_obj.parent))
+            self._apply_input_path(Path(file_path))
 
-            # Try to detect pattern from filename
-            # Find the last sequence of digits before the extension
-            import re
+    def _should_accept_drop(self, event) -> bool:
+        if not event.mimeData().hasUrls():
+            return False
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                return True
+        return False
 
-            name_part, ext = path_obj.stem, path_obj.suffix
+    def _paths_from_mime_data(self, mime_data) -> list[Path]:
+        paths = []
+        for url in mime_data.urls():
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if path.exists():
+                paths.append(path)
+        return paths
 
-            # Find all sequences of digits in the name part
-            digit_matches = list(re.finditer(r"\d+", name_part))
+    def _set_drop_overlay_visible(self, visible: bool) -> None:
+        if not hasattr(self, "drop_overlay"):
+            return
+        if visible:
+            self.drop_overlay.raise_()
+        self.drop_overlay.setVisible(visible)
 
-            if digit_matches:
-                # Get the last (rightmost) sequence of digits
-                last_match = digit_matches[-1]
-                frame_number = last_match.group(0)
-                padding = len(frame_number)
+    def dragEnterEvent(self, event) -> None:
+        """Accept drag enter for local file/folder drops."""
+        if self._should_accept_drop(event):
+            self._set_drop_overlay_visible(True)
+            event.acceptProposedAction()
+            return
+        event.ignore()
 
-                # Replace only the last sequence with pattern
-                pattern_name = (
-                    name_part[: last_match.start()]
-                    + f"%0{padding}d"
-                    + name_part[last_match.end() :]
-                )
-                pattern_filename = pattern_name + ext
-                full_pattern = str(path_obj.parent / pattern_filename)
+    def dragMoveEvent(self, event) -> None:
+        """Accept drag move for local file/folder drops."""
+        if self._should_accept_drop(event):
+            self._set_drop_overlay_visible(True)
+            event.acceptProposedAction()
+            return
+        event.ignore()
 
-                self.input_pattern_combo.setEditText(full_pattern)
-                self._detect_sequence()
-            else:
-                # No digits found, just use the filename as-is
-                self.input_pattern_combo.setEditText(str(file_path))
-                QMessageBox.information(
-                    self,
-                    "No Frame Number",
-                    "Could not detect frame number in filename.\n"
-                    "Please manually enter the pattern (e.g., render.%04d.exr)",
-                )
+    def dragLeaveEvent(self, event) -> None:
+        """Hide drop overlay when drag leaves the window."""
+        self._set_drop_overlay_visible(False)
+        event.accept()
+
+    def dropEvent(self, event) -> None:
+        """Handle dropped files/folders onto the main window."""
+        if not self._should_accept_drop(event):
+            event.ignore()
+            return
+
+        paths = self._paths_from_mime_data(event.mimeData())
+        self._handle_drop_paths(paths)
+        self._set_drop_overlay_visible(False)
+        event.acceptProposedAction()
+
+    def eventFilter(self, obj, event) -> bool:
+        if not hasattr(self, "drop_overlay"):
+            return super().eventFilter(obj, event)
+
+        host = getattr(self, "drop_overlay_host", None)
+        if obj not in (host, self.drop_overlay):
+            return super().eventFilter(obj, event)
+
+        event_type = event.type()
+        type_enum = getattr(QEvent, "Type", None)
+        if type_enum is not None:
+            drag_enter = getattr(type_enum, "DragEnter", None)
+            drag_move = getattr(type_enum, "DragMove", None)
+            drag_leave = getattr(type_enum, "DragLeave", None)
+            drop_type = getattr(type_enum, "Drop", None)
+        else:
+            drag_enter = getattr(QEvent, "DragEnter", None)
+            drag_move = getattr(QEvent, "DragMove", None)
+            drag_leave = getattr(QEvent, "DragLeave", None)
+            drop_type = getattr(QEvent, "Drop", None)
+
+        if drag_enter is not None and event_type == drag_enter:
+            if self._should_accept_drop(event):
+                self._set_drop_overlay_visible(True)
+                event.acceptProposedAction()
+                return True
+        elif drag_move is not None and event_type == drag_move:
+            if self._should_accept_drop(event):
+                self._set_drop_overlay_visible(True)
+                event.acceptProposedAction()
+                return True
+        elif drag_leave is not None and event_type == drag_leave:
+            self._set_drop_overlay_visible(False)
+            return True
+        elif drop_type is not None and event_type == drop_type:
+            if self._should_accept_drop(event):
+                paths = self._paths_from_mime_data(event.mimeData())
+                self._handle_drop_paths(paths)
+                self._set_drop_overlay_visible(False)
+                event.acceptProposedAction()
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def _handle_drop_paths(self, paths: list[Path]) -> None:
+        if not paths:
+            return
+
+        directories = [path for path in paths if path.is_dir()]
+        if directories:
+            self._apply_dropped_folder(directories[0])
+            return
+
+        files = [path for path in paths if path.is_file()]
+        self._apply_dropped_files(files)
+
+    def _apply_dropped_folder(self, folder: Path) -> None:
+        files = self._collect_folder_files(folder)
+        if not files:
+            QMessageBox.information(
+                self,
+                "No Images Found",
+                "No supported image files were found in the dropped folder.",
+            )
+            return
+
+        pattern_groups: dict[str, list[Path]] = {}
+        order: list[str] = []
+        for path in files:
+            pattern = self._build_pattern_from_path(path)
+            if not pattern:
+                continue
+            if pattern not in pattern_groups:
+                pattern_groups[pattern] = []
+                order.append(pattern)
+            pattern_groups[pattern].append(path)
+
+        if not pattern_groups:
+            QMessageBox.information(
+                self,
+                "No Sequence Found",
+                "No frame-numbered files were found in the dropped folder.",
+            )
+            return
+
+        chosen_pattern = order[0]
+        best_count = len(pattern_groups[chosen_pattern])
+        for pattern in order[1:]:
+            count = len(pattern_groups[pattern])
+            if count > best_count:
+                chosen_pattern = pattern
+                best_count = count
+
+        self._set_input_pattern(chosen_pattern, folder)
+
+    def _apply_dropped_files(self, files: list[Path]) -> None:
+        supported = [path for path in files if self._is_supported_image(path)]
+        if not supported:
+            QMessageBox.information(
+                self,
+                "Unsupported Drop",
+                "Drop image sequence files or a folder containing images.",
+            )
+            return
+
+        if len(supported) == 1:
+            self._apply_input_path(supported[0])
+            return
+
+        patterns = [self._build_pattern_from_path(path) for path in supported]
+        if all(patterns) and len(set(patterns)) == 1:
+            self._set_input_pattern(patterns[0], supported[0].parent)
+            return
+
+        pattern_counts: dict[str, int] = {}
+        pattern_first_path: dict[str, Path] = {}
+        order: list[str] = []
+        for path, pattern in zip(supported, patterns, strict=True):
+            if not pattern:
+                continue
+            if pattern not in pattern_counts:
+                pattern_counts[pattern] = 0
+                pattern_first_path[pattern] = path
+                order.append(pattern)
+            pattern_counts[pattern] += 1
+
+        if not order:
+            self._apply_input_path(supported[0])
+            return
+
+        chosen_pattern = None
+        for pattern in order:
+            if pattern_counts[pattern] >= 2:
+                chosen_pattern = pattern
+                break
+        if chosen_pattern is None:
+            chosen_pattern = order[0]
+
+        chosen_path = pattern_first_path[chosen_pattern]
+        self._set_input_pattern(chosen_pattern, chosen_path.parent)
+
+    def _collect_folder_files(self, folder: Path) -> list[Path]:
+        try:
+            files = [
+                path
+                for path in folder.iterdir()
+                if path.is_file() and self._is_supported_image(path)
+            ]
+        except OSError as exc:
+            logger.warning("Failed to list dropped folder %s: %s", folder, exc)
+            return []
+        return sorted(files)
+
+    def _is_supported_image(self, path: Path) -> bool:
+        suffix = path.suffix.lower().lstrip(".")
+        return suffix in constants.OIIO_SUPPORTED_EXTENSIONS
+
+    def _build_pattern_from_path(self, path: Path) -> Optional[str]:
+        if not path or not path.is_file():
+            return None
+
+        name_part, ext = path.stem, path.suffix
+        if not name_part or not ext:
+            return None
+
+        import re
+
+        digit_matches = list(re.finditer(r"\d+", name_part))
+        if not digit_matches:
+            return None
+
+        last_match = digit_matches[-1]
+        frame_number = last_match.group(0)
+        padding = len(frame_number)
+        pattern_name = (
+            name_part[: last_match.start()] + f"%0{padding}d" + name_part[last_match.end() :]
+        )
+        pattern_filename = pattern_name + ext
+        return str(path.parent / pattern_filename)
+
+    def _set_input_pattern(self, pattern: str, base_dir: Optional[Path] = None) -> None:
+        if base_dir is not None:
+            self.settings.setValue("last_input_dir", str(base_dir))
+        self.input_pattern_combo.setEditText(pattern)
+        self._detect_sequence()
+
+    def _apply_input_path(self, path: Path) -> None:
+        self.settings.setValue("last_input_dir", str(path.parent))
+        pattern = self._build_pattern_from_path(path)
+        if pattern:
+            self._set_input_pattern(pattern, path.parent)
+            return
+
+        self.input_pattern_combo.setEditText(str(path))
+        QMessageBox.information(
+            self,
+            "No Frame Number",
+            "Could not detect frame number in filename.\n"
+            "Please manually enter the pattern (e.g., render.%04d.exr)",
+        )
 
     def _browse_output_path(self) -> None:
         """Browse for output video path."""
