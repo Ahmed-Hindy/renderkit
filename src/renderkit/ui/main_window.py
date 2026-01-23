@@ -1,5 +1,6 @@
 """Modern main window for RenderKit using the qt_compat abstraction."""
 
+import os
 import sys
 from typing import Optional
 
@@ -44,7 +45,12 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self.setAcceptDrops(True)
-        self.settings = QSettings("RenderKit", "RenderKit")
+        settings_org = "RenderKit"
+        settings_app = "RenderKit"
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            settings_org = "RenderKitTest"
+            settings_app = "RenderKitTest"
+        self.settings = QSettings(settings_org, settings_app)
         self.worker: Optional[ConversionWorker] = None
         self._conversion_finished_flag = False
         self._log_forwarder: Optional[UiLogForwarder] = None
@@ -59,6 +65,8 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._startup_logs: list[str] = []
         self._file_info_worker: Optional[FileInfoWorker] = None
         self._last_detected_pattern = ""
+        self._aspect_ratio: Optional[float] = None
+        self._aspect_sync_guard = False
 
         # Debounce timer for real-time contact sheet preview updates
         self._cs_preview_timer = QTimer(self)

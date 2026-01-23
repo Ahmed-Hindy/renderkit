@@ -39,6 +39,8 @@ class IconManager:
             "ban": "ban.svg",
             "check": "check.svg",
             "loader": "loader.svg",
+            "link_on": "link-2.svg",
+            "link_off": "link-2-off.svg",
         }
 
     def get_icon(self, name: str, color: Optional[str] = None, size: int = 16) -> QIcon:
