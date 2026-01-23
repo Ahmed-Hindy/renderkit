@@ -58,6 +58,7 @@ _QTWIDGET_NAMES = [
     "QSplitter",
     "QSystemTrayIcon",
     "QTabWidget",
+    "QToolButton",
     "QVBoxLayout",
     "QWidget",
 ]
@@ -109,6 +110,7 @@ if TYPE_CHECKING:
         QSplitter,
         QSystemTrayIcon,
         QTabWidget,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )
@@ -208,6 +210,7 @@ __all__ = [
     "QSplitter",
     "QSystemTrayIcon",
     "QTabWidget",
+    "QToolButton",
     "QVBoxLayout",
     "QWidget",
     # Backend info

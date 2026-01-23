@@ -575,3 +575,38 @@ QProgressBar {
     background-color: rgba(68, 147, 248, 35);
     color: #e6edf3;
 }
+
+/* ============================================================================
+   ASPECT LINK BUTTON
+   ============================================================================ */
+
+#AspectLinkButton {
+    border: 1px solid #30363db3;
+    border-radius: 6px;
+    background-color: transparent;
+    padding: 2px;
+}
+
+#AspectLinkButton:hover {
+    border-color: #4493f8;
+    background-color: rgba(68, 147, 248, 18);
+}
+
+#AspectLinkButton:checked {
+    border-color: #4493f8;
+    background-color: rgba(68, 147, 248, 32);
+}
+
+[theme="light"] #AspectLinkButton {
+    border-color: #d0d7deb3;
+}
+
+[theme="light"] #AspectLinkButton:hover {
+    border-color: #0969da;
+    background-color: rgba(9, 105, 218, 18);
+}
+
+[theme="light"] #AspectLinkButton:checked {
+    border-color: #0969da;
+    background-color: rgba(9, 105, 218, 28);
+}

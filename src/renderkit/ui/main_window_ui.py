@@ -37,6 +37,7 @@ from renderkit.ui.qt_compat import (
     QSplitter,
     QSystemTrayIcon,
     Qt,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -461,6 +462,16 @@ class MainWindowUiMixin:
         self.width_spin.setSuffix(" px")
         resolution_layout.addWidget(QLabel("Width:"))
         resolution_layout.addWidget(self.width_spin)
+
+        self.aspect_link_btn = QToolButton()
+        self.aspect_link_btn.setCheckable(True)
+        self.aspect_link_btn.setChecked(True)
+        self.aspect_link_btn.setObjectName("AspectLinkButton")
+        self.aspect_link_btn.setToolTip("Lock aspect ratio")
+        self.aspect_link_btn.setIcon(icon_manager.get_icon("link_on", size=16))
+        self.aspect_link_btn.setIconSize(QSize(16, 16))
+        self.aspect_link_btn.setFixedSize(28, 28)
+        resolution_layout.addWidget(self.aspect_link_btn)
 
         self.height_spin = NoWheelSpinBox()
         self.height_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)

@@ -113,6 +113,10 @@ class MainWindowLogicMixin:
             line_edit.editingFinished.connect(self._detect_sequence)
         self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
         self.output_path_edit.textChanged.connect(self._update_play_button_state)
+        if hasattr(self, "aspect_link_btn"):
+            self.aspect_link_btn.toggled.connect(self._on_aspect_link_toggled)
+        self.width_spin.valueChanged.connect(self._on_width_spin_changed)
+        self.height_spin.valueChanged.connect(self._on_height_spin_changed)
 
         # Preview real-time updates
         self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
@@ -389,6 +393,81 @@ class MainWindowLogicMixin:
         self.width_spin.setToolTip(tooltip)
         self.height_spin.setToolTip(tooltip)
 
+    def _is_aspect_linked(self) -> bool:
+        if not hasattr(self, "aspect_link_btn"):
+            return False
+        return self.aspect_link_btn.isChecked()
+
+    def _update_aspect_ratio_from_metadata(self, width: int, height: int) -> None:
+        if width > 0 and height > 0:
+            self._aspect_ratio = width / float(height)
+
+    def _get_aspect_ratio(self) -> Optional[float]:
+        ratio = getattr(self, "_aspect_ratio", None)
+        if ratio and ratio > 0:
+            return ratio
+
+        width = self.width_spin.value()
+        height = self.height_spin.value()
+        if width > 0 and height > 0:
+            return width / float(height)
+        return None
+
+    def _update_aspect_link_icon(self) -> None:
+        if not hasattr(self, "aspect_link_btn"):
+            return
+        icon_name = "link_on" if self.aspect_link_btn.isChecked() else "link_off"
+        self.aspect_link_btn.setIcon(icon_manager.get_icon(icon_name, size=16))
+        if self.aspect_link_btn.isChecked():
+            tooltip = "Aspect ratio locked"
+        else:
+            tooltip = "Aspect ratio unlocked"
+        self.aspect_link_btn.setToolTip(tooltip)
+
+    def _on_aspect_link_toggled(self, checked: bool) -> None:
+        self._update_aspect_link_icon()
+
+    def _clamp_spin_value(self, spin, value: int) -> int:
+        return max(spin.minimum(), min(spin.maximum(), value))
+
+    def _set_spin_value_guarded(self, spin, value: int) -> None:
+        if getattr(self, "_aspect_sync_guard", False):
+            return
+        clamped = self._clamp_spin_value(spin, value)
+        if clamped == spin.value():
+            return
+        self._aspect_sync_guard = True
+        spin.setValue(clamped)
+        self._aspect_sync_guard = False
+
+    def _sync_height_from_width(self, width: int) -> None:
+        ratio = self._get_aspect_ratio()
+        if not ratio:
+            return
+        new_height = int(round(width / ratio))
+        self._set_spin_value_guarded(self.height_spin, new_height)
+
+    def _sync_width_from_height(self, height: int) -> None:
+        ratio = self._get_aspect_ratio()
+        if not ratio:
+            return
+        new_width = int(round(height * ratio))
+        self._set_spin_value_guarded(self.width_spin, new_width)
+
+    def _on_width_spin_changed(self, value: int) -> None:
+        if getattr(self, "_aspect_sync_guard", False):
+            return
+        if not self._is_aspect_linked():
+            return
+        self._sync_height_from_width(value)
+
+    def _on_height_spin_changed(self, value: int) -> None:
+        if getattr(self, "_aspect_sync_guard", False):
+            return
+        if not self._is_aspect_linked():
+            return
+        self._sync_width_from_height(value)
+
     def _on_keep_frame_range_toggled(self, checked: bool) -> None:
         """Handle keep source frame range checkbox toggle."""
         self.start_frame_spin.setEnabled(not checked)
@@ -583,6 +662,7 @@ class MainWindowLogicMixin:
         self._last_detected_pattern = ""  # Force re-detection
         self._input_pattern_valid = False
         self._input_pattern_validated = False
+        self._aspect_ratio = None
         self._set_input_validation_state(None, "")
         self.sequence_info_label.setText("No sequence detected")
         self._update_convert_gate()
@@ -1197,8 +1277,13 @@ class MainWindowLogicMixin:
 
             # Update resolution from metadata
             if file_info.width and file_info.height:
-                self.width_spin.setValue(file_info.width)
-                self.height_spin.setValue(file_info.height)
+                self._update_aspect_ratio_from_metadata(file_info.width, file_info.height)
+                self._aspect_sync_guard = True
+                try:
+                    self.width_spin.setValue(file_info.width)
+                    self.height_spin.setValue(file_info.height)
+                finally:
+                    self._aspect_sync_guard = False
                 logger.info(
                     f"Auto-detected resolution from metadata: {file_info.width}x{file_info.height}"
                 )
@@ -1232,6 +1317,7 @@ class MainWindowLogicMixin:
     ):
         """Handle file info discovery error."""
         logger.warning(f"File info discovery failed: {error}")
+        self._aspect_ratio = None
 
         # Set default values
         self.layer_combo.blockSignals(True)
@@ -1674,6 +1760,8 @@ class MainWindowLogicMixin:
         self.settings.setValue("height", self.height_spin.value())
         self.settings.setValue("codec_text", self.codec_combo.currentText())
         self.settings.setValue("keep_resolution", self.keep_resolution_check.isChecked())
+        if hasattr(self, "aspect_link_btn"):
+            self.settings.setValue("aspect_linked", self.aspect_link_btn.isChecked())
         self.settings.setValue("quality", self.quality_slider.value())
         if hasattr(self, "prefetch_workers_spin"):
             self.settings.setValue("prefetch_workers", self.prefetch_workers_spin.value())
@@ -1719,6 +1807,9 @@ class MainWindowLogicMixin:
         )
         self.width_spin.setValue(self.settings.value("width", 1920, type=int))
         self.height_spin.setValue(self.settings.value("height", 1080, type=int))
+        if hasattr(self, "aspect_link_btn"):
+            self.aspect_link_btn.setChecked(self.settings.value("aspect_linked", True, type=bool))
+            self._update_aspect_link_icon()
 
         # Use string-based settings for better robustness across UI changes
         if self.color_space_combo.count() > 0:
