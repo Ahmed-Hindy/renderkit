@@ -36,6 +36,7 @@ from renderkit.ui.qt_compat import (
     QEvent,
     QFileDialog,
     QMessageBox,
+    QSize,
     QSystemTrayIcon,
     Qt,
     QUrl,
@@ -117,6 +118,8 @@ class MainWindowLogicMixin:
             self.aspect_link_btn.toggled.connect(self._on_aspect_link_toggled)
         self.width_spin.valueChanged.connect(self._on_width_spin_changed)
         self.height_spin.valueChanged.connect(self._on_height_spin_changed)
+        if hasattr(self, "preview_widget") and hasattr(self.preview_widget, "thumbnail_requested"):
+            self.preview_widget.thumbnail_requested.connect(self._export_preview_thumbnail)
 
         # Preview real-time updates
         self.cs_columns_spin.valueChanged.connect(self._on_cs_setting_changed)
@@ -786,6 +789,84 @@ class MainWindowLogicMixin:
             logger.info(f"Loading Contact Sheet preview: {sample_path.name}")
         else:
             logger.info(f"Loading preview: {sample_path.name} (Layer: {layer})")
+
+    def _derive_sequence_stem(self, pattern: str) -> str:
+        if not pattern:
+            return ""
+        name = Path(pattern).name
+        stem = Path(name).stem
+
+        import re
+
+        stem = re.sub(r"%\d*d", "", stem)
+        stem = re.sub(r"\$F\d*", "", stem)
+        stem = re.sub(r"#+", "", stem)
+        stem = re.sub(r"\d+$", "", stem)
+        return stem.rstrip("._- ").strip()
+
+    def _scale_thumbnail_pixmap(self, pixmap):
+        if pixmap.isNull():
+            return pixmap
+        max_dim = 512
+        width = pixmap.width()
+        height = pixmap.height()
+        if width <= 0 or height <= 0:
+            return pixmap
+        scale = min(1.0, max_dim / float(width), max_dim / float(height))
+        if scale >= 1.0:
+            return pixmap
+        target = QSize(max(1, int(width * scale)), max(1, int(height * scale)))
+        return pixmap.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+
+    def _export_preview_thumbnail(self, pixmap) -> None:
+        if pixmap is None or pixmap.isNull():
+            QMessageBox.information(self, "Thumbnail Export", "No preview available to export.")
+            return
+
+        output_path_text = self.output_path_edit.text().strip()
+        if not output_path_text:
+            QMessageBox.warning(
+                self,
+                "Thumbnail Export",
+                "Set an output video path before exporting a thumbnail.",
+            )
+            return
+
+        output_path = Path(output_path_text).expanduser()
+        output_dir = output_path.parent
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Thumbnail Export",
+                f"Could not create output folder:\n{output_dir}\n\n{exc}",
+            )
+            return
+
+        sequence_stem = self._derive_sequence_stem(self.input_pattern_combo.currentText().strip())
+        if not sequence_stem and self._last_preview_path:
+            sequence_stem = self._derive_sequence_stem(self._last_preview_path.name)
+        if not sequence_stem:
+            sequence_stem = "sequence"
+
+        thumb_path = output_dir / f"{sequence_stem}_thumb.jpg"
+        scaled = self._scale_thumbnail_pixmap(pixmap)
+        saved = scaled.save(str(thumb_path), "JPEG", 90)
+        if not saved:
+            QMessageBox.warning(
+                self,
+                "Thumbnail Export",
+                f"Failed to save thumbnail:\n{thumb_path}",
+            )
+            return
+
+        logger.info("Thumbnail exported: %s", thumb_path)
+        self.statusBar().showMessage(f"Thumbnail saved: {thumb_path}", 5000)
 
     def _browse_input_pattern(self) -> None:
         """Browse for input file pattern."""
