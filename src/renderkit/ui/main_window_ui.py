@@ -10,6 +10,7 @@ from typing import Optional
 from renderkit import __version__
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.main_window_widgets import (
+    JumpToClickSlider,
     NoWheelComboBox,
     NoWheelDoubleSpinBox,
     NoWheelSlider,
@@ -617,6 +618,41 @@ class MainWindowUiMixin:
 
         self.preview_widget = PreviewWidget()
         preview_layout.addWidget(self.preview_widget)
+
+        self.timeline_widget = QWidget()
+        self.timeline_widget.setObjectName("TimelineWidget")
+        timeline_layout = QVBoxLayout(self.timeline_widget)
+        timeline_layout.setContentsMargins(6, 4, 6, 0)
+        timeline_layout.setSpacing(4)
+
+        timeline_row = QHBoxLayout()
+        timeline_row.setContentsMargins(0, 0, 0, 0)
+        timeline_row.setSpacing(6)
+        self.timeline_start_label = QLabel("--")
+        self.timeline_start_label.setObjectName("TimelineLabel")
+        self.timeline_start_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.timeline_end_label = QLabel("--")
+        self.timeline_end_label.setObjectName("TimelineLabel")
+        self.timeline_end_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.timeline_slider = JumpToClickSlider(Qt.Orientation.Horizontal)
+        self.timeline_slider.setObjectName("TimelineSlider")
+        self.timeline_slider.setTracking(True)
+        self.timeline_slider.setEnabled(False)
+        self.timeline_slider.setMinimum(0)
+        self.timeline_slider.setMaximum(0)
+        self.timeline_slider.setSingleStep(1)
+        timeline_row.addWidget(self.timeline_start_label)
+        timeline_row.addWidget(self.timeline_slider, 1)
+        timeline_row.addWidget(self.timeline_end_label)
+        timeline_layout.addLayout(timeline_row)
+
+        self.timeline_current_label = QLabel("Frame: -")
+        self.timeline_current_label.setObjectName("TimelineCurrentLabel")
+        self.timeline_current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        timeline_layout.addWidget(self.timeline_current_label)
+
+        self.timeline_widget.setVisible(False)
+        preview_layout.addWidget(self.timeline_widget)
 
         layout.addWidget(preview_group)
         return panel

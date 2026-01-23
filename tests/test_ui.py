@@ -268,6 +268,51 @@ def test_detect_button_click(qtbot, qapp, tmp_path):
     assert "frames" in window.sequence_info_label.text()
 
 
+def test_timeline_scrubbers(qtbot, qapp, monkeypatch):
+    """Test timeline scrubber range and preview updates."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    class MockSequence:
+        def __init__(self, frame_numbers):
+            self.frame_numbers = frame_numbers
+
+        def __len__(self):
+            return len(self.frame_numbers)
+
+        def get_file_path(self, frame):
+            return Path(f"render.{frame:04d}.exr")
+
+    def mock_detect(_pattern):
+        return MockSequence([1001, 1003, 1005])
+
+    monkeypatch.setattr("renderkit.core.sequence.SequenceDetector.detect_sequence", mock_detect)
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    assert window.timeline_widget.isHidden() is True
+
+    window.input_pattern_combo.lineEdit().setText("render.%04d.exr")
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    qtbot.waitUntil(lambda: not window.timeline_widget.isHidden(), timeout=1000)
+    assert window.timeline_slider.minimum() == 0
+    assert window.timeline_slider.maximum() == 2
+    assert window.timeline_slider.value() == 0
+    assert "1001" in window.timeline_current_label.text()
+
+    called = {}
+
+    def mock_load_preview(path, **_kwargs):
+        called["path"] = path
+
+    monkeypatch.setattr(window, "_load_preview_from_path", mock_load_preview)
+    window.timeline_slider.setValue(1)
+    qtbot.waitUntil(lambda: "path" in called, timeout=1000)
+    assert called["path"].name == "render.1003.exr"
+
+
 def test_convert_button_validation(qtbot, qapp, monkeypatch):
     """Test that convert button validates inputs."""
     from renderkit.ui.main_window import ModernMainWindow
