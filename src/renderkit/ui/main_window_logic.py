@@ -63,7 +63,13 @@ class _SettingSpec:
 
 
 SETTINGS_SCHEMA: tuple[_SettingSpec, ...] = (
-    _SettingSpec("fps", 24, int, lambda ui: ui.fps_spin.value(), lambda ui, value: ui.fps_spin.setValue(value)),
+    _SettingSpec(
+        "fps",
+        24,
+        int,
+        lambda ui: ui.fps_spin.value(),
+        lambda ui, value: ui.fps_spin.setValue(value),
+    ),
     _SettingSpec(
         "keep_source_fps",
         True,
@@ -78,8 +84,20 @@ SETTINGS_SCHEMA: tuple[_SettingSpec, ...] = (
         lambda ui: ui.keep_source_frame_range_check.isChecked(),
         lambda ui, value: ui.keep_source_frame_range_check.setChecked(value),
     ),
-    _SettingSpec("width", 1920, int, lambda ui: ui.width_spin.value(), lambda ui, value: ui.width_spin.setValue(value)),
-    _SettingSpec("height", 1080, int, lambda ui: ui.height_spin.value(), lambda ui, value: ui.height_spin.setValue(value)),
+    _SettingSpec(
+        "width",
+        1920,
+        int,
+        lambda ui: ui.width_spin.value(),
+        lambda ui, value: ui.width_spin.setValue(value),
+    ),
+    _SettingSpec(
+        "height",
+        1080,
+        int,
+        lambda ui: ui.height_spin.value(),
+        lambda ui, value: ui.height_spin.setValue(value),
+    ),
     _SettingSpec(
         "codec_text",
         "",
