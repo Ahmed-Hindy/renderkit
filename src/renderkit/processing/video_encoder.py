@@ -129,7 +129,7 @@ class _RawFfmpegPipeWriter:
             self._process = subprocess.Popen(
                 self._cmd,
                 stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=None,
                 **popen_kwargs(prevent_sigint=True),
             )
@@ -153,10 +153,6 @@ class _RawFfmpegPipeWriter:
             except Exception as exc:
                 logger.warning("Error closing FFmpeg stdin: %s", exc)
             self._process.wait()
-        try:
-            self._process.stdout.close()
-        except Exception:
-            pass
 
 
 class VideoEncoder:
