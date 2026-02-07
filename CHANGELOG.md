@@ -16,10 +16,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - (nothing yet)
 
-## [0.10.0] - 2026-01-23
+## [0.10.0] - 2026-02-08
+
+### Added
+- Full-window drag-and-drop overlay with theme-aware styling.
+- Aspect-ratio link toggle for width/height controls with persisted state.
+- One-click preview thumbnail export to JPEG in the output folder.
+- Timeline scrubber for sequence preview with exact frame tracking.
+- Branded startup splash screen with minimum display timing helpers.
+- OCIO bundle integrity tests for line endings and LUT references.
+
+### Changed
+- Refactored timeline scrubbing into a dedicated controller for cleaner UI behavior.
+- Centralized UI settings persistence with a shared settings schema.
+- Consolidated burn-in and output-action UI state handling in main window logic.
+- Updated README with an application screenshot.
+- Improved FFmpeg piping by routing stdout to `DEVNULL` for cleaner runtime behavior.
 
 ### Fixed
-- **OCIO Configuration**: Aligned the bundled OCIO config profile to 2.4 for compatibility with OpenImageIO's embedded OCIO 2.4.x.
+- **OCIO Configuration**: Aligned bundled OCIO profile to 2.4 for OpenImageIO compatibility.
+- Hardened OCIO/OIIO diagnostics for packaged color-conversion failures.
+- Enforced LF line endings for bundled OCIO config and LUT assets.
+- Hidden FFmpeg console window on Windows during conversion.
+- Ensured explicit bitrate takes precedence over quality tuning in video encoding.
+- Fixed FFmpeg-dependent contact-sheet test behavior when FFmpeg is unavailable.
+
 ## [0.9.0] - 2026-01-20
 
 ### Fixed
