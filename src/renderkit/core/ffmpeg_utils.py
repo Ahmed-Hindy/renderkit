@@ -86,9 +86,11 @@ def get_ffmpeg_exe() -> str:
 def popen_kwargs(prevent_sigint: bool = True) -> dict[str, object]:
     """Return subprocess kwargs tuned for FFmpeg execution."""
     kwargs: dict[str, object] = {}
-    if prevent_sigint:
-        if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            kwargs["start_new_session"] = True
+    if os.name == "nt":
+        creationflags = subprocess.CREATE_NO_WINDOW
+        if prevent_sigint:
+            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = creationflags
+    elif prevent_sigint:
+        kwargs["start_new_session"] = True
     return kwargs
