@@ -1,7 +1,9 @@
 """Color space conversion using Strategy pattern."""
 
 import logging
+import os
 import re
+from pathlib import Path
 from enum import Enum
 from typing import Any, Optional, Protocol
 
@@ -22,6 +24,19 @@ _OIIO_REC709_CANDIDATES = [
     "Output - Rec709",
 ]
 _OIIO_COLOR_SPACE_CACHE: Optional[dict[str, str]] = None
+
+
+def _summarize_list(values: list[str], max_items: int = 20) -> str:
+    if not values:
+        return "[]"
+    if len(values) <= max_items:
+        return str(values)
+    shown = values[:max_items]
+    return f"{shown} ... (+{len(values) - max_items} more)"
+
+
+def _count_crlf_pairs(data: bytes) -> int:
+    return data.count(b"\r\n")
 
 
 def _get_oiio_color_space_map(oiio) -> dict[str, str]:
@@ -130,9 +145,32 @@ def _oiio_colorconvert_buf(oiio, src_buf, from_spaces: list[str], to_spaces: lis
             if err:
                 errors.append(err)
     if errors:
+        available_spaces = sorted(set(space_map.values()))
+        logger.error(
+            "OIIO colorconvert failed after %s attempts. from_candidates=%s to_candidates=%s "
+            "available_spaces_count=%s available_spaces_sample=%s errors=%s oiio_error=%s",
+            len(from_candidates) * len(to_candidates),
+            from_candidates,
+            to_candidates,
+            len(available_spaces),
+            _summarize_list(available_spaces),
+            _summarize_list(errors, max_items=10),
+            oiio.geterror(),
+        )
         message = " ".join(errors)
         raise ColorSpaceError(message.strip())
 
+    available_spaces = sorted(set(space_map.values()))
+    logger.error(
+        "OIIO colorconvert failed with no detailed OIIO error. from_spaces=%s to_spaces=%s "
+        "from_candidates=%s to_candidates=%s available_spaces_count=%s available_spaces_sample=%s",
+        from_spaces,
+        to_spaces,
+        from_candidates,
+        to_candidates,
+        len(available_spaces),
+        _summarize_list(available_spaces),
+    )
     raise ColorSpaceError(f"OIIO color conversion failed for '{from_spaces}' -> '{to_spaces}'.")
 
 
@@ -327,6 +365,120 @@ class OCIOColorSpaceStrategy:
         self._output_space = output_space
         return output_space
 
+    def _log_ocio_failure_diagnostics(
+        self,
+        requested_input_space: str,
+        resolved_input_space: Optional[str],
+        resolved_output_space: Optional[str],
+        error: Exception,
+    ) -> None:
+        ocio_env = os.environ.get("OCIO")
+        ocio_env_exists = False
+        if ocio_env:
+            try:
+                ocio_env_exists = Path(ocio_env).exists()
+            except OSError:
+                ocio_env_exists = False
+
+        config_version = "unknown"
+        search_path = "unknown"
+        default_display = "unknown"
+        default_view = "unknown"
+        display_view_space = "unknown"
+        colorspaces: list[str] = []
+        roles: list[str] = []
+        processor_status = "not-attempted"
+        config_file_crlf = "unknown"
+        lut_sources_count = 0
+        lut_diagnostics: list[str] = []
+
+        try:
+            major = self.config.getMajorVersion()
+            minor = self.config.getMinorVersion()
+            config_version = f"{major}.{minor}"
+        except Exception:
+            pass
+
+        try:
+            search_path = str(self.config.getSearchPath())
+        except Exception:
+            pass
+
+        try:
+            colorspaces = sorted(list(self.config.getColorSpaceNames()))
+        except Exception:
+            pass
+
+        try:
+            role_names = sorted(list(self.config.getRoleNames()))
+            roles = [f"{role}={self.config.getRoleColorSpace(role)}" for role in role_names]
+        except Exception:
+            pass
+
+        try:
+            default_display = str(self.config.getDefaultDisplay())
+            default_view = str(self.config.getDefaultView(default_display))
+            display_view_space = str(
+                self.config.getDisplayViewColorSpaceName(default_display, default_view)
+            )
+        except Exception:
+            pass
+
+        if resolved_input_space and resolved_output_space:
+            try:
+                self.config.getProcessor(resolved_input_space, resolved_output_space)
+                processor_status = "ok"
+            except Exception as proc_error:
+                processor_status = f"failed: {proc_error}"
+
+        if ocio_env_exists and ocio_env:
+            try:
+                ocio_path = Path(ocio_env)
+                config_bytes = ocio_path.read_bytes()
+                config_file_crlf = str(_count_crlf_pairs(config_bytes))
+                config_text = config_bytes.decode("utf-8", errors="replace")
+                lut_sources = sorted(set(re.findall(r"src:\s*([^\s,}]+)", config_text)))
+                lut_sources_count = len(lut_sources)
+                for lut_source in lut_sources[:20]:
+                    lut_path = ocio_path.parent / "luts" / lut_source
+                    if not lut_path.exists():
+                        lut_diagnostics.append(f"{lut_source}:missing")
+                        continue
+                    lut_bytes = lut_path.read_bytes()
+                    lut_diagnostics.append(
+                        f"{lut_source}:size={len(lut_bytes)}:crlf={_count_crlf_pairs(lut_bytes)}"
+                    )
+                if len(lut_sources) > 20:
+                    lut_diagnostics.append(f"... (+{len(lut_sources) - 20} more LUT refs)")
+            except Exception as io_error:
+                lut_diagnostics.append(f"lut_diagnostics_failed={io_error}")
+
+        logger.error(
+            "OCIO diagnostics: error=%s requested_input=%s resolved_input=%s resolved_output=%s "
+            "ocio_env=%s ocio_env_exists=%s config_version=%s search_path=%s "
+            "default_display=%s default_view=%s display_view_space=%s processor_status=%s "
+            "colorspaces_count=%s colorspaces_sample=%s roles=%s "
+            "config_crlf=%s lut_sources_count=%s lut_diagnostics=%s",
+            error,
+            requested_input_space,
+            resolved_input_space,
+            resolved_output_space,
+            ocio_env,
+            ocio_env_exists,
+            config_version,
+            search_path,
+            default_display,
+            default_view,
+            display_view_space,
+            processor_status,
+            len(colorspaces),
+            _summarize_list(colorspaces),
+            _summarize_list(roles, max_items=15),
+            config_file_crlf,
+            lut_sources_count,
+            _summarize_list(lut_diagnostics, max_items=20),
+        )
+
     def convert_buf(self, buf: Any, input_space: Optional[str] = None):
         if not self.config:
             raise ColorSpaceError("OCIO config not available.")
@@ -338,12 +490,28 @@ class OCIOColorSpaceStrategy:
         except ImportError as err:
             raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
 
+        requested_input_space = input_space
+        resolved_input_space: Optional[str] = input_space
+        resolved_output_space: Optional[str] = None
         try:
-            input_space = self._resolve_input_space(input_space)
-            output_space = self._resolve_output_space()
-            logger.debug(f"OCIO Conversion (ImageBuf): '{input_space}' -> '{output_space}'")
-            return _oiio_colorconvert_buf(oiio, buf, [input_space], [output_space])
+            resolved_input_space = self._resolve_input_space(input_space)
+            resolved_output_space = self._resolve_output_space()
+            logger.debug(
+                "OCIO Conversion (ImageBuf): requested_input='%s' resolved_input='%s' output='%s'",
+                requested_input_space,
+                resolved_input_space,
+                resolved_output_space,
+            )
+            return _oiio_colorconvert_buf(
+                oiio, buf, [resolved_input_space], [resolved_output_space]
+            )
         except Exception as e:
+            self._log_ocio_failure_diagnostics(
+                requested_input_space=requested_input_space,
+                resolved_input_space=resolved_input_space,
+                resolved_output_space=resolved_output_space,
+                error=e,
+            )
             raise ColorSpaceError(f"OCIO conversion error: {e}") from e
 
 
