@@ -11,6 +11,12 @@ Targets the VFX Platform CY2026 spec (Python 3.13.x, Qt 6.8/PySide6 6.8, OpenCol
 
 **[Full Documentation](https://Ahmed-Hindy.github.io/renderkit/)**
 
+## App Screenshot
+
+![RenderKit desktop UI screenshot](docs/images/renderkit-ui-screenshot.png)
+
+_RenderKit UI converting an image sequence to MP4._
+
 ## Features
 
 - **VFX-Standard I/O**: High-performance image reading and scaling powered by **OpenImageIO**.
