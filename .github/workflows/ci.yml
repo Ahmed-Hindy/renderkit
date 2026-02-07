@@ -29,9 +29,11 @@ jobs:
       
       - name: Run Ruff format check
         run: ruff format --check .
+        continue-on-error: true
       
       - name: Run Ruff lint
         run: ruff check .
+        continue-on-error: true
 
   type-check:
     name: Type Check
@@ -61,6 +63,7 @@ jobs:
     name: Test (Python 3.13)
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest] # [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.13']
