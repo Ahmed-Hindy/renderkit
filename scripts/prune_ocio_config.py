@@ -168,7 +168,7 @@ def prune_config():
     dst_config_path = OUTPUT_DIR / "config.ocio"
     try:
         dst_config.validate()
-        with open(dst_config_path, "w") as f:
+        with open(dst_config_path, "w", newline="\n") as f:
             f.write(dst_config.serialize())
         print(f"Pruned config saved to {dst_config_path}")
     except Exception as e:

@@ -167,6 +167,17 @@ class PreviewWorker(QThread):
 
             self.preview_ready.emit(pixmap)
         except Exception as e:
+            logger.exception(
+                "Preview worker failed. file=%s color_space=%s input_space=%s layer=%s "
+                "contact_sheet=%s burnin=%s preview_scale=%s",
+                self.file_path,
+                self.color_space,
+                self.input_space,
+                self.layer,
+                bool(self.cs_config),
+                bool(self.burnin_config),
+                self.preview_scale,
+            )
             self.error.emit(str(e))
 
 

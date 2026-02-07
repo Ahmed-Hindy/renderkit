@@ -1,8 +1,19 @@
+import shutil
+from pathlib import Path
+
 import pytest
 
 from renderkit.core.config import ContactSheetConfigBuilder
+from renderkit.core.ffmpeg_utils import get_ffmpeg_exe
 from renderkit.io.image_reader import LayerMapEntry
 from renderkit.processing.contact_sheet import ContactSheetGenerator
+
+
+def _ffmpeg_available() -> bool:
+    exe = get_ffmpeg_exe()
+    if Path(exe).is_file():
+        return True
+    return shutil.which(exe) is not None
 
 
 def test_contact_sheet_composite_layers(tmp_path):
@@ -64,6 +75,9 @@ def test_contact_sheet_full_conversion(tmp_path):
         import OpenImageIO as oiio
     except ImportError:
         pytest.skip("OpenImageIO not available")
+
+    if not _ffmpeg_available():
+        pytest.skip("FFmpeg not available in test environment")
 
     # 1. Create dummy image sequence
     seq_dir = tmp_path / "sequence"

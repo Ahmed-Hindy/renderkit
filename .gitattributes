@@ -1,0 +1,4 @@
+# Keep OCIO bundle assets line-ending stable across platforms.
+src/renderkit/data/ocio/config.ocio text eol=lf
+src/renderkit/data/ocio/luts/*.spi1d text eol=lf
+src/renderkit/data/ocio/luts/*.spi3d text eol=lf
