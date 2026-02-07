@@ -3,8 +3,8 @@
 import logging
 import os
 import re
-from pathlib import Path
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional, Protocol
 
 from renderkit import constants
@@ -405,12 +405,12 @@ class OCIOColorSpaceStrategy:
             pass
 
         try:
-            colorspaces = sorted(list(self.config.getColorSpaceNames()))
+            colorspaces = sorted(self.config.getColorSpaceNames())
         except Exception:
             pass
 
         try:
-            role_names = sorted(list(self.config.getRoleNames()))
+            role_names = sorted(self.config.getRoleNames())
             roles = [f"{role}={self.config.getRoleColorSpace(role)}" for role in role_names]
         except Exception:
             pass

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 OCIO_ROOT = Path("src/renderkit/data/ocio")
 CONFIG_PATH = OCIO_ROOT / "config.ocio"
 
