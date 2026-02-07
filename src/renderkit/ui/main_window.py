@@ -2,8 +2,10 @@
 
 import os
 import sys
+import time
 from typing import Optional
 
+from renderkit import __version__
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.file_info_worker import FileInfoWorker
@@ -31,6 +33,11 @@ from renderkit.ui.qt_compat import (
     Qt,
     QTimer,
     QWidget,
+)
+from renderkit.ui.splash_screen import (
+    SPLASH_MIN_DURATION_MS,
+    create_splash_screen,
+    wait_for_minimum_splash_duration,
 )
 from renderkit.ui.timeline_controller import TimelineController
 
@@ -119,8 +126,25 @@ def run_ui() -> None:
     palette.setColor(QPalette.ColorRole.Highlight, Qt.GlobalColor.blue)
     app.setPalette(palette)
 
-    window = ModernMainWindow()
+    splash_started_at = time.monotonic()
+    splash = create_splash_screen(__version__)
+    splash.show()
+    app.processEvents()
+
+    try:
+        window = ModernMainWindow()
+    except Exception:
+        splash.close()
+        raise
+
+    wait_for_minimum_splash_duration(
+        app=app,
+        started_at=splash_started_at,
+        minimum_ms=SPLASH_MIN_DURATION_MS,
+    )
+
     window.show()
+    splash.finish(window)
     sys.exit(app.exec())
 
 
