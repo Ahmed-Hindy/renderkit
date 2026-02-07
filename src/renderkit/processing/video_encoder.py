@@ -178,7 +178,7 @@ class VideoEncoder:
             fps: Frame rate
             codec: Video codec (FFmpeg name like 'libx264', 'libx265', 'libaom-av1')
             bitrate: Video bitrate in kbps (optional)
-            quality: Video quality (0-10), 10 is best (optional, used if bitrate is None)
+            quality: Video quality (0-10), 10 is best (optional, used only if bitrate is None)
             macro_block_size: Macro block size for codec compatibility (default: 16)
                              Frame dimensions will be rounded up to multiples of this value
         """
@@ -331,8 +331,14 @@ class VideoEncoder:
 
         bitrate: Optional[str] = None
 
-        # Codec-specific tuning and quality mapping
-        if ffmpeg_codec in ["libx264", "libx265"]:
+        # Bitrate takes precedence over quality tuning when provided.
+        if self.bitrate is not None:
+            bitrate = f"{self.bitrate}k"
+            if ffmpeg_codec == "libaom-av1":
+                ffmpeg_params.extend(["-cpu-used", "6"])
+            logger.debug("%s tuning: bitrate=%s", ffmpeg_codec, bitrate)
+        # Codec-specific tuning and quality mapping (used only when bitrate is not provided).
+        elif ffmpeg_codec in ["libx264", "libx265"]:
             # Map quality (0-10) to CRF (35-18)
             # 10 -> 18 (Excellent), 0 -> 35 (Low quality)
             # Default to 23 if not specified
@@ -356,9 +362,6 @@ class VideoEncoder:
             ffmpeg_params.extend(["-q:v", f"{int(qv)}"])
             logger.debug(f"MPEG-4 tuning: q:v={int(qv)}")
 
-        elif self.bitrate:
-            bitrate = f"{self.bitrate}k"
-
         # Apply final FFmpeg parameters
         if self._ffmpeg_report_path is not None:
             ffmpeg_params.extend(["-report", "-loglevel", "info"])
@@ -377,7 +380,8 @@ class VideoEncoder:
             )
             logger.debug(
                 f"Initialized FFmpeg pipe writer: {width}x{height} @ {self.fps}fps, "
-                f"codec={ffmpeg_codec}, quality={self.quality}, params={ffmpeg_params}"
+                f"codec={ffmpeg_codec}, quality={self.quality}, bitrate={bitrate}, "
+                f"params={ffmpeg_params}"
             )
         except RuntimeError as e:
             msg = str(e)
