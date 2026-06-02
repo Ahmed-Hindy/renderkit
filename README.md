@@ -19,15 +19,14 @@ _RenderKit UI converting an image sequence to MP4._
 
 ## Features
 
-- **VFX-Standard I/O**: High-performance image reading and scaling powered by **OpenImageIO**.
+- **VFX-Standard I/O**: High-performance image operations powered by **OpenImageIO**.
 - **Broad Format Support**: Native support for **EXR, DPX, TIFF, PNG, and JPEG**.
-- **Quality-First Video**: 0-10 Quality Slider using **Constant Rate Factor (CRF)** for professional results.
-- **H.264 Default + AV1/HEVC**: Support for **H.264 (AVC)** by default, with **AV1** and **H.265 (HEVC)** options.
-- **Smart Detection**: Automatically handles `%04d`, `$F4`, `####` and numeric sequences.
-- **Multi-AOV Contact Sheets**: Generate a video grid of all AOVs (layers) for every frame.
-- **Color Space**: Professional color management including **Linear-to-sRGB** and **Rec.709** presets.
-- **Interfaces**: Python API, CLI (`renderkit`), and PySide6 UI.
-- **Shared ImageCache**: Reuses OIIO cache across frames for faster network reads.
+- **Quality Slider**: 0-10 Slider.
+- **Supports Standard Codings**: Support for **H.264 (AVC)** by default, with **AV1** and **H.265 (HEVC)** options.
+- **Contact Sheets**: Generate a grid of all AOVs.
+- **OCIO**: Supports most common OCIO presets including **Linear-to-sRGB**, **Rec.709**, and **ACES-sRGB**.
+- **Interfaces**: Python API, CLI (`renderkit`), and UI.
+- **Optimized**: Aggressive caching for faster server reads.
 
 ## Installation
 
