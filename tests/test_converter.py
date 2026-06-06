@@ -12,6 +12,7 @@ from renderkit.exceptions import (
     ImageReadError,
     VideoEncodingError,
 )
+from renderkit.processing.video_encoder import VideoEncoder
 
 
 class TestConversionConfig:
@@ -64,6 +65,16 @@ class TestConversionConfig:
                 input_pattern="render.%04d.exr",
                 output_path="output.mp4",
                 quality=11,
+            )
+
+    @pytest.mark.parametrize("quality", [-1, 11])
+    def test_video_encoder_validation_quality_range(self, quality: int, tmp_path: Path) -> None:
+        """Test video encoder quality validation."""
+        with pytest.raises(ConfigurationError, match="Quality must be between 0 and 10"):
+            VideoEncoder(
+                output_path=tmp_path / "output.mp4",
+                fps=24.0,
+                quality=quality,
             )
 
     def test_config_validation_contact_sheet_requires_config(self) -> None:
