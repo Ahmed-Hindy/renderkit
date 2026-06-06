@@ -86,7 +86,7 @@ def gui() -> None:
 )
 @click.option(
     "--quality",
-    type=int,
+    type=click.IntRange(0, 10),
     default=10,
     help="Video quality (0-10), 10 is best (default: 10). Sets CRF.",
 )
@@ -109,14 +109,19 @@ def gui() -> None:
 @click.option("--burnin-fps", is_flag=True, default=False, help="Burn in frame rate (fps)")
 @click.option(
     "--burnin-opacity",
-    type=int,
+    type=click.IntRange(0, 100),
     default=30,
     help="Opacity of the burn-in background bar (0-100, default: 30)",
 )
 @click.option(
     "--contact-sheet", is_flag=True, default=False, help="Enable multi-AOV contact sheet mode"
 )
-@click.option("--cs-columns", type=int, default=4, help="Contact sheet columns (default: 4)")
+@click.option(
+    "--cs-columns",
+    type=click.IntRange(1),
+    default=4,
+    help="Contact sheet columns (default: 4)",
+)
 @click.option(
     "--cs-thumb-width",
     type=int,
@@ -236,20 +241,7 @@ def convert_exr_sequence(
     elif end_frame is not None:
         config_builder.with_frame_range(0, end_frame)
 
-    # Setup burn-ins
     burnin_elements = []
-    # Assume source width for positioning if output width not yet final in config_builder
-    # But wait, config_builder.width might be None.
-    # Let's use alignment logic instead.
-
-    # We'll need the actual width to position Center/Right correctly
-    # since OIIO render_text takes absolute coordinates.
-    # The converter will handle absolute positioning based on output_width.
-
-    # Actually, I'll update converter.py to handle relative positioning
-    # if I use special x values, or I'll just pass the intention.
-
-    # For now, let's just use standard padding and smaller font.
     font_size = 20
     if burnin_frame:
         burnin_elements.append(
@@ -258,9 +250,6 @@ def convert_exr_sequence(
             )
         )
     if burnin_layer:
-        # We can't know the exact center yet, so we'll fix this in converter.py
-        # to interpret -1 as center or something.
-        # Or better: update BurnInProcessor to handle 'left', 'center', 'right' specifically.
         burnin_elements.append(
             BurnInElement(
                 text_template="Layer: {layer}", x=0, y=10, font_size=font_size, alignment="center"

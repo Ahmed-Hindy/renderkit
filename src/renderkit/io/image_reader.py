@@ -289,7 +289,9 @@ class OIIOReader(ImageReader):
             logger.debug(f"Cached file info for {path}")
             return file_info
 
-        except Exception as e:
+        except ImageReadError:
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as e:
             raise ImageReadError(f"Failed to read file info with OIIO: {path} - {e}") from e
 
     def get_layer_map(self, path: Path) -> dict[str, LayerMapEntry]:
@@ -340,7 +342,9 @@ class OIIOReader(ImageReader):
             self._layer_map_cache[cache_key] = layer_map
             return layer_map
 
-        except Exception as e:
+        except ImageReadError:
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as e:
             raise ImageReadError(f"Failed to build layer map with OIIO: {path} - {e}") from e
 
     def read_imagebuf(
@@ -395,7 +399,9 @@ class OIIOReader(ImageReader):
 
             return buf
 
-        except Exception as e:
+        except ImageReadError:
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as e:
             raise ImageReadError(f"Failed to read image with OIIO: {path} - {e}") from e
 
     def _resolve_subimage_for_layer(
@@ -434,7 +440,7 @@ class OIIOReader(ImageReader):
             if any(c.startswith(f"{layer}.") for c in spec.channelnames):
                 return i
 
-        return 0
+        raise ImageReadError(f"Layer '{layer}' was not found in {path}")
 
     def _slice_layer_from_buf(
         self,
@@ -478,9 +484,7 @@ class OIIOReader(ImageReader):
                 if buf.has_error:
                     raise ImageReadError(f"Failed to extract layer {layer}: {buf.geterror()}")
             elif subimage_index == 0 and not found_exact_match:
-                logger.warning(
-                    f"Layer {layer} not found in any part of {path}, falling back to beauty."
-                )
+                raise ImageReadError(f"Layer '{layer}' was not found in {path}")
 
         return buf
 
@@ -541,7 +545,9 @@ class OIIOReader(ImageReader):
 
             return buf
 
-        except Exception as e:
+        except ImageReadError:
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as e:
             raise ImageReadError(
                 f"Failed to read subimage {subimage_index} with OIIO: {path} - {e}"
             ) from e
@@ -551,55 +557,36 @@ class OIIOReader(ImageReader):
 
         Uses cached file info to avoid redundant I/O.
         """
-        try:
-            file_info = self.get_file_info(path)
-            return file_info.layers
-        except ImageReadError:
-            return ["RGBA"]
+        return self.get_file_info(path).layers
 
     def get_channels(self, path: Path) -> int:
         """Get channel count using OIIO.
 
         Uses cached file info to avoid redundant I/O.
         """
-        try:
-            file_info = self.get_file_info(path)
-            return file_info.channels
-        except ImageReadError:
-            return 3
+        return self.get_file_info(path).channels
 
     def get_resolution(self, path: Path) -> tuple[int, int]:
         """Get resolution using OIIO.
 
         Uses cached file info to avoid redundant I/O.
         """
-        try:
-            file_info = self.get_file_info(path)
-            return (file_info.width, file_info.height)
-        except ImageReadError:
-            return (0, 0)
+        file_info = self.get_file_info(path)
+        return (file_info.width, file_info.height)
 
     def get_metadata_fps(self, path: Path) -> Optional[float]:
         """Get FPS from OIIO metadata.
 
         Uses cached file info to avoid redundant I/O.
         """
-        try:
-            file_info = self.get_file_info(path)
-            return file_info.fps
-        except ImageReadError:
-            return None
+        return self.get_file_info(path).fps
 
     def get_metadata_color_space(self, path: Path) -> Optional[str]:
         """Get color space from OIIO metadata.
 
         Uses cached file info to avoid redundant I/O.
         """
-        try:
-            file_info = self.get_file_info(path)
-            return file_info.color_space
-        except ImageReadError:
-            return None
+        return self.get_file_info(path).color_space
 
 
 class ImageReaderFactory:

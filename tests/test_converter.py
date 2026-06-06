@@ -1,9 +1,17 @@
 """Tests for converter (integration tests would require actual EXR files)."""
 
+from pathlib import Path
+
 import pytest
 
 from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
-from renderkit.exceptions import ConfigurationError
+from renderkit.core.converter import SequenceConverter
+from renderkit.exceptions import (
+    ColorSpaceError,
+    ConfigurationError,
+    ImageReadError,
+    VideoEncodingError,
+)
 
 
 class TestConversionConfig:
@@ -47,6 +55,24 @@ class TestConversionConfig:
                 input_pattern="render.%04d.exr",
                 output_path="output.mp4",
                 prefetch_workers=0,
+            )
+
+    def test_config_validation_quality_range(self) -> None:
+        """Test quality validation."""
+        with pytest.raises(ConfigurationError):
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                quality=11,
+            )
+
+    def test_config_validation_contact_sheet_requires_config(self) -> None:
+        """Test contact sheet mode requires explicit layout configuration."""
+        with pytest.raises(ConfigurationError):
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                contact_sheet_mode=True,
             )
 
 
@@ -112,3 +138,111 @@ class TestConversionConfigBuilder:
         )
 
         assert config.prefetch_workers == 4
+
+
+class _FakeSequence:
+    def get_file_path(self, frame_num: int) -> Path:
+        return Path(f"render.{frame_num:04d}.exr")
+
+
+class _FakeBuf:
+    class _Spec:
+        width = 100
+        height = 100
+
+    def spec(self):
+        return self._Spec()
+
+
+class _PassThroughColorConverter:
+    def convert_buf(self, buf, input_space=None):
+        return buf
+
+
+class TestSequenceConverterFailures:
+    """Tests for strict frame failure behavior."""
+
+    def _converter(self) -> SequenceConverter:
+        converter = SequenceConverter.__new__(SequenceConverter)
+        converter.sequence = _FakeSequence()
+        converter.config = ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="output.mp4",
+            fps=24.0,
+        )
+        converter._layer_map = None
+        return converter
+
+    def test_prepare_frame_raises_on_read_failure(self) -> None:
+        """Existing-frame read failures should abort instead of returning None."""
+
+        class FailingReader:
+            def read_imagebuf(self, path, layer=None, layer_map=None):
+                raise ImageReadError("read failed")
+
+        converter = self._converter()
+
+        with pytest.raises(ImageReadError, match="Failed to read frame 1"):
+            converter._prepare_frame_buf(
+                1,
+                100,
+                100,
+                100,
+                100,
+                scaler=object(),
+                input_space=None,
+                reader=FailingReader(),
+                color_converter=_PassThroughColorConverter(),
+                burnin_processor=None,
+            )
+
+    def test_prepare_frame_raises_on_color_failure(self) -> None:
+        """Color conversion failures should abort instead of skipping frames."""
+
+        class Reader:
+            def read_imagebuf(self, path, layer=None, layer_map=None):
+                return _FakeBuf()
+
+        class FailingColorConverter:
+            def convert_buf(self, buf, input_space=None):
+                raise ColorSpaceError("bad transform")
+
+        converter = self._converter()
+
+        with pytest.raises(ColorSpaceError, match="Color space conversion failed for frame 2"):
+            converter._prepare_frame_buf(
+                2,
+                100,
+                100,
+                100,
+                100,
+                scaler=object(),
+                input_space=None,
+                reader=Reader(),
+                color_converter=FailingColorConverter(),
+                burnin_processor=None,
+            )
+
+    def test_prepare_frame_wraps_contact_sheet_render_failure(self) -> None:
+        """Contact sheet render failures should include frame context."""
+
+        class FailingContactSheetGenerator:
+            def composite_layers(self, path):
+                raise RuntimeError("label render failed")
+
+        converter = self._converter()
+
+        with pytest.raises(VideoEncodingError, match="Failed to build contact sheet for frame 3"):
+            converter._prepare_frame_buf(
+                3,
+                100,
+                100,
+                100,
+                100,
+                scaler=object(),
+                input_space=None,
+                reader=object(),
+                color_converter=_PassThroughColorConverter(),
+                burnin_processor=None,
+                contact_sheet_generator=FailingContactSheetGenerator(),
+            )

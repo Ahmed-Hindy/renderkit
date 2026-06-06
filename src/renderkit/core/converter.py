@@ -190,7 +190,7 @@ class SequenceConverter:
         if hasattr(self.reader, "get_layer_map"):
             try:
                 self._layer_map = self.reader.get_layer_map(first_frame_path)
-            except Exception as e:
+            except ImageReadError as e:
                 logger.debug(f"Failed to build layer map for {first_frame_path}: {e}")
 
         if self.config.contact_sheet_mode and self.config.contact_sheet_config:
@@ -373,16 +373,10 @@ class SequenceConverter:
                         _tick_progress(i)
                         if frame_num in existing_frames:
                             future = prefetcher.get_future(frame_num)
-                            try:
-                                result = future.result()
-                            except Exception as e:
-                                logger.warning(f"Failed to process frame {frame_num}: {e}")
-                                result = None
-
-                            if result is not None:
-                                last_valid_buf = result
-                                self._write_frame_buf(frame_num, result)
-                                success_count += 1
+                            result = future.result()
+                            last_valid_buf = result
+                            self._write_frame_buf(frame_num, result)
+                            success_count += 1
                         else:
                             if self._write_freeze_frame(frame_num, last_valid_buf, i):
                                 success_count += 1
@@ -400,9 +394,8 @@ class SequenceConverter:
                             input_space,
                             self.contact_sheet_generator if contact_sheet_enabled else None,
                         )
-                        if result is not None:
-                            last_valid_buf = result
-                            success_count += 1
+                        last_valid_buf = result
+                        success_count += 1
                     else:
                         if self._write_freeze_frame(frame_num, last_valid_buf, i):
                             success_count += 1
@@ -441,29 +434,41 @@ class SequenceConverter:
         """Prepare a single frame buffer without writing it to the encoder."""
         frame_path = self.sequence.get_file_path(frame_num)
 
-        try:
-            if contact_sheet_generator:
+        if contact_sheet_generator:
+            try:
                 buf = contact_sheet_generator.composite_layers(frame_path)
-                spec = buf.spec()
-                width, height = spec.width, spec.height
-            else:
+            except ImageReadError as e:
+                raise ImageReadError(
+                    f"Failed to build contact sheet for frame {frame_num}: {e}"
+                ) from e
+            except (RuntimeError, TypeError, ValueError) as e:
+                raise VideoEncodingError(
+                    f"Failed to build contact sheet for frame {frame_num}: {e}"
+                ) from e
+            spec = buf.spec()
+            width, height = spec.width, spec.height
+        else:
+            try:
                 buf = reader.read_imagebuf(
                     frame_path,
                     layer=self.config.layer,
                     layer_map=self._layer_map,
                 )
-        except (ImageReadError, Exception) as e:
-            logger.warning(f"Failed to process frame {frame_num}: {e}")
-            return None
+            except ImageReadError as e:
+                raise ImageReadError(f"Failed to read frame {frame_num}: {e}") from e
 
         try:
             buf = color_converter.convert_buf(buf, input_space=input_space)
         except ColorSpaceError as e:
-            logger.warning(f"Color space conversion failed for frame {frame_num}: {e}")
-            return None
+            raise ColorSpaceError(
+                f"Color space conversion failed for frame {frame_num}: {e}"
+            ) from e
 
         if output_width != width or output_height != height:
-            buf = scaler.scale_buf(buf, output_width, output_height)
+            try:
+                buf = scaler.scale_buf(buf, output_width, output_height)
+            except (RuntimeError, TypeError, ValueError) as e:
+                raise VideoEncodingError(f"Failed to scale frame {frame_num}: {e}") from e
 
         if self.config.burnin_config and burnin_processor:
             try:
@@ -479,8 +484,10 @@ class SequenceConverter:
                     metadata,
                     self.config.burnin_config,
                 )
-            except Exception as e:
-                logger.error(f"Failed to apply burn-ins for frame {frame_num}: {e}")
+            except (RuntimeError, TypeError, ValueError) as e:
+                raise VideoEncodingError(
+                    f"Failed to apply burn-ins for frame {frame_num}: {e}"
+                ) from e
 
         return buf
 
@@ -505,7 +512,7 @@ class SequenceConverter:
             self.encoder.write_frame(buf)
         except VideoEncodingError:
             raise
-        except Exception as e:
+        except (RuntimeError, TypeError, ValueError) as e:
             logger.error(f"Failed to write {label} {frame_num}: {e}")
             raise VideoEncodingError(f"Failed to write {label} {frame_num}: {e}") from e
 
@@ -547,8 +554,6 @@ class SequenceConverter:
             self.burnin_processor,
             contact_sheet_generator=contact_sheet_generator,
         )
-        if buf is None:
-            return None
 
         self._write_frame_buf(frame_num, buf)
 

@@ -28,6 +28,13 @@ def test_token_replacement():
     assert result == expected
 
 
+def test_token_replacement_missing_token_raises():
+    processor = BurnInProcessor()
+
+    with pytest.raises(ValueError, match="Missing burn-in metadata token"):
+        processor._replace_tokens("Frame: {frame} | Shot: {shot}", {"frame": 101})
+
+
 def test_apply_burnins_logic():
     # This test verifies that the logic flows correctly.
     # Mocking OIIO might be complex, so we check if the processor handles empty configs gracefully.
