@@ -1,23 +1,10 @@
 """Tests for splash screen rendering and timing helpers."""
 
-import pytest
-
-from renderkit.ui.qt_compat import QApplication
 from renderkit.ui.splash_screen import (
     SPLASH_MIN_DURATION_MS,
     compute_remaining_splash_ms,
     create_splash_screen,
 )
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Create QApplication for Qt widget tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
 
 
 def test_compute_remaining_splash_ms_partial_elapsed():

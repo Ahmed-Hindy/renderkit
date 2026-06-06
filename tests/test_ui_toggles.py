@@ -1,19 +1,5 @@
 """Tests for the UI toggles in ModernMainWindow."""
 
-import pytest
-
-from renderkit.ui.qt_compat import QApplication
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Create QApplication for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
-
 
 def test_burnin_toggle(qtbot, qapp):
     """Test that burn-in toggle correctly enables/disables child widgets."""

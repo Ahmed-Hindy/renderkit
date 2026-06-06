@@ -6,11 +6,7 @@ Run with: pytest tests/test_ui.py -v
 
 from pathlib import Path
 
-import pytest
-
-# Skip UI tests if pytest-qt is not available
 from renderkit.ui.qt_compat import (
-    QApplication,
     get_qt_backend,
 )
 
@@ -60,16 +56,6 @@ def test_frame_range_updates(qtbot, tmp_path, monkeypatch):
     qtbot.waitUntil(lambda: window.start_frame_spin.value() == 1, timeout=1000)
     assert window.start_frame_spin.value() == 1
     assert window.end_frame_spin.value() == 5
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Create QApplication for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
 
 
 def test_qt_backend_detection():
