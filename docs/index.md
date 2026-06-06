@@ -47,7 +47,7 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 ### UI
 
 ```bash
-python -m renderkit.ui.main_window
+uv run renderkit ui
 ```
 
 ### Python API
