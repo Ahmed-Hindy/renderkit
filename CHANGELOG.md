@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - (nothing yet)
 
+## [1.0.0] - 2026-06-06
+
+### Added
+- Public `renderkit ui` command for launching the desktop app from the CLI.
+- Stricter runtime failure propagation.
+
+### Changed
+- switched log and preview widgets places.
+- Tightened runtime error handling so failures surface explicitly instead of producing partial success.
+
+### Fixed
+- fixed preview burn-ins scaling issue.
+- Validated encoder quality range.
+- fixed combobox hovering styling.
+
 ## [0.10.0] - 2026-02-08
 
 ### Added

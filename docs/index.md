@@ -24,25 +24,25 @@ The desktop app is the main end-user path; these docs focus on CLI automation, p
 Launch the desktop UI:
 
 ```bash
-uv renderkit ui
+uv run renderkit ui
 ```
 
 Convert a sequence:
 
 ```bash
-uv renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+uv run renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 ```
 
 Generate a multi-AOV contact sheet movie:
 
 ```bash
-uv renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
+uv run renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
 ```
 
 Generate a still contact sheet:
 
 ```bash
-uv renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
+uv run renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
 ```
 
 ## Source Checkout
