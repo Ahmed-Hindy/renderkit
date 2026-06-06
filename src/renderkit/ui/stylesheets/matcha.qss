@@ -216,6 +216,10 @@ QProgressBar {
     border-color: #0969da;
 }
 
+[theme="light"] QComboBox:hover {
+    background-color: #f6f8fa;
+}
+
 [theme="light"] QLineEdit:focus, [theme="light"] QTextEdit:focus, [theme="light"] QComboBox:focus,
 [theme="light"] QPlainTextEdit:focus, [theme="light"] QSpinBox:focus, [theme="light"] QDoubleSpinBox:focus {
     border-color: #8250df;
@@ -242,6 +246,16 @@ QProgressBar {
     selection-background-color: #0969da;
     selection-color: #e6edf3;
     border: 1px solid #d0d7deb3;
+}
+
+[theme="light"] QComboBox QAbstractItemView::item {
+    padding: 4px 8px;
+}
+
+[theme="light"] QComboBox QAbstractItemView::item:hover,
+[theme="light"] QComboBox QAbstractItemView::item:selected {
+    background-color: #0969da;
+    color: #e6edf3;
 }
 
 [theme="light"] QCheckBox:disabled, [theme="light"] QRadioButton:disabled, [theme="light"] QSlider:disabled {
@@ -399,6 +413,10 @@ QProgressBar {
     border-color: #4493f8;
 }
 
+[theme="dark"] QComboBox:hover {
+    background-color: #161b22;
+}
+
 [theme="dark"] QLineEdit:focus, [theme="dark"] QTextEdit:focus, [theme="dark"] QComboBox:focus,
 [theme="dark"] QPlainTextEdit:focus, [theme="dark"] QSpinBox:focus, [theme="dark"] QDoubleSpinBox:focus {
     border-color: #a371f7;
@@ -425,6 +443,39 @@ QProgressBar {
     selection-background-color: #4493f8;
     selection-color: #e6edf3;
     border: 1px solid #30363db3;
+}
+
+/* QComboBox popups are separate item views, so target the popup view directly. */
+QListView#ComboBoxPopup,
+QAbstractItemView#ComboBoxPopup {
+    background-color: #0d1117;
+    color: #e6edf3;
+    selection-background-color: #4493f8;
+    selection-color: #e6edf3;
+    border: 1px solid #30363db3;
+}
+
+[theme="dark"] QComboBox QAbstractItemView::item {
+    padding: 4px 8px;
+}
+
+QListView#ComboBoxPopup::item,
+QAbstractItemView#ComboBoxPopup::item {
+    padding: 4px 8px;
+}
+
+[theme="dark"] QComboBox QAbstractItemView::item:hover,
+[theme="dark"] QComboBox QAbstractItemView::item:selected {
+    background-color: #4493f8;
+    color: #e6edf3;
+}
+
+QListView#ComboBoxPopup::item:hover,
+QListView#ComboBoxPopup::item:selected,
+QAbstractItemView#ComboBoxPopup::item:hover,
+QAbstractItemView#ComboBoxPopup::item:selected {
+    background-color: #4493f8;
+    color: #e6edf3;
 }
 
 [theme="dark"] QCheckBox:disabled, [theme="dark"] QRadioButton:disabled, [theme="dark"] QSlider:disabled {
