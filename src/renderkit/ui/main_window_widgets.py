@@ -18,27 +18,6 @@ from renderkit.ui.qt_compat import (
 )
 
 COMBO_POPUP_OBJECT_NAME = "ComboBoxPopup"
-COMBO_POPUP_STYLESHEET = """
-QListView,
-QAbstractItemView {
-    background-color: #0d1117;
-    color: #e6edf3;
-    selection-background-color: #4493f8;
-    selection-color: #e6edf3;
-    border: 1px solid #30363db3;
-}
-
-QListView::item,
-QAbstractItemView::item {
-    padding: 4px 8px;
-}
-
-QListView::item:selected,
-QAbstractItemView::item:selected {
-    background-color: #4493f8;
-    color: #e6edf3;
-}
-"""
 try:
     MOUSE_MOVE_EVENT = QEvent.Type.MouseMove
 except AttributeError:
@@ -152,7 +131,6 @@ class NoWheelComboBox(QComboBox):
         view = self.view()
         view.setObjectName(COMBO_POPUP_OBJECT_NAME)
         view.setMouseTracking(True)
-        view.setStyleSheet(COMBO_POPUP_STYLESHEET)
         viewport = view.viewport()
         if viewport is not None:
             viewport.setMouseTracking(True)
