@@ -25,6 +25,7 @@ _QTCORE_NAMES = [
 ]
 _QTGUI_NAMES = [
     "QColor",
+    "QCursor",
     "QDesktopServices",
     "QFont",
     "QIcon",
@@ -46,6 +47,7 @@ _QTWIDGET_NAMES = [
     "QHBoxLayout",
     "QLabel",
     "QLineEdit",
+    "QListView",
     "QMainWindow",
     "QMessageBox",
     "QPlainTextEdit",
@@ -80,6 +82,7 @@ if TYPE_CHECKING:
     )
     from PySide6.QtGui import (  # noqa: F401
         QColor,
+        QCursor,
         QDesktopServices,
         QFont,
         QIcon,
@@ -101,6 +104,7 @@ if TYPE_CHECKING:
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QListView,
         QMainWindow,
         QMessageBox,
         QPlainTextEdit,
@@ -189,6 +193,7 @@ __all__ = [
     "QImage",
     "QDesktopServices",
     "QColor",
+    "QCursor",
     "QPainter",
     "QPalette",
     # Qt Widgets
@@ -203,6 +208,7 @@ __all__ = [
     "QHBoxLayout",
     "QLabel",
     "QLineEdit",
+    "QListView",
     "QMainWindow",
     "QMessageBox",
     "QPlainTextEdit",

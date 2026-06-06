@@ -1,6 +1,9 @@
 """Tests for shared UI widget helpers."""
 
+import pytest
+
 from renderkit.core.config import BurnInConfig, BurnInElement
+from renderkit.ui.qt_compat import QApplication
 from renderkit.ui.widgets import _scaled_burnin_config_for_preview
 
 
@@ -39,3 +42,52 @@ def test_scaled_burnin_config_for_preview_does_not_mutate_original() -> None:
     assert original.x == 0
     assert original.y == 10
     assert original.font_size == 20
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """Create QApplication for tests."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    yield app
+    app.quit()
+
+
+def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
+    """Ensure combo popup rows can receive hover styling."""
+    from renderkit.ui.main_window_widgets import (
+        COMBO_POPUP_OBJECT_NAME,
+        COMBO_POPUP_STYLESHEET,
+        NoWheelComboBox,
+    )
+
+    combo = NoWheelComboBox()
+    qtbot.addWidget(combo)
+
+    view = combo.view()
+    assert view.objectName() == COMBO_POPUP_OBJECT_NAME
+    assert view.hasMouseTracking() is True
+    assert view.viewport().hasMouseTracking() is True
+    assert view.styleSheet() == COMBO_POPUP_STYLESHEET
+
+
+def test_no_wheel_combo_popup_hover_updates_current_row(qtbot, qapp) -> None:
+    """Ensure hovering a popup item moves the highlighted row."""
+    from renderkit.ui.main_window_widgets import NoWheelComboBox
+    from renderkit.ui.qt_compat import QCursor
+
+    combo = NoWheelComboBox()
+    combo.addItems(["first", "second", "third"])
+    qtbot.addWidget(combo)
+    combo.show()
+    combo.showPopup()
+    qtbot.wait(10)
+
+    view = combo.view()
+    target = view.model().index(1, 0)
+    target_position = view.visualRect(target).center()
+    QCursor.setPos(view.viewport().mapToGlobal(target_position))
+
+    qtbot.waitUntil(lambda: view.currentIndex().row() == 1, timeout=1000)
+    combo.hidePopup()
