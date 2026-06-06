@@ -13,7 +13,7 @@ import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
-from renderkit.exceptions import VideoEncodingError
+from renderkit.exceptions import ConfigurationError, VideoEncodingError
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -178,6 +178,9 @@ class VideoEncoder:
             macro_block_size: Macro block size for codec compatibility (default: 16)
                              Frame dimensions will be rounded up to multiples of this value
         """
+        if quality is not None and not 0 <= quality <= 10:
+            raise ConfigurationError("Quality must be between 0 and 10")
+
         self.output_path = output_path.absolute()
         self.fps = fps
         self.codec = codec
