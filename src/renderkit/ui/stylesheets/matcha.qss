@@ -446,8 +446,8 @@ QProgressBar {
 }
 
 /* QComboBox popups are separate item views, so target the popup view directly. */
-QListView#ComboBoxPopup,
-QAbstractItemView#ComboBoxPopup {
+[theme="dark"] QListView#ComboBoxPopup,
+[theme="dark"] QAbstractItemView#ComboBoxPopup {
     background-color: #0d1117;
     color: #e6edf3;
     selection-background-color: #4493f8;
@@ -459,8 +459,8 @@ QAbstractItemView#ComboBoxPopup {
     padding: 4px 8px;
 }
 
-QListView#ComboBoxPopup::item,
-QAbstractItemView#ComboBoxPopup::item {
+[theme="dark"] QListView#ComboBoxPopup::item,
+[theme="dark"] QAbstractItemView#ComboBoxPopup::item {
     padding: 4px 8px;
 }
 
@@ -470,10 +470,10 @@ QAbstractItemView#ComboBoxPopup::item {
     color: #e6edf3;
 }
 
-QListView#ComboBoxPopup::item:hover,
-QListView#ComboBoxPopup::item:selected,
-QAbstractItemView#ComboBoxPopup::item:hover,
-QAbstractItemView#ComboBoxPopup::item:selected {
+[theme="dark"] QListView#ComboBoxPopup::item:hover,
+[theme="dark"] QListView#ComboBoxPopup::item:selected,
+[theme="dark"] QAbstractItemView#ComboBoxPopup::item:hover,
+[theme="dark"] QAbstractItemView#ComboBoxPopup::item:selected {
     background-color: #4493f8;
     color: #e6edf3;
 }
