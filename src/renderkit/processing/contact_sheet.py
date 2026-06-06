@@ -7,6 +7,7 @@ from typing import Optional
 import OpenImageIO as oiio
 
 from renderkit.core.config import ContactSheetConfig
+from renderkit.exceptions import ImageReadError
 from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapEntry
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.scaler import ImageScaler
@@ -56,7 +57,7 @@ class ContactSheetGenerator:
             try:
                 layer_map = reader.get_layer_map(frame_path)
                 self.layer_map = layer_map
-            except Exception as e:
+            except ImageReadError as e:
                 logger.debug(f"Failed to precompute layer map for {frame_path}: {e}")
 
         if not layers:
@@ -91,7 +92,6 @@ class ContactSheetGenerator:
         canvas = oiio.ImageBuf(canvas_spec)
         oiio.ImageBufAlgo.fill(canvas, self.config.background_color)
 
-        # Process each layer
         for i, layer_name in enumerate(layers):
             row = i // cols
             col = i % cols
@@ -100,45 +100,50 @@ class ContactSheetGenerator:
             y_offset = row * cell_h + padding
 
             try:
-                if layer_name == layers[0]:
-                    layer_buf = first_buf
-                else:
-                    layer_buf = self._resolve_layer_buf(
+                layer_buf = (
+                    first_buf
+                    if layer_name == layers[0]
+                    else self._resolve_layer_buf(
                         reader,
                         frame_path,
                         layer_name,
                         layer_map,
                         subimage_buffers,
                     )
+                )
+            except ImageReadError as e:
+                raise ImageReadError(
+                    f"Failed to read layer '{layer_name}' for contact sheet: {e}"
+                ) from e
 
-                if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
-                    scaled_buf = layer_buf
-                else:
-                    scaled_buf = self._scale_to_thumbnail(layer_buf, thumb_w, thumb_h)
+            if layer_buf.spec().width == thumb_w and layer_buf.spec().height == thumb_h:
+                scaled_buf = layer_buf
+            else:
+                scaled_buf = self._scale_to_thumbnail(layer_buf, thumb_w, thumb_h)
 
-                # Paste onto canvas
-                oiio.ImageBufAlgo.paste(canvas, x_offset, y_offset, 0, 0, scaled_buf)
+            if not oiio.ImageBufAlgo.paste(canvas, x_offset, y_offset, 0, 0, scaled_buf):
+                raise RuntimeError(
+                    f"Failed to paste layer '{layer_name}' into contact sheet: {oiio.geterror()}"
+                )
 
-                # Add label
-                if self.config.show_labels:
-                    label_x = x_offset
-                    label_y = (
-                        y_offset
-                        + thumb_h
-                        + label_gap
-                        + self.config.font_size
-                        - max(2, int(self.config.font_size * 0.2))
-                    )
-                    oiio.ImageBufAlgo.render_text(
-                        canvas,
-                        label_x,
-                        label_y,
-                        layer_name,
-                        fontsize=self.config.font_size,
-                        textcolor=(1, 1, 1, 1),
-                    )
-            except Exception as e:
-                logger.error(f"Failed to process layer {layer_name} for contact sheet: {e}")
+            if self.config.show_labels:
+                label_x = x_offset
+                label_y = (
+                    y_offset
+                    + thumb_h
+                    + label_gap
+                    + self.config.font_size
+                    - max(2, int(self.config.font_size * 0.2))
+                )
+                if not oiio.ImageBufAlgo.render_text(
+                    canvas,
+                    label_x,
+                    label_y,
+                    layer_name,
+                    fontsize=self.config.font_size,
+                    textcolor=(1, 1, 1, 1),
+                ):
+                    raise RuntimeError(f"Failed to render label '{layer_name}': {oiio.geterror()}")
 
         return canvas
 
@@ -200,7 +205,7 @@ class ContactSheetGenerator:
                     subimage_buffers[subimage_index] = oiio.ImageBuf(
                         str(frame_path), subimage_index, 0
                     )
-            except Exception as e:
+            except ImageReadError as e:
                 logger.debug(f"Failed to cache subimage {subimage_index} for {frame_path}: {e}")
                 return {}
 
@@ -220,12 +225,16 @@ class ContactSheetGenerator:
                 base_buf = subimage_buffers.get(entry.subimage_index)
                 if base_buf is not None:
                     if entry.channel_indices:
-                        try:
-                            return oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
-                        except Exception as e:
+                        layer_buf = oiio.ImageBufAlgo.channels(base_buf, entry.channel_indices)
+                        if layer_buf.has_error:
                             logger.debug(
-                                f"Failed to slice channels for {layer_name} in {frame_path}: {e}"
+                                "Failed to slice channels for %s in %s: %s",
+                                layer_name,
+                                frame_path,
+                                layer_buf.geterror(),
                             )
+                        else:
+                            return layer_buf
                     else:
                         return base_buf
 

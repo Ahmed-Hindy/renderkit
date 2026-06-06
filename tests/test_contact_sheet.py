@@ -5,6 +5,7 @@ import pytest
 
 from renderkit.core.config import ContactSheetConfigBuilder
 from renderkit.core.ffmpeg_utils import get_ffmpeg_exe
+from renderkit.exceptions import ImageReadError
 from renderkit.io.image_reader import LayerMapEntry
 from renderkit.processing.contact_sheet import ContactSheetGenerator
 
@@ -169,3 +170,36 @@ def test_contact_sheet_uses_subimage_cache(tmp_path):
     assert composite is not None
     assert reader.image_calls == []
     assert set(reader.subimage_calls) == {0, 1}
+
+
+def test_contact_sheet_layer_failure_raises(tmp_path):
+    """Contact sheets should fail loudly when a requested layer cannot be read."""
+    try:
+        import OpenImageIO as oiio
+    except ImportError:
+        pytest.skip("OpenImageIO not available")
+
+    class FakeReader:
+        def get_layers(self, path):
+            return ["RGBA", "broken"]
+
+        def read_imagebuf(self, path, layer=None, layer_map=None):
+            if layer == "broken":
+                raise ImageReadError("missing layer")
+            spec = oiio.ImageSpec(16, 8, 3, oiio.FLOAT)
+            buf = oiio.ImageBuf(spec)
+            oiio.ImageBufAlgo.fill(buf, (0.2, 0.3, 0.4))
+            return buf
+
+    config = (
+        ContactSheetConfigBuilder()
+        .with_columns(2)
+        .with_thumbnail_width(16)
+        .with_labels(False)
+        .build()
+    )
+
+    generator = ContactSheetGenerator(config, reader=FakeReader())
+
+    with pytest.raises(ImageReadError, match="Failed to read layer 'broken'"):
+        generator.composite_layers(tmp_path / "dummy.exr")

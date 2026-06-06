@@ -83,7 +83,9 @@ class BurnInProcessor:
                 textcolor=element.color,
                 alignx=element.alignment,
             ):
-                logger.error(f"Failed to render burn-in text '{text}': {self.oiio.geterror()}")
+                raise RuntimeError(
+                    f"Failed to render burn-in text '{text}': {self.oiio.geterror()}"
+                )
 
         return buf
 
@@ -100,8 +102,6 @@ class BurnInProcessor:
         try:
             return template.format(**metadata)
         except KeyError as e:
-            logger.warning(f"KeyError during token replacement: {e}")
-            return template
-        except Exception as e:
-            logger.error(f"Error during token replacement: {e}")
-            return template
+            raise ValueError(f"Missing burn-in metadata token: {e}") from e
+        except (IndexError, ValueError) as e:
+            raise ValueError(f"Invalid burn-in template '{template}': {e}") from e

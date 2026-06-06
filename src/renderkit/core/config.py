@@ -44,6 +44,8 @@ class ContactSheetConfig:
 
     def __post_init__(self) -> None:
         """Validate configuration."""
+        if self.font_size <= 0:
+            raise ConfigurationError("Font size must be greater than 0")
         if self.columns <= 0:
             raise ConfigurationError("Columns must be greater than 0")
         if self.thumbnail_width is not None and self.thumbnail_width <= 0:
@@ -166,9 +168,17 @@ class ConversionConfig:
             raise ConfigurationError("Width must be greater than 0")
         if self.height is not None and self.height <= 0:
             raise ConfigurationError("Height must be greater than 0")
+        if self.bitrate is not None and self.bitrate <= 0:
+            raise ConfigurationError("Bitrate must be greater than 0")
+        if not 0 <= self.quality <= 10:
+            raise ConfigurationError("Quality must be between 0 and 10")
         if self.start_frame is not None and self.end_frame is not None:
             if self.start_frame > self.end_frame:
                 raise ConfigurationError("Start frame must be <= end frame")
+        if self.contact_sheet_mode and self.contact_sheet_config is None:
+            raise ConfigurationError(
+                "Contact sheet config is required when contact sheet mode is enabled"
+            )
 
 
 class ConversionConfigBuilder:

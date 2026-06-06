@@ -213,6 +213,7 @@ class MainWindowLogicMixin:
 
     def _ensure_ocio_env(self) -> None:
         """Ensure OCIO environment variable is set, using bundled config if needed."""
+        bundled_config = None
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             candidate = Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio"
             if candidate.exists():
