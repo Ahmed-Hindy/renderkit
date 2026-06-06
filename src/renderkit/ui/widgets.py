@@ -1,13 +1,14 @@
 """Custom widgets for the UI."""
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import OpenImageIO as oiio
 
-from renderkit.core.config import BurnInConfig, ContactSheetConfig
+from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
 from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
@@ -33,6 +34,40 @@ from renderkit.ui.qt_compat import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _scaled_burnin_config_for_preview(
+    burnin_config: BurnInConfig,
+    scale: float,
+    image_width: int,
+) -> BurnInConfig:
+    """Return a burn-in config scaled to match a reduced preview image."""
+    if scale >= 1.0:
+        return burnin_config
+
+    auto_margin = max(1, int(round(20 * scale)))
+    scaled_elements: list[BurnInElement] = []
+
+    for element in burnin_config.elements:
+        x_pos = int(round(element.x * scale))
+        if element.x == 0:
+            if element.alignment == "center":
+                x_pos = image_width // 2
+            elif element.alignment == "right":
+                x_pos = max(1, image_width - auto_margin)
+            elif element.alignment == "left":
+                x_pos = auto_margin
+
+        scaled_elements.append(
+            replace(
+                element,
+                x=x_pos,
+                y=max(0, int(round(element.y * scale))),
+                font_size=max(1, int(round(element.font_size * scale))),
+            )
+        )
+
+    return replace(burnin_config, elements=scaled_elements)
 
 
 class PreviewWorker(QThread):
@@ -87,6 +122,8 @@ class PreviewWorker(QThread):
                 )
                 buf = reader.read_imagebuf(self.file_path, layer=self.layer)
 
+            applied_preview_scale = 1.0
+
             # Apply preview scale
             if self.preview_scale < 1.0:
                 spec = buf.spec()
@@ -96,6 +133,11 @@ class PreviewWorker(QThread):
                 from renderkit.processing.scaler import ImageScaler
 
                 buf = ImageScaler.scale_buf(buf, width=new_w, height=new_h)
+                scaled_spec = buf.spec()
+                applied_preview_scale = min(
+                    scaled_spec.width / float(w),
+                    scaled_spec.height / float(h),
+                )
 
             # Convert color space
             converter = ColorSpaceConverter(self.color_space)
@@ -105,10 +147,15 @@ class PreviewWorker(QThread):
                 from renderkit.processing.burnin import BurnInProcessor
 
                 processor = BurnInProcessor()
+                burnin_config = _scaled_burnin_config_for_preview(
+                    self.burnin_config,
+                    applied_preview_scale,
+                    buf.spec().width,
+                )
                 buf = processor.apply_burnins(
                     buf,
                     self.burnin_metadata,
-                    self.burnin_config,
+                    burnin_config,
                 )
 
             image = buf.get_pixels(oiio.FLOAT)
