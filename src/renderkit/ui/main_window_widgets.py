@@ -2,7 +2,6 @@
 
 from renderkit.ui.qt_compat import (
     QComboBox,
-    QCursor,
     QDoubleSpinBox,
     QEvent,
     QListView,
@@ -13,7 +12,6 @@ from renderkit.ui.qt_compat import (
     QStyle,
     QStyleOptionSlider,
     Qt,
-    QTimer,
     Signal,
 )
 
@@ -59,28 +57,7 @@ class NoWheelDoubleSpinBox(QDoubleSpinBox):
 
 
 class ComboPopupView(QListView):
-    """List view that keeps combo popup highlight under the cursor."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._hover_timer = QTimer(self)
-        self._hover_timer.setInterval(16)
-        self._hover_timer.timeout.connect(self._highlight_index_under_cursor)
-
-    def start_hover_tracking(self) -> None:
-        self._highlight_index_under_cursor()
-        self._hover_timer.start()
-
-    def stop_hover_tracking(self) -> None:
-        self._hover_timer.stop()
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        self.start_hover_tracking()
-
-    def hideEvent(self, event) -> None:
-        self.stop_hover_tracking()
-        super().hideEvent(event)
+    """List view that highlights combo popup rows as the mouse moves."""
 
     def viewportEvent(self, event: QEvent) -> bool:
         if event.type() == MOUSE_MOVE_EVENT:
@@ -93,15 +70,6 @@ class ComboPopupView(QListView):
 
     def _highlight_index_at_event(self, event) -> None:
         position = event.position().toPoint() if hasattr(event, "position") else event.pos()
-        index = self.indexAt(position)
-        if index.isValid():
-            self.setCurrentIndex(index)
-
-    def _highlight_index_under_cursor(self) -> None:
-        viewport = self.viewport()
-        position = viewport.mapFromGlobal(QCursor.pos())
-        if not viewport.rect().contains(position):
-            return
         index = self.indexAt(position)
         if index.isValid():
             self.setCurrentIndex(index)
@@ -140,18 +108,6 @@ class NoWheelComboBox(QComboBox):
             event.ignore()
             return
         super().wheelEvent(event)
-
-    def showPopup(self) -> None:
-        super().showPopup()
-        view = self.view()
-        if isinstance(view, ComboPopupView):
-            view.start_hover_tracking()
-
-    def hidePopup(self) -> None:
-        view = self.view()
-        if isinstance(view, ComboPopupView):
-            view.stop_hover_tracking()
-        super().hidePopup()
 
 
 class NoWheelSlider(QSlider):

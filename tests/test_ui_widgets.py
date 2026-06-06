@@ -74,7 +74,7 @@ def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
 def test_no_wheel_combo_popup_hover_updates_current_row(qtbot, qapp) -> None:
     """Ensure hovering a popup item moves the highlighted row."""
     from renderkit.ui.main_window_widgets import NoWheelComboBox
-    from renderkit.ui.qt_compat import QCursor
+    from renderkit.ui.qt_compat import QApplication, QEvent, QMouseEvent, Qt
 
     combo = NoWheelComboBox()
     combo.addItems(["first", "second", "third"])
@@ -86,7 +86,15 @@ def test_no_wheel_combo_popup_hover_updates_current_row(qtbot, qapp) -> None:
     view = combo.view()
     target = view.model().index(1, 0)
     target_position = view.visualRect(target).center()
-    QCursor.setPos(view.viewport().mapToGlobal(target_position))
+    event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        target_position,
+        target_position,
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(view.viewport(), event)
 
     qtbot.waitUntil(lambda: view.currentIndex().row() == 1, timeout=1000)
     combo.hidePopup()
