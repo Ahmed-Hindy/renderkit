@@ -131,11 +131,12 @@ def run_ui() -> None:
     splash.show()
     app.processEvents()
 
+    window = None
     try:
         window = ModernMainWindow()
-    except Exception:
-        splash.close()
-        raise
+    finally:
+        if window is None:
+            splash.close()
 
     wait_for_minimum_splash_duration(
         app=app,

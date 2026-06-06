@@ -3,6 +3,7 @@
 import logging
 
 from renderkit.core.config import ConversionConfig
+from renderkit.exceptions import ConversionCancelledError, RenderKitError
 from renderkit.ui.qt_compat import QThread, Signal
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,6 @@ class ConversionWorker(QThread):
         try:
             from renderkit.core.converter import SequenceConverter
             from renderkit.core.profiler import get_profile_env_config, profile_context
-            from renderkit.exceptions import ConversionCancelledError
 
             logger.info("Starting conversion...")
             converter = SequenceConverter(self.config)
@@ -52,7 +52,7 @@ class ConversionWorker(QThread):
         except ConversionCancelledError:
             logger.info("Conversion cancelled by user.")
             self.cancelled.emit()
-        except Exception as e:
+        except (RenderKitError, OSError, RuntimeError, ValueError) as e:
             msg = f"Conversion failed: {e}"
             logger.exception(msg)
             self.error.emit(msg)

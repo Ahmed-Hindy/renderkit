@@ -8,6 +8,7 @@ import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.core.config import BurnInConfig, ContactSheetConfig
+from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
@@ -101,17 +102,14 @@ class PreviewWorker(QThread):
             buf = converter.convert_buf(buf, input_space=self.input_space)
 
             if self.burnin_config and self.burnin_metadata:
-                try:
-                    from renderkit.processing.burnin import BurnInProcessor
+                from renderkit.processing.burnin import BurnInProcessor
 
-                    processor = BurnInProcessor()
-                    buf = processor.apply_burnins(
-                        buf,
-                        self.burnin_metadata,
-                        self.burnin_config,
-                    )
-                except Exception as e:
-                    logger.warning(f"Preview burn-in failed: {e}")
+                processor = BurnInProcessor()
+                buf = processor.apply_burnins(
+                    buf,
+                    self.burnin_metadata,
+                    self.burnin_config,
+                )
 
             image = buf.get_pixels(oiio.FLOAT)
             if image is None or image.size == 0:
@@ -166,7 +164,7 @@ class PreviewWorker(QThread):
             pixmap = QPixmap.fromImage(q_image)
 
             self.preview_ready.emit(pixmap)
-        except Exception as e:
+        except (RenderKitError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.exception(
                 "Preview worker failed. file=%s color_space=%s input_space=%s layer=%s "
                 "contact_sheet=%s burnin=%s preview_scale=%s",
