@@ -1,9 +1,6 @@
 """Tests for shared UI widget helpers."""
 
-import pytest
-
 from renderkit.core.config import BurnInConfig, BurnInElement
-from renderkit.ui.qt_compat import QApplication
 from renderkit.ui.widgets import _scaled_burnin_config_for_preview
 
 
@@ -42,16 +39,6 @@ def test_scaled_burnin_config_for_preview_does_not_mutate_original() -> None:
     assert original.x == 0
     assert original.y == 10
     assert original.font_size == 20
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Create QApplication for tests."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
-    app.quit()
 
 
 def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
