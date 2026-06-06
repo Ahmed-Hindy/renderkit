@@ -71,6 +71,28 @@ def _scaled_burnin_config_for_preview(
     return replace(burnin_config, elements=scaled_elements)
 
 
+def _prepare_buf_for_preview_display(
+    buf: oiio.ImageBuf,
+    color_space: ColorSpacePreset,
+    input_space: Optional[str],
+) -> oiio.ImageBuf:
+    """Return an RGB/RGBA preview buffer that Qt can display."""
+    spec = buf.spec()
+
+    if spec.nchannels not in (3, 4):
+        logger.debug(
+            "Skipping color conversion for non-RGB preview buffer. channels=%s",
+            spec.nchannels,
+        )
+        display_buf = oiio.ImageBufAlgo.channels(buf, (0, 0, 0), ("R", "G", "B"))
+        if display_buf.has_error:
+            raise ValueError(f"Failed to prepare data-channel preview: {display_buf.geterror()}")
+        return display_buf
+
+    converter = ColorSpaceConverter(color_space)
+    return converter.convert_buf(buf, input_space=input_space)
+
+
 class PreviewWorker(QThread):
     """Worker thread for loading preview image."""
 
@@ -140,9 +162,11 @@ class PreviewWorker(QThread):
                     scaled_spec.height / float(h),
                 )
 
-            # Convert color space
-            converter = ColorSpaceConverter(self.color_space)
-            buf = converter.convert_buf(buf, input_space=self.input_space)
+            buf = _prepare_buf_for_preview_display(
+                buf,
+                self.color_space,
+                self.input_space,
+            )
 
             if self.burnin_config and self.burnin_metadata:
                 from renderkit.processing.burnin import BurnInProcessor
