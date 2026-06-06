@@ -131,6 +131,7 @@ class NoWheelComboBox(QComboBox):
             return
         super().wheelEvent(event)
 
+
 class NoWheelSlider(QSlider):
     """Slider that ignores wheel events unless focused."""
 
