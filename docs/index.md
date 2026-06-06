@@ -1,70 +1,57 @@
 # RenderKit
 
-A high-performance image and video processor for VFX workflows, built with Python and PySide6.
+RenderKit is a high-performance image-sequence to video toolkit for VFX workflows.
+The desktop app is the main end-user path; these docs focus on CLI automation, pipeline use, and API reference.
 
-## Features
+## Where To Start
 
-- **OpenImageIO Integration**: High-performance, VFX-standard image reading and scaling.
-- **Broad Format Support**: Native handling of **EXR, DPX, TIFF, PNG, and JPEG**.
-- **Quality-First UI**: Intuitive 0-10 Quality Slider using Constant Rate Factor (CRF).
-- **H.264 Default + AV1/HEVC Options**: Modern codec support with multi-threading optimizations.
-- **Smart Sequence Detection**: Automatic detection of Houdini, Maya, and generic frame patterns.
-- **Modern UI**: Dark-themed, studio-grade interface using PySide6.
-- **CLI Support**: Fully functional command-line interface for headless automation.
+- Use the project README for the desktop GUI workflow.
+- Use the [Usage Guide](usage.md) for CLI recipes and option tables.
+- Use the API reference when embedding RenderKit in another Python tool.
 
-## Latest Release
+## CLI Highlights
 
-- **v0.4.0 (2026-01-09)**: Preview scales to the panel size with a tighter default footprint, and the Contact Sheet toggle is consolidated into a single control.
+- Convert EXR, TIFF, PNG, and JPEG sequences to MP4.
+- Read common Houdini, Maya, and generic frame-pattern styles.
+- Convert a single EXR layer/AOV or generate multi-AOV contact sheet movies.
+- Apply common color transforms for review output.
+- Add frame, layer, and FPS burn-ins.
+- Choose H.264, H.265, or AV1 codecs.
+- Profile conversions for pipeline tuning.
 
-## Install
+## Quick Commands
 
-### Prebuilt App
-
-/**
- * 1. Download the Pre-compiled binaries from the GitHub Releases section
- * 2. Unzip the downloaded archive
- * 3. Run RenderKit.exe
- * 4. Profit!
- */
-
-
-### From Source (uv)
+Launch the desktop UI:
 
 ```bash
+uv renderkit ui
+```
+
+Convert a sequence:
+
+```bash
+uv renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+```
+
+Generate a multi-AOV contact sheet movie:
+
+```bash
+uv renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
+```
+
+Generate a still contact sheet:
+
+```bash
+uv renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
+```
+
+## Source Checkout
+
+```powershell
 git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
-uv pip install -e .
+uv sync
+uv run renderkit --help
 ```
 
-## Quick Start
-
-### CLI
-
-```bash
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
-```
-
-### UI
-
-```bash
-uv run renderkit ui
-```
-
-### Python API
-
-```python
-from renderkit import RenderKit
-
-processor = RenderKit()
-processor.convert_exr_sequence_to_mp4(
-    input_pattern="render.%04d.exr",
-    output_path="output.mp4",
-    fps=24.0
-)
-```
-
-## Project Structure
-
-- `src/`: Source code
-- `tests/`: Test suite
-- `examples/`: Usage examples
+RenderKit targets Python 3.13.x from VFX Platform CY2026.
