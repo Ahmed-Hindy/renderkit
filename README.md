@@ -66,7 +66,7 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burni
 ### UI
 
 ```bash
-python -m renderkit.ui.main_window
+uv run renderkit ui
 ```
 
 ### Environment Variables

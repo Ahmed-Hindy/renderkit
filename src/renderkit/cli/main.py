@@ -32,6 +32,25 @@ def main() -> None:
     pass
 
 
+def _launch_ui() -> None:
+    """Launch the RenderKit graphical interface."""
+    from renderkit.ui.main_window import run_ui
+
+    run_ui()
+
+
+@main.command(name="ui")
+def ui() -> None:
+    """Launch the RenderKit desktop UI."""
+    _launch_ui()
+
+
+@main.command(name="gui", hidden=True)
+def gui() -> None:
+    """Launch the RenderKit desktop UI."""
+    _launch_ui()
+
+
 @main.command()
 @click.argument("input_pattern", type=str)
 @click.argument("output_path", type=click.Path())

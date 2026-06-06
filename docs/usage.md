@@ -105,7 +105,7 @@ processor.convert_with_config(config)
 Launch the UI from the terminal:
 
 ```bash
-python -m renderkit.ui.main_window
+uv run renderkit ui
 ```
 
 If you have a Pre-compiled build, run the exe in the `RenderKit/` folder.
