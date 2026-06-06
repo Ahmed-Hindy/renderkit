@@ -12,11 +12,8 @@ Thank you for your interest in contributing to RenderKit! This document provides
    ```
 3. **Set up development environment**:
    ```bash
-   # Using uv (recommended)
-   uv pip install -e ".[dev]"
-   
-   # Or using pip
-   pip install -e ".[dev]"
+   uv sync --extra dev
+   uv run pre-commit install
    ```
 
 ## Development Workflow
@@ -45,6 +42,12 @@ Thank you for your interest in contributing to RenderKit! This document provides
    ```bash
    uv run ruff format .
    uv run ruff check .
+   ```
+
+   Pre-commit also runs Ruff formatting on staged Python files before each commit.
+   To run the hook manually:
+   ```bash
+   uv run pre-commit run --all-files
    ```
 
 5. **Commit your changes**:
