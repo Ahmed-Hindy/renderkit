@@ -8,8 +8,8 @@ For the end-user desktop workflow, start with the README and launch the UI with 
 From a source checkout:
 
 ```powershell
-uv --native-tls sync
-uv --native-tls run renderkit --help
+uv sync
+uv run renderkit --help
 ```
 
 If RenderKit is already installed or you are using a release build that adds the executable to `PATH`, use `renderkit` directly.

@@ -25,7 +25,7 @@ RenderKit\RenderKit.exe
 ## Basic Workflow
 
 1. Open RenderKit.
-2. Drop a file or folder into the window, or click **Browse**.
+2. Drop a file or folder into the window or click **Browse**.
 3. Check the detected sequence, frame range, FPS, and output path.
 4. Choose a layer, contact sheet, burn-ins, or quality settings only if you need them.
 5. Click **Convert**.
@@ -34,10 +34,9 @@ When the render finishes, use **Play Result** or **Open Output Folder**.
 
 ## What It Can Make
 
-- MP4 review movies from rendered image sequences.
-- Single-layer EXR/AOV review movies.
-- Multi-AOV contact sheet movies.
-- Review movies with frame, layer, or FPS burn-ins.
+- MP4 movies from rendered image sequences.
+- Supports both Single-layer EXRs and Multi-Layer contact sheets.
+- Add burnins with frame, layer, or FPS.
 - H.264, H.265, or AV1 outputs.
 
 ## More Documentation

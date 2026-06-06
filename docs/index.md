@@ -11,7 +11,7 @@ The desktop app is the main end-user path; these docs focus on CLI automation, p
 
 ## CLI Highlights
 
-- Convert EXR, DPX, TIFF, PNG, and JPEG sequences to MP4.
+- Convert EXR, TIFF, PNG, and JPEG sequences to MP4.
 - Read common Houdini, Maya, and generic frame-pattern styles.
 - Convert a single EXR layer/AOV or generate multi-AOV contact sheet movies.
 - Apply common color transforms for review output.
@@ -24,25 +24,25 @@ The desktop app is the main end-user path; these docs focus on CLI automation, p
 Launch the desktop UI:
 
 ```bash
-renderkit ui
+uv renderkit ui
 ```
 
 Convert a sequence:
 
 ```bash
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+uv renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
 ```
 
 Generate a multi-AOV contact sheet movie:
 
 ```bash
-renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
+uv renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
 ```
 
 Generate a still contact sheet:
 
 ```bash
-renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
+uv renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
 ```
 
 ## Source Checkout
@@ -50,8 +50,8 @@ renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
 ```powershell
 git clone https://github.com/Ahmed-Hindy/renderkit.git
 cd renderkit
-uv --native-tls sync
-uv --native-tls run renderkit --help
+uv sync
+uv run renderkit --help
 ```
 
 RenderKit targets Python 3.13.x from VFX Platform CY2026.
