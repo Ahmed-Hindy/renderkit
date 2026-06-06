@@ -20,6 +20,8 @@ def test_combo_boxes_have_hover_highlights() -> None:
     assert '[theme="dark"] QComboBox:hover' in qss
     assert "background-color: #161b22;" in qss
     assert '[theme="light"] QComboBox QAbstractItemView::item:hover' in qss
+    assert '[theme="light"] QListView#ComboBoxPopup::item:hover' in qss
+    assert '[theme="light"] QAbstractItemView#ComboBoxPopup::item:hover' in qss
     assert "background-color: #0969da;" in qss
     assert '[theme="dark"] QComboBox QAbstractItemView::item:hover' in qss
     assert '[theme="dark"] QListView#ComboBoxPopup::item:hover' in qss
@@ -29,4 +31,4 @@ def test_combo_boxes_have_hover_highlights() -> None:
     for line in qss.splitlines():
         stripped_line = line.strip().rstrip(",")
         if "ComboBoxPopup" in stripped_line:
-            assert stripped_line.startswith('[theme="dark"] ')
+            assert stripped_line.startswith(('[theme="light"] ', '[theme="dark"] '))

@@ -248,12 +248,35 @@ QProgressBar {
     border: 1px solid #d0d7deb3;
 }
 
+/* QComboBox popups are separate item views, so target the popup view directly. */
+[theme="light"] QListView#ComboBoxPopup,
+[theme="light"] QAbstractItemView#ComboBoxPopup {
+    background-color: #ffffff;
+    color: #1f2328;
+    selection-background-color: #0969da;
+    selection-color: #e6edf3;
+    border: 1px solid #d0d7deb3;
+}
+
 [theme="light"] QComboBox QAbstractItemView::item {
+    padding: 4px 8px;
+}
+
+[theme="light"] QListView#ComboBoxPopup::item,
+[theme="light"] QAbstractItemView#ComboBoxPopup::item {
     padding: 4px 8px;
 }
 
 [theme="light"] QComboBox QAbstractItemView::item:hover,
 [theme="light"] QComboBox QAbstractItemView::item:selected {
+    background-color: #0969da;
+    color: #e6edf3;
+}
+
+[theme="light"] QListView#ComboBoxPopup::item:hover,
+[theme="light"] QListView#ComboBoxPopup::item:selected,
+[theme="light"] QAbstractItemView#ComboBoxPopup::item:hover,
+[theme="light"] QAbstractItemView#ComboBoxPopup::item:selected {
     background-color: #0969da;
     color: #e6edf3;
 }

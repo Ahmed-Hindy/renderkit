@@ -58,7 +58,6 @@ def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
     """Ensure combo popup rows can receive hover styling."""
     from renderkit.ui.main_window_widgets import (
         COMBO_POPUP_OBJECT_NAME,
-        COMBO_POPUP_STYLESHEET,
         NoWheelComboBox,
     )
 
@@ -69,7 +68,7 @@ def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
     assert view.objectName() == COMBO_POPUP_OBJECT_NAME
     assert view.hasMouseTracking() is True
     assert view.viewport().hasMouseTracking() is True
-    assert view.styleSheet() == COMBO_POPUP_STYLESHEET
+    assert view.styleSheet() == ""
 
 
 def test_no_wheel_combo_popup_hover_updates_current_row(qtbot, qapp) -> None:
