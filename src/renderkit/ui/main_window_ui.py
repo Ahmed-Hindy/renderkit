@@ -108,22 +108,21 @@ class MainWindowUiMixin:
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.main_splitter, 1)  # 1 = stretch to fill space
 
-        # Left panel - Settings and Preview
+        # Left panel - Settings and Log
         self.left_splitter = QSplitter(Qt.Orientation.Vertical)
         settings_panel = self._create_settings_panel()
         settings_panel.setObjectName("Card")
         self.left_splitter.addWidget(settings_panel)
 
-        # Preview panel
-        self.preview_panel = self._create_preview_panel()
-        self.preview_panel.setObjectName("Card")
-        self.left_splitter.addWidget(self.preview_panel)
+        self.log_panel = self._create_log_panel()
+        self.log_panel.setObjectName("Card")
+        self.left_splitter.addWidget(self.log_panel)
         self.left_splitter.setSizes([400, 180])
 
         self.main_splitter.addWidget(self.left_splitter)
 
-        # Right panel - Log and Progress
-        right_panel = self._create_log_panel()
+        # Right panel - Progress and Preview
+        right_panel = self._create_preview_column()
         right_panel.setObjectName("Card")
         self.main_splitter.addWidget(right_panel)
 
@@ -212,11 +211,11 @@ class MainWindowUiMixin:
         """Apply comfortable layout for large windows (>1100px)."""
         if self.preview_panel:
             self.preview_panel.setVisible(True)
-        # Give more space to preview
+        # Give the right-side preview column more room while keeping logs readable.
         if self.main_splitter:
-            self.main_splitter.setSizes([750, 250])
+            self.main_splitter.setSizes([650, 350])
         if self.left_splitter:
-            self.left_splitter.setSizes([350, 450])
+            self.left_splitter.setSizes([450, 250])
 
     def _create_settings_panel(self) -> QWidget:
         """Create the settings panel with collapsible sections."""
@@ -523,13 +522,31 @@ class MainWindowUiMixin:
         return layout
 
     def _create_log_panel(self) -> QWidget:
-        """Create log and progress panel."""
+        """Create the log panel."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._create_log_group())
+
+        return panel
+
+    def _create_preview_column(self) -> QWidget:
+        """Create the right-side progress and preview column."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
+        layout.addWidget(self._create_progress_group())
 
-        # Progress Group
+        self.preview_panel = self._create_preview_panel(height_capped=False)
+        layout.addWidget(self.preview_panel, 1)
+
+        self._set_status_icons("idle")
+
+        return panel
+
+    def _create_progress_group(self) -> QGroupBox:
+        """Create the progress status group."""
         progress_group = QGroupBox()
         progress_layout = QVBoxLayout(progress_group)
         progress_layout.setSpacing(10)
@@ -578,9 +595,10 @@ class MainWindowUiMixin:
         status_layout.addStretch()
         progress_layout.addLayout(status_layout)
 
-        layout.addWidget(progress_group)
+        return progress_group
 
-        # Log Group
+    def _create_log_group(self) -> QGroupBox:
+        """Create the log output group."""
         log_group = QGroupBox("Log")
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(5, 5, 5, 5)
@@ -592,38 +610,38 @@ class MainWindowUiMixin:
         self.log_text.setObjectName("LogBox")
         log_layout.addWidget(self.log_text)
 
-        # Clear log button
         clear_log_btn = QPushButton("Clear Log")
         clear_log_btn.clicked.connect(self.log_text.clear)
         clear_log_btn.setIcon(icon_manager.get_icon("close"))
         log_layout.addWidget(clear_log_btn)
 
-        layout.addWidget(log_group)
+        return log_group
 
-        self._set_status_icons("idle")
-
-        return panel
-
-    def _create_preview_panel(self) -> QWidget:
+    def _create_preview_panel(self, *, height_capped: bool = True) -> QWidget:
         """Create preview panel."""
         panel = QWidget()
         panel.setMinimumHeight(180)
-        panel.setMaximumHeight(360)
+        if height_capped:
+            panel.setMaximumHeight(360)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
         preview_group = QGroupBox("Preview")
         preview_layout = QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(5, 5, 5, 5)
+        preview_layout.setSpacing(6)
 
         self.preview_widget = PreviewWidget()
-        preview_layout.addWidget(self.preview_widget)
+        self.preview_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        preview_layout.addWidget(self.preview_widget, 1)
 
         self.timeline_widget = QWidget()
         self.timeline_widget.setObjectName("TimelineWidget")
+        self.timeline_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.timeline_widget.setMaximumHeight(54)
         timeline_layout = QVBoxLayout(self.timeline_widget)
-        timeline_layout.setContentsMargins(6, 4, 6, 0)
-        timeline_layout.setSpacing(4)
+        timeline_layout.setContentsMargins(6, 2, 6, 2)
+        timeline_layout.setSpacing(2)
 
         timeline_row = QHBoxLayout()
         timeline_row.setContentsMargins(0, 0, 0, 0)
@@ -641,6 +659,7 @@ class MainWindowUiMixin:
         self.timeline_slider.setMinimum(0)
         self.timeline_slider.setMaximum(0)
         self.timeline_slider.setSingleStep(1)
+        self.timeline_slider.setFixedHeight(22)
         timeline_row.addWidget(self.timeline_start_label)
         timeline_row.addWidget(self.timeline_slider, 1)
         timeline_row.addWidget(self.timeline_end_label)
@@ -649,10 +668,11 @@ class MainWindowUiMixin:
         self.timeline_current_label = QLabel("Frame: -")
         self.timeline_current_label.setObjectName("TimelineCurrentLabel")
         self.timeline_current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.timeline_current_label.setFixedHeight(18)
         timeline_layout.addWidget(self.timeline_current_label)
 
         self.timeline_widget.setVisible(False)
-        preview_layout.addWidget(self.timeline_widget)
+        preview_layout.addWidget(self.timeline_widget, 0)
 
         layout.addWidget(preview_group)
         return panel

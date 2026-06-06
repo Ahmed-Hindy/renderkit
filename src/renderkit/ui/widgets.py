@@ -24,6 +24,7 @@ from renderkit.ui.qt_compat import (
     QPushButton,
     QScrollArea,
     QSize,
+    QSizePolicy,
     Qt,
     QThread,
     QTimer,
@@ -412,7 +413,7 @@ class PreviewWidget(QWidget):
         self.preview_label = QLabel("No preview")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setMinimumSize(240, 180)
-        self.preview_label.setMaximumHeight(360)
+        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.preview_label.setStyleSheet("""
             QLabel {
                 background-color: #2b2b2b;
