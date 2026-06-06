@@ -1,96 +1,45 @@
 # RenderKit
 
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![VFX Platform CY2026](https://img.shields.io/badge/VFX_Platform-CY2026-2b7a78.svg)](https://vfxplatform.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](https://Ahmed-Hindy.github.io/renderkit/)
 
-A high-performance Python package and CLI tool for converting image sequences (EXR, PNG, JPEG) to video (MP4) in VFX workflows.
-Targets the VFX Platform CY2026 spec (Python 3.13.x, Qt 6.8/PySide6 6.8, OpenColorIO 2.5, NumPy 2.3).
-
-**[Full Documentation](https://Ahmed-Hindy.github.io/renderkit/)**
-
-## App Screenshot
+RenderKit is a desktop app for turning render image sequences into reviewable MP4s.
+Open a sequence, choose the review settings you need, and click **Convert**.
 
 ![RenderKit desktop UI screenshot](docs/images/renderkit-ui-screenshot.png)
 
-_RenderKit UI converting an image sequence to MP4._
+_RenderKit converting an image sequence to MP4._
 
-## Features
+## Get The App
 
-- **VFX-Standard I/O**: High-performance image operations powered by **OpenImageIO**.
-- **Broad Format Support**: Native support for **EXR, DPX, TIFF, PNG, and JPEG**.
-- **Quality Slider**: 0-10 Slider.
-- **Supports Standard Codings**: Support for **H.264 (AVC)** by default, with **AV1** and **H.265 (HEVC)** options.
-- **Contact Sheets**: Generate a grid of all AOVs.
-- **OCIO**: Supports most common OCIO presets including **Linear-to-sRGB**, **Rec.709**, and **ACES-sRGB**.
-- **Interfaces**: Python API, CLI (`renderkit`), and UI.
-- **Optimized**: Aggressive caching for faster server reads.
+1. Download the latest RenderKit archive from GitHub Releases.
+2. Unzip it.
+3. Run the RenderKit executable.
 
-## Installation
+On Windows, this is usually:
 
-### Prebuilt App (Windows, Linux, MacOS)
-
-Download a .zip file from the Releases section, unpack then run the executable:
-
-Example for Windows:
-```
-RenderKit/RenderKit.exe
+```powershell
+RenderKit\RenderKit.exe
 ```
 
-### From Source (uv)
+## Basic Workflow
 
-```bash
-git clone https://github.com/Ahmed-Hindy/renderkit.git
-cd renderkit
-uv pip install -e .
-```
-Requires Python 3.13.x (VFX Platform CY2026).
+1. Open RenderKit.
+2. Drop a file or folder into the window, or click **Browse**.
+3. Check the detected sequence, frame range, FPS, and output path.
+4. Choose a layer, contact sheet, burn-ins, or quality settings only if you need them.
+5. Click **Convert**.
 
-## Quick Start
+When the render finishes, use **Play Result** or **Open Output Folder**.
 
-### CLI
+## What It Can Make
 
-```bash
-# Convert EXR sequence to MP4
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+- MP4 review movies from rendered image sequences.
+- Single-layer EXR/AOV review movies.
+- Multi-AOV contact sheet movies.
+- Review movies with frame, layer, or FPS burn-ins.
+- H.264, H.265, or AV1 outputs.
 
-# Generate a Multi-AOV Contact Sheet video
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --contact-sheet --cs-columns 4
+## More Documentation
 
-# Add burn-ins
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-fps
-```
-
-### UI
-
-```bash
-uv run renderkit ui
-```
-
-### Environment Variables
-
-- `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
-- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, used to override the bundled or PATH ffmpeg).
-- `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
-- `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
-- `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
-- `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).
-
-### Python API
-
-```python
-from renderkit import RenderKit
-
-processor = RenderKit()
-processor.convert_exr_sequence_to_mp4(
-    input_pattern="render.%04d.exr",
-    output_path="output.mp4",
-    fps=24.0
-)
-```
-
-## Contributing
-
-See our [Development Guide](https://Ahmed-Hindy.github.io/renderkit/development/) and [Contributing Guide](https://Ahmed-Hindy.github.io/renderkit/contributing/).
+For command-line, automation, environment-variable, source checkout, and Python API usage, see the [full documentation](https://Ahmed-Hindy.github.io/renderkit/).

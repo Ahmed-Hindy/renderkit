@@ -1,62 +1,233 @@
 # Usage Guide
 
-## Command Line Interface (CLI)
+This page is the CLI-focused reference for power users, pipeline TDs, and automation.
+For the end-user desktop workflow, start with the README and launch the UI with `renderkit ui`.
 
-The CLI entrypoint is `renderkit`.
+## Install For CLI Use
 
-### Examples
+From a source checkout:
+
+```powershell
+uv --native-tls sync
+uv --native-tls run renderkit --help
+```
+
+If RenderKit is already installed or you are using a release build that adds the executable to `PATH`, use `renderkit` directly.
+
+## Command Overview
 
 ```bash
-# Basic conversion (high quality)
+renderkit --help
+renderkit ui
+renderkit convert-exr-sequence INPUT_PATTERN OUTPUT_PATH [OPTIONS]
+renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
+```
+
+`INPUT_PATTERN` accepts common sequence styles:
+
+```text
+render.%04d.exr
+render.####.exr
+render.$F4.exr
+```
+
+## Conversion Recipes
+
+### Basic Review Movie
+
+```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24
+```
 
-# Set specific visual quality (7 is a good balance)
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --quality 7
+### Frame Range
 
-# Using AV1 for maximum compression
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 1001 --end-frame 1100
+```
+
+### Resolution Override
+
+Set both width and height when overriding resolution:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --width 1920 --height 1080
+```
+
+### Color Space Preset
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --color-space linear_to_rec709
+```
+
+Available presets:
+
+- `linear_to_srgb`
+- `linear_to_rec709`
+- `srgb_to_linear`
+- `no_conversion`
+
+### Codec And Quality
+
+H.264 is the default. Use H.265 or AV1 when the review target supports it.
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libx265 --quality 8
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libaom-av1 --quality 8
+```
 
-# Multi-AOV contact sheet video
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --contact-sheet --cs-columns 4
+`--quality` uses a 0-10 scale where 10 is highest quality.
 
-# Burn-in frame number and FPS
-renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-fps
+### Specific EXR Layer
 
-# Profile a conversion (writes .prof + .prof.txt)
+```bash
+renderkit convert-exr-sequence render.%04d.exr diffuse.mp4 --layer diffuse
+```
+
+### Burn-ins
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-layer --burnin-fps
+```
+
+Tune the burn-in background:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-opacity 45
+```
+
+### Multi-AOV Contact Sheet Movie
+
+Use contact-sheet mode on conversion when you want an MP4 grid of EXR layers/AOVs:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 4
+```
+
+Useful grid controls:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-columns 3 --cs-thumb-width 512 --cs-padding 8
+renderkit convert-exr-sequence render.%04d.exr contact_sheet.mp4 --contact-sheet --cs-no-labels
+```
+
+### Still Contact Sheet
+
+Use the `contact-sheet` command when you want one image instead of a video:
+
+```bash
+renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4 --thumb-width 512
+```
+
+Frame-range and layer filters work here too:
+
+```bash
+renderkit contact-sheet render.%04d.exr contact_sheet.jpg --layer diffuse --start-frame 1001 --end-frame 1012
+```
+
+### Profiling
+
+For one-off profiling:
+
+```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --profile
 ```
 
-### Options
+Choose an output file or directory:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --profile --profile-out ./profiles
+```
+
+Profiling writes `.prof` data and a readable `.prof.txt` summary.
+
+## Automation Patterns
+
+### PowerShell Batch
+
+```powershell
+$shots = Get-ChildItem .\shots -Directory
+foreach ($shot in $shots) {
+    $pattern = Join-Path $shot.FullName "render.%04d.exr"
+    $output = Join-Path $shot.FullName "review.mp4"
+    uv --native-tls run renderkit convert-exr-sequence $pattern $output --fps 24 --overwrite
+}
+```
+
+### Bash Batch
+
+```bash
+for shot in shots/*; do
+  renderkit convert-exr-sequence "$shot/render.%04d.exr" "$shot/review.mp4" --fps 24 --overwrite
+done
+```
+
+## `convert-exr-sequence` Options
 
 | Option | Description | Default |
 |---|---|---|
-| `INPUT_PATTERN` | File pattern with placeholders | Required |
-| `OUTPUT_PATH` | Output video file path | Required |
-| `--fps` | Frame rate | Auto-detect |
-| `--quality` | Visual Quality (0-10), 10 is best | `10` |
-| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, `no_conversion` | `linear_to_srgb` |
-| `--width` | Output width | Source width |
-| `--height` | Output height | Source height |
-| `--codec` | Video codec (`libx264`, `libx265`, `libaom-av1`) | `libx264` |
-| `--layer` | EXR layer/AOV to extract | None |
-| `--start-frame` | Start frame number | First frame |
-| `--end-frame` | End frame number | Last frame |
-| `--overwrite` | Overwrite output file if it exists | `False` |
-| `--burnin-frame` | Burn in frame number | `False` |
-| `--burnin-layer` | Burn in layer name | `False` |
-| `--burnin-fps` | Burn in frame rate | `False` |
-| `--burnin-opacity` | Burn-in background opacity (0-100) | `30` |
-| `--contact-sheet` | Enable multi-AOV grid mode | `False` |
-| `--cs-columns` | Contact sheet columns | `4` |
-| `--cs-thumb-width` | Width of each layer cell | `512` |
-| `--cs-padding` | Spacing between cells | `10` |
-| `--cs-no-labels` | Disable layer name labels | `False` |
-| `--profile` | Enable cProfile output | `False` |
-| `--profile-out` | Output .prof path or directory | Temp dir |
+| `INPUT_PATTERN` | File pattern with a frame placeholder. | Required |
+| `OUTPUT_PATH` | Output video file path. | Required |
+| `--prefetch-workers` | Number of frame prefetch workers; use `1` to disable concurrent prefetch. | `2` |
+| `--fps` | Frame rate. If omitted, RenderKit attempts auto-detection. | Auto-detect |
+| `--quality` | Visual quality on a 0-10 scale. | `10` |
+| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, or `no_conversion`. | `linear_to_srgb` |
+| `--width` | Output width. Must be paired with `--height`. | Source width |
+| `--height` | Output height. Must be paired with `--width`. | Source height |
+| `--codec` | FFmpeg codec, commonly `libx264`, `libx265`, or `libaom-av1`. | `libx264` |
+| `--layer` | EXR layer/AOV to extract. | None |
+| `--start-frame` | Start frame number. | First frame |
+| `--end-frame` | End frame number. | Last frame |
+| `--overwrite` | Overwrite output file if it exists. | `False` |
+| `--burnin-frame` | Burn in frame number. | `False` |
+| `--burnin-layer` | Burn in layer name. | `False` |
+| `--burnin-fps` | Burn in frame rate. | `False` |
+| `--burnin-opacity` | Burn-in background opacity from 0-100. | `30` |
+| `--contact-sheet` | Enable multi-AOV grid movie mode. | `False` |
+| `--cs-columns` | Contact sheet columns. | `4` |
+| `--cs-thumb-width` | Width of each contact sheet layer cell. | Source resolution |
+| `--cs-padding` | Spacing between contact sheet cells. | `4` |
+| `--cs-no-labels` | Disable layer name labels. | `False` |
+| `--profile` | Enable cProfile output for this conversion. | `False` |
+| `--profile-out` | Output `.prof` path or directory. | Temp dir |
+
+## `contact-sheet` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `INPUT_PATTERN` | File pattern with a frame placeholder. | Required |
+| `OUTPUT_PATH` | Output image path. | Required |
+| `--columns` | Number of grid columns. | `4` |
+| `--thumb-width` | Width of each thumbnail. | Source resolution |
+| `--padding` | Padding between thumbnails. | `4` |
+| `--no-labels` | Disable filename labels below thumbnails. | `False` |
+| `--font-size` | Label font size. | `16` |
+| `--layer` | EXR layer/AOV to extract. | None |
+| `--start-frame` | Start frame number. | First frame |
+| `--end-frame` | End frame number. | Last frame |
+| `--overwrite` | Overwrite output file if it exists. | `False` |
+
+## Environment Variables
+
+- `OCIO`: Path to your system OCIO config when using custom/ACES input spaces.
+- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary; overrides the bundled or PATH ffmpeg.
+- `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging. Use `0` to disable, `1` for a temp log, or a full file path.
+- `RENDERKIT_PROFILE`: Enable cProfile output for UI/CLI when set to `1`, `true`, or `yes`.
+- `RENDERKIT_PROFILE_OUT`: Output `.prof` path or directory.
+- `RENDERKIT_LOG_PATH`: Override RenderKit log file path.
+- `RENDERKIT_LOG_LEVEL`: Logging level, such as `DEBUG`, `INFO`, or `WARNING`.
+- `QT_BACKEND`: Force a Qt backend. PySide6 is the supported backend.
+
+## Desktop UI From The CLI
+
+```bash
+renderkit ui
+```
+
+The hidden `renderkit gui` alias also launches the desktop UI for older scripts, but `renderkit ui` is the public command.
 
 ## Python API
 
-### Basic Usage
+Use the API when integrating RenderKit into another tool instead of shelling out.
 
 ```python
 from renderkit import RenderKit
@@ -66,14 +237,12 @@ processor.convert_exr_sequence_to_mp4(
     input_pattern="render.%04d.exr",
     output_path="output.mp4",
     fps=24.0,
-    quality=10,  # 0-10 scale
+    quality=10,
     codec="libx264",
 )
 ```
 
-### Advanced Configuration
-
-Use the Builder pattern for complex configurations:
+For complex setups, build an explicit config:
 
 ```python
 from renderkit import RenderKit
@@ -99,38 +268,3 @@ config = (
 processor = RenderKit()
 processor.convert_with_config(config)
 ```
-
-## Graphical Interface (UI)
-
-Launch the UI from the terminal:
-
-```bash
-uv run renderkit ui
-```
-
-If you have a Pre-compiled build, run the exe in the `RenderKit/` folder.
-
-### Qt Backend
-
-PySide6 is the supported backend. You can force a backend with `QT_BACKEND` if needed:
-
-```bash
-# macOS/Linux
-export QT_BACKEND=pyside6
-```
-
-```powershell
-# Windows PowerShell
-$env:QT_BACKEND = "pyside6"
-```
-
-## Environment Variables
-
-- `OCIO`: Path to your system OCIO config (used when selecting ACES/custom input spaces).
-- `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary (optional, overrides the bundled or PATH ffmpeg).
-- `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging (default: on). Set to `0` to disable, `1` for temp log, or a full file path.
-- `RENDERKIT_PROFILE`: Enable cProfile output for UI/CLI when set to `1` (or `true`/`yes`).
-- `RENDERKIT_PROFILE_OUT`: Output .prof path or directory (default: temp dir).
-- `RENDERKIT_LOG_PATH`: Override RenderKit log file path (default: temp dir `renderkit.log`).
-- `RENDERKIT_LOG_LEVEL`: Logging level (`DEBUG`, `INFO`, `WARNING`, etc.).
-- `QT_BACKEND`: Force a Qt backend (default is auto-detect; PySide6 is recommended).
