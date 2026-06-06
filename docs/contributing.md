@@ -15,7 +15,8 @@ Contributions are welcome! Please follow these guidelines:
 
     ```bash
     uv venv
-    uv pip install -e ".[dev]"
+    uv sync --extra dev
+    uv run pre-commit install
     ```
 3.  Create a branch.
 4.  Make changes.
