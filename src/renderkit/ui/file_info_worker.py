@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.ui.qt_compat import QThread, Signal
@@ -51,7 +52,7 @@ class FileInfoWorker(QThread):
                 logger.debug(f"FileInfoWorker: Discovery complete for {self.file_path}")
                 self.file_info_ready.emit(str(self.file_path), file_info)
 
-        except Exception as e:
+        except (RenderKitError, OSError, RuntimeError, ValueError) as e:
             if not self._should_stop:
                 logger.error(f"FileInfoWorker: Error discovering file info: {e}")
                 self.error_occurred.emit(str(self.file_path), str(e))

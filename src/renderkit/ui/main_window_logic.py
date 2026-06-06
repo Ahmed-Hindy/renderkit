@@ -1747,9 +1747,9 @@ class MainWindowLogicMixin:
 
             config = config_builder.build()
 
-        except Exception as e:
+        except (RenderKitError, OSError, RuntimeError, ValueError) as e:
             QMessageBox.critical(self, "Configuration Error", f"Error building configuration:\n{e}")
-            logger.error(f"Configuration error: {str(e)}")
+            logger.exception("Configuration error")
             return
 
         # Update UI

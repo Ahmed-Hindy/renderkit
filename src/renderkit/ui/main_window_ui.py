@@ -61,7 +61,7 @@ class MainWindowUiMixin:
                 .joinpath("stylesheets", "matcha.qss")
                 .read_text(encoding="utf-8")
             )
-        except Exception as e:
+        except (OSError, UnicodeError) as e:
             logger.error(f"Could not load stylesheet: {e}")
             return
 

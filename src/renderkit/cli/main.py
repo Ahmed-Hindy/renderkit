@@ -17,6 +17,7 @@ from renderkit.core.config import (
 )
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.core.profiler import get_profile_env_config, profile_context
+from renderkit.exceptions import RenderKitError
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
 
@@ -280,7 +281,7 @@ def convert_exr_sequence(
             processor.convert_with_config(config)
         logger.info(f"Successfully converted to: {output_path}")
         click.echo(f"Successfully converted to: {output_path}")
-    except Exception as e:
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
         logger.exception("Conversion failed")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -367,7 +368,7 @@ def contact_sheet(
         processor.create_contact_sheet(config)
         logger.info(f"Successfully created contact sheet: {output_path}")
         click.echo(f"Successfully created contact sheet: {output_path}")
-    except Exception as e:
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
         logger.exception("Contact sheet generation failed")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
