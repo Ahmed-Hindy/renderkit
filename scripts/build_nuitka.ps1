@@ -56,7 +56,7 @@ $appVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else 
 $iconsDir = Join-NativePath $repoRoot "src" "renderkit" "ui" "icons"
 $stylesheetsDir = Join-NativePath $repoRoot "src" "renderkit" "ui" "stylesheets"
 $ocioDir = Join-NativePath $repoRoot "src" "renderkit" "data" "ocio"
-$nuitkaMode = if ($IsMacOS) { "app-dist" } else { "standalone" }
+$nuitkaMode = "standalone"
 
 $nuitkaArgs = @(
     "--remove-output",
