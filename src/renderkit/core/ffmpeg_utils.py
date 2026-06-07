@@ -1,5 +1,6 @@
 """Helpers for locating bundled FFmpeg binaries."""
 
+import builtins
 import logging
 import os
 import shutil
@@ -40,6 +41,20 @@ def ensure_ffmpeg_env() -> None:
         return
 
     candidates = []
+    executable_dir = Path(sys.executable).resolve().parent
+    compiled = getattr(builtins, "__compiled__", None)
+    compiled_dir = Path(compiled.containing_dir) if compiled is not None else None
+
+    for base in (compiled_dir, executable_dir):
+        if base is None:
+            continue
+        if sys.platform == "win32":
+            candidates.append(base / "ffmpeg" / "ffmpeg.exe")
+            candidates.append(base / "ffmpeg.exe")
+        else:
+            candidates.append(base / "ffmpeg" / "ffmpeg")
+            candidates.append(base / "ffmpeg")
+
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         base = Path(sys._MEIPASS)
         if sys.platform == "win32":
