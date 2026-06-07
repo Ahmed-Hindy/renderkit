@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
 
-env:
-  FFMPEG_VERSION: "8.0.1"
-
 jobs:
   build-windows:
     name: Build Nuitka Standalone Zip (Windows)
@@ -32,7 +29,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor/ffmpeg/windows
-          key: ffmpeg-windows-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh', 'scripts/build_ffmpeg_windows_msys2_bootstrap.sh') }}
+          key: ffmpeg-windows-8.0.1-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh', 'scripts/build_ffmpeg_windows_msys2_bootstrap.sh') }}
 
       - name: Set up MSYS2
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
@@ -53,8 +50,6 @@ jobs:
       - name: Build FFmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: msys2 {0}
-        env:
-          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
         run: |
           set -euo pipefail
           repo_root="$(cygpath -u "$GITHUB_WORKSPACE")"
@@ -63,7 +58,7 @@ jobs:
 
       - name: Build Nuitka artifact
         shell: pwsh
-        run: .\scripts\build_nuitka.ps1 -Clean
+        run: .\scripts\build_nuitka.ps1
 
       - name: Upload Nuitka artifact
         uses: actions/upload-artifact@v4

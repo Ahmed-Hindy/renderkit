@@ -1,9 +1,3 @@
-param(
-    [switch]$Clean,
-    [switch]$NoZig,
-    [switch]$DebugConsole
-)
-
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -12,9 +6,9 @@ $entryScript = Join-Path $repoRoot "src\renderkit\ui\main_window.py"
 $initContent = Get-Content (Join-Path $repoRoot "src\renderkit\__init__.py") -Raw
 $versionMatch = [regex]::Match($initContent, "__version__\s*=\s*['""]([^'""]+)['""]")
 $appVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { "0.0.0" }
-$consoleMode = if ($DebugConsole) { "force" } else { "disable" }
 
 $nuitkaArgs = @(
+    "--remove-output",
     "--mode=standalone",
     "--assume-yes-for-downloads",
     "--enable-plugin=pyside6",
@@ -34,18 +28,10 @@ $nuitkaArgs = @(
     "--file-version=$appVersion",
     "--file-description=RenderKit desktop app",
     "--copyright=Ahmed Hindy",
-    "--windows-console-mode=$consoleMode"
+    "--windows-console-mode=disable"
 )
 
-if ($Clean) {
-    $nuitkaArgs = @("--remove-output") + $nuitkaArgs
-}
-
-if ($DebugConsole) {
-    $nuitkaArgs = @("--qt-debug-plugins") + $nuitkaArgs
-}
-
-if ($IsWindows -and -not $NoZig) {
+if ($IsWindows) {
     $nuitkaArgs = @("--zig") + $nuitkaArgs
 }
 

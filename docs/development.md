@@ -67,7 +67,7 @@ The distributable output is in `dist/RenderKit/`.
 RenderKit's Nuitka build has one output shape: a zipped standalone folder.
 
 ```powershell
-.\scripts\build_nuitka.ps1 -Clean
+.\scripts\build_nuitka.ps1
 ```
 
 The script uses Nuitka standalone mode, enables the PySide6 plugin, includes
@@ -76,20 +76,8 @@ next to the compiled app when present. On Windows it uses Nuitka's Zig compiler
 backend by default because it works with Python 3.13 without requiring a local
 Visual Studio compiler install.
 
-For packaging diagnostics, keep a console attached and enable Qt plugin logging:
-
-```powershell
-.\scripts\build_nuitka.ps1 -Clean -DebugConsole
-```
-
 The standalone folder is written to `dist-nuitka/main_window.dist/`, and the
 release-style zip is written to `dist-nuitka/RenderKit-nuitka-<platform>-standalone.zip`.
-
-The first Windows build may ask Nuitka to cache Zig and Dependency Walker. If
-Dependency Walker fails to download over HTTPS, manually place `depends.exe`
-from `http://dependencywalker.com/depends22_x64.zip` in
-`%LOCALAPPDATA%\Nuitka\Nuitka\Cache\downloads\depends\x86_64\` and rerun the
-script.
 
 Before using the Nuitka zip for a release, test it by extracting the zip on the
 target platform and running a real conversion.
