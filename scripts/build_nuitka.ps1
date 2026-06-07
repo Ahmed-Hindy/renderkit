@@ -57,6 +57,7 @@ $iconsDir = Join-NativePath $repoRoot "src" "renderkit" "ui" "icons"
 $stylesheetsDir = Join-NativePath $repoRoot "src" "renderkit" "ui" "stylesheets"
 $ocioDir = Join-NativePath $repoRoot "src" "renderkit" "data" "ocio"
 $nuitkaMode = "standalone"
+$outputFilename = if ($IsMacOS) { "RenderKitApp" } else { "RenderKit" }
 
 $nuitkaArgs = @(
     "--remove-output",
@@ -73,7 +74,7 @@ $nuitkaArgs = @(
     "--include-data-dir=$stylesheetsDir=renderkit/ui/stylesheets",
     "--include-data-dir=$ocioDir=renderkit/data/ocio",
     "--output-dir=$outputRoot",
-    "--output-filename=RenderKit",
+    "--output-filename=$outputFilename",
     "--product-name=RenderKit",
     "--product-version=$appVersion",
     "--file-version=$appVersion",
