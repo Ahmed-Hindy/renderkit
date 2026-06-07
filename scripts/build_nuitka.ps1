@@ -47,7 +47,7 @@ $platformDir = switch ($true) {
     default { $null }
 }
 
-if ($platformDir -eq $null) {
+if ($null -eq $platformDir) {
     Write-Host "Skipping FFmpeg copy: unsupported platform."
 } else {
     $vendorFfmpegDir = Join-Path $repoRoot "vendor\ffmpeg\$platformDir"
@@ -60,18 +60,18 @@ $standaloneDir = Get-ChildItem -Path $outputRoot -Directory -Filter "*.dist" -Er
     Sort-Object LastWriteTime |
     Select-Object -Last 1
 
-if ($standaloneDir -eq $null) {
+if ($null -eq $standaloneDir) {
     throw "Could not find Nuitka standalone output."
 }
 
-if ($platformDir -ne $null -and (Test-Path $vendorFfmpegDir)) {
+if ($null -ne $platformDir -and (Test-Path $vendorFfmpegDir)) {
     $ffmpegTarget = Join-Path $standaloneDir.FullName "ffmpeg"
     New-Item -ItemType Directory -Path $ffmpegTarget -Force | Out-Null
     Copy-Item -Path (Join-Path $vendorFfmpegDir "*") -Destination $ffmpegTarget -Recurse -Force
     Write-Host "Copied bundled FFmpeg to $ffmpegTarget"
 }
 
-$packagePlatform = if ($platformDir -ne $null) { $platformDir } else { "unknown" }
+$packagePlatform = if ($null -ne $platformDir) { $platformDir } else { "unknown" }
 $zipPath = Join-Path $outputRoot "RenderKit-nuitka-$packagePlatform-standalone.zip"
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
