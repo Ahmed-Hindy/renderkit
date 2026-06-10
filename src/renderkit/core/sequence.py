@@ -41,7 +41,11 @@ class FrameSequence:
         """
         # Replace common patterns with the actual frame number
         frame_str = str(frame_number).zfill(self.padding)
-        file_path = self.pattern.replace("%04d", frame_str)
+        file_path = re.sub(
+            r"%0?(\d+)d",
+            lambda m: str(frame_number).zfill(int(m.group(1))),
+            self.pattern,
+        )
         file_path = file_path.replace("$F4", frame_str)
         file_path = re.sub(r"#+", lambda m: frame_str.zfill(len(m.group())), file_path)
 

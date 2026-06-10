@@ -24,6 +24,31 @@ class TestSequenceDetector:
         assert sequence.frame_numbers == [1, 2, 3, 4, 5]
         assert sequence.padding == 4
 
+    def test_detect_percent_pattern_with_three_digit_padding(self, tmp_path: Path) -> None:
+        """Test detection and resolution of %03d pattern."""
+        (tmp_path / "shot.007.exr").touch()
+
+        pattern = str(tmp_path / "shot.%03d.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert len(sequence) == 1
+        assert sequence.frame_numbers == [7]
+        assert sequence.padding == 3
+        assert sequence.get_file_path(7) == tmp_path / "shot.007.exr"
+
+    def test_detect_percent_pattern_with_five_digit_padding(self, tmp_path: Path) -> None:
+        """Test detection and resolution of %05d pattern."""
+        for i in range(1, 4):
+            (tmp_path / f"shot.{i:05d}.exr").touch()
+
+        pattern = str(tmp_path / "shot.%05d.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert len(sequence) == 3
+        assert sequence.frame_numbers == [1, 2, 3]
+        assert sequence.padding == 5
+        assert sequence.get_file_path(2) == tmp_path / "shot.00002.exr"
+
     def test_detect_dollar_f_pattern(self, tmp_path: Path) -> None:
         """Test detection of $F4 pattern."""
         # Create test files
@@ -79,6 +104,22 @@ class TestSequenceDetector:
         file_path = sequence.get_file_path(3)
         assert file_path == tmp_path / "render.0003.exr"
         assert file_path.exists()
+
+    def test_get_file_path_resolves_multi_frame_percent_pattern(self, tmp_path: Path) -> None:
+        """Test resolving each frame in a %03d sequence."""
+        for i in range(1, 4):
+            (tmp_path / f"render.{i:03d}.exr").touch()
+
+        pattern = str(tmp_path / "render.%03d.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        paths = [sequence.get_file_path(frame) for frame in sequence.frame_numbers]
+        assert paths == [
+            tmp_path / "render.001.exr",
+            tmp_path / "render.002.exr",
+            tmp_path / "render.003.exr",
+        ]
+        assert all(path.exists() for path in paths)
 
 
 class TestFrameSequence:
