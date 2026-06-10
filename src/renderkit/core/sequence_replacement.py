@@ -77,11 +77,13 @@ def verify_mp4_readable(mp4_path: Path) -> None:
         str(mp4_path),
     ]
     try:
-        result = subprocess.run(
+        # FFprobe receives fixed arguments and the MP4 path as a single argv item.
+        result = subprocess.run(  # NOSONAR
             command,
             capture_output=True,
             text=True,
             check=False,
+            shell=False,
             **popen_kwargs(),
         )
     except OSError as exc:
