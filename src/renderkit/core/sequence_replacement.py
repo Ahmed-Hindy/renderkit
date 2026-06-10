@@ -127,35 +127,26 @@ def replace_sequence_with_mp4(
     source_mp4 = output_mp4.resolve()
     destination_mp4 = sequence.base_path / output_mp4.name
     report_path = audit_report or (sequence.base_path / "renderkit-replacement-audit.jsonl")
-    should_verify = verify or (delete_source and not dry_run)
-    verified = False
-
-    if should_verify:
-        verifier(source_mp4)
-        verified = True
-
-    if not dry_run and not source_mp4.is_file():
-        raise SequenceReplacementError(f"Replacement MP4 does not exist: {source_mp4}")
-
-    copied = False
-    if not dry_run and source_mp4 != destination_mp4.resolve():
-        shutil.copy2(source_mp4, destination_mp4)
-        copied = True
-        if delete_source:
-            verifier(destination_mp4)
-            verified = True
-    elif delete_source and not dry_run:
-        verifier(destination_mp4)
-        verified = True
-
-    deleted_frames: list[Path] = []
-    reclaimed_bytes = 0
-    if delete_source:
-        if dry_run:
-            deleted_frames = source_frames
-            reclaimed_bytes = _sum_existing_sizes(source_frames)
-        else:
-            deleted_frames, reclaimed_bytes = _delete_frames(source_frames)
+    verified = _verify_source_mp4_if_needed(
+        source_mp4,
+        delete_source=delete_source,
+        verify=verify,
+        dry_run=dry_run,
+        verifier=verifier,
+    )
+    copied, destination_verified = _copy_replacement_mp4(
+        source_mp4,
+        destination_mp4,
+        delete_source=delete_source,
+        dry_run=dry_run,
+        verifier=verifier,
+    )
+    verified = verified or destination_verified
+    deleted_frames, reclaimed_bytes = _delete_or_plan_frames(
+        source_frames,
+        delete_source=delete_source,
+        dry_run=dry_run,
+    )
 
     result = SequenceReplacementResult(
         source_pattern=input_pattern,
@@ -172,6 +163,61 @@ def replace_sequence_with_mp4(
     )
     _append_audit_record(report_path, result.to_audit_record())
     return result
+
+
+def _verify_source_mp4_if_needed(
+    source_mp4: Path,
+    *,
+    delete_source: bool,
+    verify: bool,
+    dry_run: bool,
+    verifier: Mp4Verifier,
+) -> bool:
+    should_verify = verify or (delete_source and not dry_run)
+    if not should_verify:
+        return False
+
+    verifier(source_mp4)
+    return True
+
+
+def _copy_replacement_mp4(
+    source_mp4: Path,
+    destination_mp4: Path,
+    *,
+    delete_source: bool,
+    dry_run: bool,
+    verifier: Mp4Verifier,
+) -> tuple[bool, bool]:
+    if dry_run:
+        return False, False
+
+    if not source_mp4.is_file():
+        raise SequenceReplacementError(f"Replacement MP4 does not exist: {source_mp4}")
+
+    copied = False
+    if source_mp4 != destination_mp4.resolve():
+        shutil.copy2(source_mp4, destination_mp4)
+        copied = True
+
+    if delete_source:
+        verifier(destination_mp4)
+        return copied, True
+
+    return copied, False
+
+
+def _delete_or_plan_frames(
+    source_frames: list[Path],
+    *,
+    delete_source: bool,
+    dry_run: bool,
+) -> tuple[list[Path], int]:
+    if not delete_source:
+        return [], 0
+    if dry_run:
+        return source_frames, _sum_existing_sizes(source_frames)
+    return _delete_frames(source_frames)
 
 
 def find_exr_sequences(root: Path) -> list[str]:
