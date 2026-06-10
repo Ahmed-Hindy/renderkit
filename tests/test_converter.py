@@ -1,9 +1,11 @@
 """Tests for converter (integration tests would require actual EXR files)."""
 
+import builtins
 from pathlib import Path
 
 import pytest
 
+from renderkit.core import converter as converter_module
 from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
 from renderkit.core.converter import SequenceConverter
 from renderkit.exceptions import (
@@ -12,6 +14,7 @@ from renderkit.exceptions import (
     ImageReadError,
     VideoEncodingError,
 )
+from renderkit.io.file_info import FileInfo
 from renderkit.processing.video_encoder import VideoEncoder
 
 
@@ -257,3 +260,56 @@ class TestSequenceConverterFailures:
                 burnin_processor=None,
                 contact_sheet_generator=FailingContactSheetGenerator(),
             )
+
+
+class TestSequenceConverterProgress:
+    """Tests for CLI progress-bar behavior."""
+
+    def test_non_interactive_stderr_disables_tqdm_by_default(self, monkeypatch) -> None:
+        """Captured stderr should not create a tqdm progress bar."""
+
+        class FakeStderr:
+            def isatty(self) -> bool:
+                return False
+
+        class FakeEncoder:
+            def close(self) -> None:
+                # The progress test only verifies close() is called safely.
+                pass
+
+        real_import = builtins.__import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name == "tqdm":
+                raise AssertionError("tqdm should not be imported for captured stderr")
+            return real_import(name, *args, **kwargs)
+
+        converter = SequenceConverter(
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                fps=24.0,
+            )
+        )
+        converter.sequence = _FakeSequence()
+        converter.encoder = FakeEncoder()
+
+        monkeypatch.setattr(converter_module.sys, "stderr", FakeStderr())
+        monkeypatch.setattr(builtins, "__import__", guarded_import)
+        monkeypatch.setattr(
+            converter,
+            "_process_single_frame_buf",
+            lambda *args, **kwargs: _FakeBuf(),
+        )
+
+        converter._process_frames(
+            frame_numbers=[1],
+            output_width=100,
+            output_height=100,
+            width=100,
+            height=100,
+            input_space=None,
+            file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+            progress_callback=None,
+            show_progress=None,
+        )
