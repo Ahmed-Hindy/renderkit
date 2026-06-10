@@ -235,11 +235,11 @@ def find_exr_sequences(root: Path) -> list[str]:
     for file_path in root.rglob("*.exr"):
         if not file_path.is_file():
             continue
-        match = re.match(r"^(?P<prefix>.*?)(?P<frame>\d+)(?P<suffix>\.[^.]+)$", file_path.name)
-        if not match:
+        numbered_name = _split_numbered_exr_name(file_path.name)
+        if numbered_name is None:
             continue
-        frame = match.group("frame")
-        key = (file_path.parent, match.group("prefix"), match.group("suffix"), len(frame))
+        prefix, frame, suffix = numbered_name
+        key = (file_path.parent, prefix, suffix, len(frame))
         groups.setdefault(key, []).append(int(frame))
 
     patterns = []
@@ -271,6 +271,22 @@ def _existing_sequence_frames(sequence: FrameSequence) -> list[Path]:
         for frame_number in sequence.frame_numbers
         if (path := sequence.get_file_path(frame_number)).is_file()
     ]
+
+
+def _split_numbered_exr_name(filename: str) -> Optional[tuple[str, str, str]]:
+    path = Path(filename)
+    if path.suffix.lower() != ".exr":
+        return None
+
+    stem = path.stem
+    frame_start = len(stem)
+    while frame_start > 0 and stem[frame_start - 1].isdigit():
+        frame_start -= 1
+
+    if frame_start == len(stem):
+        return None
+
+    return stem[:frame_start], stem[frame_start:], path.suffix
 
 
 def _sum_existing_sizes(paths: list[Path]) -> int:
