@@ -263,6 +263,7 @@ foreach ($row in $verified) {
 If you need to rebuild the JSONL file from an existing CSV audit:
 
 ```powershell
+$rows = Import-Csv .\renderkit-review-audit.csv
 $rows | ForEach-Object {
     ($_ | ConvertTo-Json -Compress) | Add-Content .\renderkit-review-audit.jsonl
 }
