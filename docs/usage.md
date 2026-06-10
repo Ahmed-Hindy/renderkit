@@ -149,9 +149,12 @@ $shots = Get-ChildItem .\shots -Directory
 foreach ($shot in $shots) {
     $pattern = Join-Path $shot.FullName "render.%04d.exr"
     $output = Join-Path $shot.FullName "review.mp4"
-    uv --native-tls run renderkit convert-exr-sequence $pattern $output --fps 24 --overwrite
+    uv --native-tls run renderkit convert-exr-sequence $pattern $output --fps 24 --overwrite --no-progress
 }
 ```
+
+Use `--no-progress` when capturing stdout or stderr from automation. RenderKit also disables
+progress bars automatically when stderr is not an interactive terminal.
 
 ### Bash Batch
 
@@ -189,6 +192,7 @@ done
 | `--cs-no-labels` | Disable layer name labels. | `False` |
 | `--profile` | Enable cProfile output for this conversion. | `False` |
 | `--profile-out` | Output `.prof` path or directory. | Temp dir |
+| `--no-progress` | Disable progress bars for stable captured logs. | `False` |
 
 ## `contact-sheet` Options
 

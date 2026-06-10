@@ -36,6 +36,7 @@ class RenderKit:
         end_frame: Optional[int] = None,
         contact_sheet: bool = False,
         contact_sheet_config: Optional[ContactSheetConfig] = None,
+        show_progress: Optional[bool] = None,
     ) -> None:
         """Convert an EXR sequence to MP4 video.
 
@@ -52,6 +53,8 @@ class RenderKit:
             layer: Optional EXR layer to extract (default: None)
             start_frame: Start frame number (optional)
             end_frame: End frame number (optional)
+            show_progress: Whether to show the tqdm progress bar. When omitted, progress is shown
+                only when stderr is interactive.
 
         Example:
             >>> processor = RenderKit()
@@ -90,13 +93,17 @@ class RenderKit:
 
         conversion_config = config.build()
         converter = SequenceConverter(conversion_config)
-        converter.convert()
+        converter.convert(show_progress=show_progress)
 
-    def convert_with_config(self, config: ConversionConfig) -> None:
+    def convert_with_config(
+        self, config: ConversionConfig, show_progress: Optional[bool] = None
+    ) -> None:
         """Convert using a ConversionConfig object.
 
         Args:
             config: Conversion configuration object
+            show_progress: Whether to show the tqdm progress bar. When omitted, progress is shown
+                only when stderr is interactive.
 
         Example:
             >>> from renderkit.core.config import ConversionConfigBuilder
@@ -109,4 +116,4 @@ class RenderKit:
             >>> processor.convert_with_config(config)
         """
         converter = SequenceConverter(config)
-        converter.convert()
+        converter.convert(show_progress=show_progress)

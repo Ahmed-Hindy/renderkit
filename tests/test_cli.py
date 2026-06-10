@@ -52,3 +52,63 @@ def test_gui_alias_launches_gui(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert launched
+
+
+def test_convert_no_progress_disables_progress(monkeypatch, tmp_path) -> None:
+    """Verify --no-progress requests plain automation-friendly output."""
+    calls = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config, show_progress=None) -> None:
+            calls.append((config, show_progress))
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "convert-exr-sequence",
+            "render.%04d.exr",
+            str(tmp_path / "output.mp4"),
+            "--fps",
+            "24",
+            "--no-progress",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    _, show_progress = calls.pop()
+    assert show_progress is False
+    assert "Successfully converted" in result.output
+
+
+def test_convert_defaults_to_auto_progress_detection(monkeypatch, tmp_path) -> None:
+    """Verify default CLI behavior lets the converter decide from the terminal."""
+    calls = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config, show_progress=None) -> None:
+            calls.append((config, show_progress))
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "convert-exr-sequence",
+            "render.%04d.exr",
+            str(tmp_path / "output.mp4"),
+            "--fps",
+            "24",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    _, show_progress = calls.pop()
+    assert show_progress is None

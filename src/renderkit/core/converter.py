@@ -1,4 +1,5 @@
 import logging
+import sys
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -97,8 +98,17 @@ class SequenceConverter:
         self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
         self._layer_map = None
 
-    def convert(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> None:
+    def convert(
+        self,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        show_progress: Optional[bool] = None,
+    ) -> None:
         """Perform the conversion from image sequence to video.
+
+        Args:
+            progress_callback: Optional callback for UI or programmatic progress updates.
+            show_progress: Whether to show the CLI tqdm progress bar. When omitted, progress is
+                shown only when stderr is interactive.
 
         Raises:
             SequenceDetectionError: If sequence cannot be detected
@@ -132,6 +142,7 @@ class SequenceConverter:
             input_space,
             file_info,
             progress_callback,
+            show_progress,
         )
 
     def _detect_sequence(self) -> FrameSequence:
@@ -279,6 +290,7 @@ class SequenceConverter:
         input_space: Optional[str],
         file_info: FileInfo,
         progress_callback: Optional[Callable[[int, int], None]],
+        show_progress: Optional[bool],
     ) -> None:
         """Process all frames and write them to the encoder."""
         logger.debug(f"Processing {len(frame_numbers)} frames...")
@@ -301,6 +313,9 @@ class SequenceConverter:
         contact_sheet_enabled = (
             self.config.contact_sheet_mode and self.config.contact_sheet_config is not None
         )
+        if show_progress is None:
+            stderr_isatty = getattr(sys.stderr, "isatty", None)
+            show_progress = bool(stderr_isatty and stderr_isatty())
         pbar = None
 
         def _tick_progress(current_index: int) -> None:
@@ -312,7 +327,7 @@ class SequenceConverter:
                 pbar.update(1)
 
         try:
-            if progress_callback is None:
+            if progress_callback is None and show_progress:
                 from tqdm import tqdm
 
                 pbar = tqdm(total=total_frames, desc="Converting frames")
