@@ -161,6 +161,113 @@ for shot in shots/*; do
 done
 ```
 
+### Supported Frame Pattern Styles
+
+Use one of the currently documented sequence placeholder styles when scripting batch jobs:
+
+- `%04d` for printf-style padding in current CLI examples.
+- `$F4` for Houdini-style frame markers.
+- `####` for hash-style frame markers.
+
+Example inputs:
+
+```text
+shots/010/lighting/render.%04d.exr
+shots/010/lighting/render.$F4.exr
+shots/010/lighting/render.####.exr
+```
+
+### PowerShell Review + Audit Recipe
+
+This recipe converts many EXR sequences, verifies the MP4 outputs with `ffprobe`, and keeps both CSV and JSONL audit manifests before any cleanup step:
+
+```powershell
+$rows = @()
+$shots = Get-ChildItem .\shots -Directory
+
+foreach ($shot in $shots) {
+    $pattern = Join-Path $shot.FullName "render.%04d.exr"
+    $output = Join-Path $shot.FullName "review.mp4"
+
+    uv --native-tls run renderkit convert-exr-sequence $pattern $output --fps 24 --overwrite
+
+    $probeJson = & ffprobe -v error -print_format json -show_format -show_streams $output
+    $probe = $probeJson | ConvertFrom-Json
+    $videoStream = $probe.streams | Where-Object { $_.codec_type -eq "video" } | Select-Object -First 1
+
+    $rows += [pscustomobject]@{
+        shot = $shot.Name
+        input_pattern = $pattern
+        output_path = $output
+        output_exists = Test-Path $output
+        codec = $videoStream.codec_name
+        width = $videoStream.width
+        height = $videoStream.height
+        duration = $probe.format.duration
+    }
+}
+
+$rows | Export-Csv .\renderkit-review-audit.csv -NoTypeInformation
+$rows | ForEach-Object {
+    ($_ | ConvertTo-Json -Compress) | Add-Content .\renderkit-review-audit.jsonl
+}
+```
+
+Recommended CLI flags for review conversions:
+
+```powershell
+--fps 24 --overwrite
+```
+
+### Compare Work And Publish Folders
+
+When both work and publish renders exist, compare them before deleting or replacing source EXRs. A simple audit is to count sequences per folder and record which side produced the verified review MP4:
+
+```powershell
+$work = Get-ChildItem .\work -Directory
+$publish = Get-ChildItem .\publish -Directory
+
+$comparison = foreach ($dir in $work + $publish) {
+    [pscustomobject]@{
+        folder = $dir.FullName
+        exr_count = (Get-ChildItem $dir.FullName -Filter *.exr -File | Measure-Object).Count
+        mp4_count = (Get-ChildItem $dir.FullName -Filter *.mp4 -File | Measure-Object).Count
+    }
+}
+
+$comparison | Export-Csv .\renderkit-folder-comparison.csv -NoTypeInformation
+```
+
+### Safe Cleanup After Verification
+
+Only replace or remove source EXRs after you have a verified MP4 and an audit row for that sequence.
+
+Recommended workflow:
+
+1. Convert to MP4 with `uv --native-tls run renderkit convert-exr-sequence ... --fps 24 --overwrite`.
+2. Verify the MP4 with `ffprobe` and store the result in CSV and JSONL audit output.
+3. Do a dry run that lists the EXRs you would remove or archive.
+4. Delete or replace the EXRs only after the dry run matches the verified outputs.
+
+Example dry run:
+
+```powershell
+$verified = Import-Csv .\renderkit-review-audit.csv | Where-Object { $_.output_exists -eq "True" }
+
+foreach ($row in $verified) {
+    $sequenceDir = Split-Path $row.input_pattern -Parent
+    Get-ChildItem $sequenceDir -Filter *.exr -File | Select-Object FullName
+}
+```
+
+If you need to rebuild the JSONL file from an existing CSV audit:
+
+```powershell
+$rows | ForEach-Object {
+    ($_ | ConvertTo-Json -Compress) | Add-Content .\renderkit-review-audit.jsonl
+}
+```
+
 ## `convert-exr-sequence` Options
 
 | Option | Description | Default |
