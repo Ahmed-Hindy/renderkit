@@ -121,6 +121,28 @@ class TestSequenceDetector:
         ]
         assert all(path.exists() for path in paths)
 
+    def test_detect_percent_pattern_uses_exact_filename_match(self, tmp_path: Path) -> None:
+        """Test sequence detection excludes partial filename matches."""
+        (tmp_path / "render.0001.exr").touch()
+        (tmp_path / "render.0001.exr.tmp").touch()
+        (tmp_path / "renderx0002.exr").touch()
+
+        pattern = str(tmp_path / "render.%04d.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert sequence.frame_numbers == [1]
+
+    def test_numeric_pattern_get_file_path_uses_detected_padding(self, tmp_path: Path) -> None:
+        """Test numeric sequence detection stores a reusable pattern."""
+        for i in range(1, 4):
+            (tmp_path / f"shot.{i:06d}.exr").touch()
+
+        pattern = str(tmp_path / "shot.000001.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert sequence.pattern == "shot.%06d.exr"
+        assert sequence.get_file_path(3) == tmp_path / "shot.000003.exr"
+
 
 class TestFrameSequence:
     """Tests for FrameSequence."""

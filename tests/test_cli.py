@@ -17,6 +17,8 @@ def test_help_lists_ui_command(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "ui" in result.output
+    assert "batch-replace" in result.output
+    assert "replace-sequence-with-mp4" in result.output
     assert "Launch the RenderKit desktop UI." in result.output
     assert "gui" not in result.output
 
