@@ -398,7 +398,7 @@ explicit `replace-sequence-with-mp4` calls or stage renamed MP4s in `--mp4-dir`.
 | `--columns` | Number of grid columns. | `4` |
 | `--thumb-width` | Width of each thumbnail. | Source resolution |
 | `--padding` | Padding between thumbnails. | `4` |
-| `--no-labels` | Disable filename labels below thumbnails. | `False` |
+| `--no-labels` | Disable layer labels below thumbnails. | `False` |
 | `--font-size` | Label font size. | `16` |
 | `--layer` | EXR layer/AOV to extract. | None |
 | `--start-frame` | Start frame number. | First frame |
