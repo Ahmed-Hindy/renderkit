@@ -1,10 +1,13 @@
 """Sequence detection and parsing for frame sequences."""
 
+import logging
 import re
 from pathlib import Path
 from typing import Optional
 
-from renderkit.exceptions import SequenceDetectionError
+from renderkit.exceptions import ImageReadError, SequenceDetectionError
+
+logger = logging.getLogger(__name__)
 
 
 class FrameSequence:
@@ -255,9 +258,10 @@ class SequenceDetector:
                 fps = reader.get_metadata_fps(sample_path)
                 if fps is not None:
                     return round(fps, 3)  # Round to avoid precision issues (e.g. 23.976)
-            except Exception:
-                # Silently fail for metadata detection
-                pass
+            except ImportError as exc:
+                logger.warning("FPS metadata detection unavailable for %s: %s", sample_path, exc)
+            except ImageReadError as exc:
+                logger.warning("FPS metadata detection failed for %s: %s", sample_path, exc)
 
         # 2. Return default or None
         return default_fps

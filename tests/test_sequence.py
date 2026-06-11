@@ -1,11 +1,12 @@
 """Tests for sequence detection and parsing."""
 
+import logging
 from pathlib import Path
 
 import pytest
 
 from renderkit.core.sequence import FrameSequence, SequenceDetector
-from renderkit.exceptions import SequenceDetectionError
+from renderkit.exceptions import ImageReadError, SequenceDetectionError
 
 
 class TestSequenceDetector:
@@ -120,6 +121,49 @@ class TestSequenceDetector:
             tmp_path / "render.003.exr",
         ]
         assert all(path.exists() for path in paths)
+
+    def test_auto_detect_fps_logs_metadata_read_failures(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test FPS metadata read failures do not disappear silently."""
+        sample_path = tmp_path / "render.0001.exr"
+        sample_path.touch()
+
+        class FailingReader:
+            def get_metadata_fps(self, path: Path) -> float:
+                raise ImageReadError("metadata read failed")
+
+        monkeypatch.setattr("renderkit.io.oiio_cache.get_shared_image_cache", lambda: object())
+        monkeypatch.setattr(
+            "renderkit.io.image_reader.ImageReaderFactory.create_reader",
+            lambda path, image_cache=None: FailingReader(),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="renderkit.core.sequence"):
+            fps = SequenceDetector.auto_detect_fps([1], default_fps=24.0, sample_path=sample_path)
+
+        assert fps == pytest.approx(24.0)
+        assert "FPS metadata detection failed" in caplog.text
+
+    def test_auto_detect_fps_propagates_unexpected_metadata_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test unexpected reader bugs are not hidden as missing FPS metadata."""
+        sample_path = tmp_path / "render.0001.exr"
+        sample_path.touch()
+
+        class BrokenReader:
+            def get_metadata_fps(self, path: Path) -> float:
+                raise RuntimeError("reader API drift")
+
+        monkeypatch.setattr("renderkit.io.oiio_cache.get_shared_image_cache", lambda: object())
+        monkeypatch.setattr(
+            "renderkit.io.image_reader.ImageReaderFactory.create_reader",
+            lambda path, image_cache=None: BrokenReader(),
+        )
+
+        with pytest.raises(RuntimeError, match="reader API drift"):
+            SequenceDetector.auto_detect_fps([1], default_fps=24.0, sample_path=sample_path)
 
 
 class TestFrameSequence:
