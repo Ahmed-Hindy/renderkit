@@ -27,7 +27,7 @@ from renderkit.processing.color_space import (
     get_ocio_role_display_options,
     resolve_ocio_role_label_for_colorspace,
 )
-from renderkit.processing.video_encoder import get_available_encoders, select_available_encoder
+from renderkit.processing.video_encoder import get_encoder_probe_result, select_available_encoder
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.file_info_worker import FileInfoWorker
 from renderkit.ui.icons import icon_manager
@@ -1684,12 +1684,29 @@ class MainWindowLogicMixin:
             # Codec
             codec_index = self.codec_combo.currentIndex()
             codec_id = self._codec_map.get(codec_index, "libx264")
-            available_encoders = get_available_encoders()
+            encoder_probe = get_encoder_probe_result()
+            available_encoders = set(encoder_probe.encoders)
             resolved_codec, fallback_warning = select_available_encoder(
                 codec_id, available_encoders
             )
-            if available_encoders and resolved_codec not in available_encoders:
-                available = ", ".join(sorted(available_encoders))
+            if encoder_probe.failed:
+                QMessageBox.warning(
+                    self,
+                    "Encoder Probe Failed",
+                    (
+                        "Unable to validate FFmpeg encoder availability.\n\n"
+                        f"{encoder_probe.error}\n\n"
+                        f"RenderKit will attempt to use '{resolved_codec}'."
+                    ),
+                )
+                logger.warning(
+                    "Skipping FFmpeg encoder availability validation because probing failed: %s. "
+                    "Attempting '%s'.",
+                    encoder_probe.error,
+                    resolved_codec,
+                )
+            elif resolved_codec not in encoder_probe.encoders:
+                available = ", ".join(sorted(encoder_probe.encoders)) or "none"
                 QMessageBox.critical(
                     self,
                     "Encoder Unavailable",
