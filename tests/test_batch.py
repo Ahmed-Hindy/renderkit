@@ -6,6 +6,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from renderkit.cli import batch as cli_batch
 from renderkit.cli import main as cli_main
 from renderkit.core.batch import build_safe_output_path, discover_frame_sequences
 
@@ -91,7 +92,7 @@ def test_batch_convert_continues_after_failure_and_writes_manifests(
 
     monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
     monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
-    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+    monkeypatch.setattr(cli_batch, "RenderKit", FakeRenderKit)
 
     result = CliRunner().invoke(
         cli_main.main,
@@ -144,7 +145,7 @@ def test_batch_convert_skips_existing_outputs_without_overwrite(
 
     monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
     monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
-    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+    monkeypatch.setattr(cli_batch, "RenderKit", FakeRenderKit)
 
     result = CliRunner().invoke(
         cli_main.main,
@@ -183,7 +184,7 @@ def test_batch_convert_deduplicates_colliding_output_names(monkeypatch, tmp_path
 
     monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
     monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
-    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+    monkeypatch.setattr(cli_batch, "RenderKit", FakeRenderKit)
 
     result = CliRunner().invoke(
         cli_main.main,
