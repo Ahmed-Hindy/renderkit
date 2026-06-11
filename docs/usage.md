@@ -197,14 +197,19 @@ $sequences = @(
 )
 
 $results = foreach ($seq in $sequences) {
-    uv --native-tls run renderkit convert-exr-sequence `
-        $seq.Pattern `
-        $seq.Output `
-        --fps 24 `
-        --overwrite `
-        --no-progress
+    $conversionExitCode = $null
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uv) {
+        & $uv.Path --native-tls run renderkit convert-exr-sequence `
+            $seq.Pattern `
+            $seq.Output `
+            --fps 24 `
+            --overwrite `
+            --no-progress
+        $conversionExitCode = $LASTEXITCODE
+    }
 
-    $converted = $LASTEXITCODE -eq 0 -and (Test-Path $seq.Output)
+    $converted = $conversionExitCode -eq 0 -and (Test-Path $seq.Output)
     $probeJson = $null
     $probeExitCode = $null
     $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
@@ -234,9 +239,17 @@ Before replacing source EXRs, compare the work and publish roots so the cleanup
 step only touches the intended sequences:
 
 ```powershell
+function Get-RelativePath($Root, $Path) {
+    $rootPath = (Resolve-Path $Root).Path.TrimEnd('\') + '\'
+    $pathValue = (Resolve-Path $Path).Path
+    $rootUri = New-Object System.Uri -ArgumentList $rootPath
+    $pathUri = New-Object System.Uri -ArgumentList $pathValue
+    [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString()).Replace('/', '\')
+}
+
 function Get-RelativeExrFrames($Root) {
     Get-ChildItem $Root -Recurse -Filter *.exr | ForEach-Object {
-        [System.IO.Path]::GetRelativePath($Root, $_.FullName)
+        Get-RelativePath $Root $_.FullName
     } | Sort-Object
 }
 
@@ -270,7 +283,12 @@ function ConvertTo-FrameNameRegex($LeafPattern) {
     "^$regex$"
 }
 
-Import-Csv $manifestCsv | Where-Object { $_.converted -eq "True" -and $_.verified -eq "True" } |
+Import-Csv $manifestCsv |
+    Where-Object {
+        $_.converted -eq "True" -and
+        $_.verified -eq "True" -and
+        (Test-Path $_.output_path)
+    } |
     ForEach-Object {
         $archiveDir = Join-Path $archiveRoot $_.name
         $frameRegex = ConvertTo-FrameNameRegex (Split-Path $_.input_pattern -Leaf)
