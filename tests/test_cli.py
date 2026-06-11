@@ -50,7 +50,7 @@ def test_convert_exr_sequence_accepts_three_digit_printf_pattern(
     resolved_paths: list[Path] = []
 
     class FakeRenderKit:
-        def convert_with_config(self, config) -> None:
+        def convert_with_config(self, config, show_progress=None) -> None:
             sequence = SequenceDetector.detect_sequence(config.input_pattern)
             resolved_paths.extend(sequence.get_file_path(frame) for frame in sequence.frame_numbers)
             output_path.touch()
