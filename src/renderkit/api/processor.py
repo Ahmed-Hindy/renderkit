@@ -82,15 +82,14 @@ class RenderKit:
         if layer is not None:
             config.with_layer(layer)
 
+        if (width is None) != (height is None):
+            raise ValueError("width and height must be used together")
+
         if width is not None and height is not None:
             config.with_resolution(width, height)
 
-        if start_frame is not None and end_frame is not None:
+        if start_frame is not None or end_frame is not None:
             config.with_frame_range(start_frame, end_frame)
-        elif start_frame is not None:
-            config.with_frame_range(start_frame, start_frame)
-        elif end_frame is not None:
-            config.with_frame_range(0, end_frame)
 
         if contact_sheet:
             config.with_contact_sheet(True, contact_sheet_config)
