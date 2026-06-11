@@ -2,8 +2,9 @@
 
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, TypeVar
 
 import click
 
@@ -39,6 +40,117 @@ COLOR_SPACE_MAP = {
     "srgb_to_linear": ColorSpacePreset.SRGB_TO_LINEAR,
     "no_conversion": ColorSpacePreset.NO_CONVERSION,
 }
+
+F = TypeVar("F", bound=Callable[..., Any])
+ClickOptionSpec = tuple[tuple[str, ...], dict[str, Any]]
+
+
+BATCH_CONVERT_OPTIONS: tuple[ClickOptionSpec, ...] = (
+    (
+        ("--ext",),
+        {"type": str, "default": "exr", "show_default": True, "help": "Input frame extension."},
+    ),
+    (
+        ("--out", "output_dir"),
+        {
+            "type": click.Path(path_type=Path),
+            "default": Path("_review_mp4s"),
+            "show_default": True,
+            "help": "Output directory for generated MP4 files.",
+        },
+    ),
+    (
+        ("--prefetch-workers",),
+        {
+            "type": int,
+            "default": 2,
+            "show_default": True,
+            "help": "Number of frame prefetch workers (set to 1 to disable).",
+        },
+    ),
+    (
+        ("--fps",),
+        {
+            "type": float,
+            "default": None,
+            "help": "Frame rate (fps). If not provided, will attempt auto-detection per sequence.",
+        },
+    ),
+    (
+        ("--color-space",),
+        {
+            "type": click.Choice(
+                ["linear_to_srgb", "linear_to_rec709", "srgb_to_linear", "no_conversion"],
+                case_sensitive=False,
+            ),
+            "default": "linear_to_srgb",
+            "help": "Color space conversion preset (default: linear_to_srgb)",
+        },
+    ),
+    (("--width",), {"type": int, "default": None, "help": "Output width (default: source width)"}),
+    (
+        ("--height",),
+        {"type": int, "default": None, "help": "Output height (default: source height)"},
+    ),
+    (
+        ("--codec",),
+        {
+            "type": str,
+            "default": "libx264",
+            "help": "Video codec (default: libx264, use 'libaom-av1' for AV1)",
+        },
+    ),
+    (
+        ("--quality",),
+        {
+            "type": click.IntRange(0, 10),
+            "default": 10,
+            "help": "Video quality (0-10), 10 is best (default: 10). Sets CRF.",
+        },
+    ),
+    (
+        ("--layer",),
+        {"type": str, "default": None, "help": "Specific EXR layer to extract (e.g., 'diffuse')."},
+    ),
+    (
+        ("--overwrite",),
+        {"is_flag": True, "default": False, "help": "Overwrite output files if they exist."},
+    ),
+    (
+        ("--manifest-csv",),
+        {
+            "type": click.Path(path_type=Path),
+            "default": None,
+            "help": "CSV manifest path (default: OUTPUT_DIR/renderkit_batch_manifest.csv).",
+        },
+    ),
+    (
+        ("--manifest-jsonl",),
+        {
+            "type": click.Path(path_type=Path),
+            "default": None,
+            "help": "JSONL results path (default: OUTPUT_DIR/renderkit_batch_results.jsonl).",
+        },
+    ),
+    (
+        ("--no-progress",),
+        {
+            "is_flag": True,
+            "default": False,
+            "help": "Disable progress bars for stable captured logs.",
+        },
+    ),
+)
+
+
+def _apply_click_options(option_specs: tuple[ClickOptionSpec, ...]) -> Callable[[F], F]:
+    def decorator(func: F) -> F:
+        decorated = func
+        for param_decls, attrs in reversed(option_specs):
+            decorated = click.option(*param_decls, **attrs)(decorated)
+        return decorated
+
+    return decorator
 
 
 @click.group()
@@ -221,18 +333,18 @@ def convert_exr_sequence(
         click.echo("Use --overwrite to overwrite it.", err=True)
         sys.exit(1)
 
-    color_space_preset = COLOR_SPACE_MAP[color_space.lower()]
-
     # Build configuration
-    config_builder = (
-        ConversionConfigBuilder()
-        .with_input_pattern(input_pattern)
-        .with_output_path(output_path)
-        .with_prefetch_workers(prefetch_workers)
-        .with_color_space_preset(color_space_preset)
-        .with_codec(codec)
-        .with_quality(quality)
-        .with_layer(layer)
+    config_builder = _base_conversion_config_builder(
+        input_pattern=input_pattern,
+        output_path=output_path,
+        prefetch_workers=prefetch_workers,
+        fps=fps,
+        color_space=color_space,
+        width=width,
+        height=height,
+        codec=codec,
+        quality=quality,
+        layer=layer,
     )
 
     if contact_sheet:
@@ -245,12 +357,6 @@ def convert_exr_sequence(
             show_labels=not cs_no_labels,
         )
         config_builder.with_contact_sheet(True, cs_config)
-
-    if fps is not None:
-        config_builder.with_fps(fps)
-
-    if width is not None and height is not None:
-        config_builder.with_resolution(width, height)
 
     if start_frame is not None and end_frame is not None:
         config_builder.with_frame_range(start_frame, end_frame)
@@ -306,81 +412,7 @@ def convert_exr_sequence(
 
 @main.command(name="batch-convert")
 @click.argument("root", type=click.Path(path_type=Path))
-@click.option("--ext", type=str, default="exr", show_default=True, help="Input frame extension.")
-@click.option(
-    "--out",
-    "output_dir",
-    type=click.Path(path_type=Path),
-    default=Path("_review_mp4s"),
-    show_default=True,
-    help="Output directory for generated MP4 files.",
-)
-@click.option(
-    "--prefetch-workers",
-    type=int,
-    default=2,
-    show_default=True,
-    help="Number of frame prefetch workers (set to 1 to disable).",
-)
-@click.option(
-    "--fps",
-    type=float,
-    default=None,
-    help="Frame rate (fps). If not provided, will attempt auto-detection per sequence.",
-)
-@click.option(
-    "--color-space",
-    type=click.Choice(
-        ["linear_to_srgb", "linear_to_rec709", "srgb_to_linear", "no_conversion"],
-        case_sensitive=False,
-    ),
-    default="linear_to_srgb",
-    help="Color space conversion preset (default: linear_to_srgb)",
-)
-@click.option("--width", type=int, default=None, help="Output width (default: source width)")
-@click.option("--height", type=int, default=None, help="Output height (default: source height)")
-@click.option(
-    "--codec",
-    type=str,
-    default="libx264",
-    help="Video codec (default: libx264, use 'libaom-av1' for AV1)",
-)
-@click.option(
-    "--quality",
-    type=click.IntRange(0, 10),
-    default=10,
-    help="Video quality (0-10), 10 is best (default: 10). Sets CRF.",
-)
-@click.option(
-    "--layer",
-    type=str,
-    default=None,
-    help="Specific EXR layer to extract (e.g., 'diffuse').",
-)
-@click.option(
-    "--overwrite",
-    is_flag=True,
-    default=False,
-    help="Overwrite output files if they exist.",
-)
-@click.option(
-    "--manifest-csv",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="CSV manifest path (default: OUTPUT_DIR/renderkit_batch_manifest.csv).",
-)
-@click.option(
-    "--manifest-jsonl",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="JSONL results path (default: OUTPUT_DIR/renderkit_batch_results.jsonl).",
-)
-@click.option(
-    "--no-progress",
-    is_flag=True,
-    default=False,
-    help="Disable progress bars for stable captured logs.",
-)
+@_apply_click_options(BATCH_CONVERT_OPTIONS)
 def batch_convert(
     root: Path,
     ext: str,
@@ -505,6 +537,40 @@ def _deduplicate_batch_output_path(output_path: Path, planned_outputs: set[Path]
         index += 1
 
 
+def _base_conversion_config_builder(
+    input_pattern: str,
+    output_path: str,
+    prefetch_workers: int,
+    fps: Optional[float],
+    color_space: str,
+    width: Optional[int],
+    height: Optional[int],
+    codec: str,
+    quality: int,
+    layer: Optional[str],
+) -> ConversionConfigBuilder:
+    config_builder = (
+        ConversionConfigBuilder()
+        .with_input_pattern(input_pattern)
+        .with_output_path(output_path)
+        .with_prefetch_workers(prefetch_workers)
+        .with_color_space_preset(COLOR_SPACE_MAP[color_space.lower()])
+        .with_codec(codec)
+        .with_quality(quality)
+    )
+
+    if layer is not None:
+        config_builder.with_layer(layer)
+
+    if fps is not None:
+        config_builder.with_fps(fps)
+
+    if width is not None and height is not None:
+        config_builder.with_resolution(width, height)
+
+    return config_builder
+
+
 def _build_batch_conversion_config(
     input_pattern: str,
     output_path: str,
@@ -517,24 +583,18 @@ def _build_batch_conversion_config(
     quality: int,
     layer: Optional[str],
 ) -> ConversionConfig:
-    config_builder = (
-        ConversionConfigBuilder()
-        .with_input_pattern(input_pattern)
-        .with_output_path(output_path)
-        .with_prefetch_workers(prefetch_workers)
-        .with_color_space_preset(COLOR_SPACE_MAP[color_space.lower()])
-        .with_codec(codec)
-        .with_quality(quality)
-        .with_layer(layer)
-    )
-
-    if fps is not None:
-        config_builder.with_fps(fps)
-
-    if width is not None and height is not None:
-        config_builder.with_resolution(width, height)
-
-    return config_builder.build()
+    return _base_conversion_config_builder(
+        input_pattern=input_pattern,
+        output_path=output_path,
+        prefetch_workers=prefetch_workers,
+        fps=fps,
+        color_space=color_space,
+        width=width,
+        height=height,
+        codec=codec,
+        quality=quality,
+        layer=layer,
+    ).build()
 
 
 def _batch_record(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -70,15 +69,15 @@ def discover_frame_sequences(root: Path, extension: str) -> list[BatchSequence]:
         if not frame_path.is_file() or frame_path.suffix.lower() != normalized_ext:
             continue
 
-        match = re.match(r"^(?P<prefix>.*?)(?P<frame>\d+)(?P<suffix>\.[^.]+)$", frame_path.name)
-        if not match:
+        parsed_name = _split_frame_name(frame_path)
+        if parsed_name is None:
             continue
 
-        frame_text = match.group("frame")
+        prefix, frame_text, suffix = parsed_name
         key = (
             frame_path.parent,
-            match.group("prefix"),
-            match.group("suffix"),
+            prefix,
+            suffix,
             len(frame_text),
         )
         groups.setdefault(key, set()).add(int(frame_text))
@@ -140,7 +139,22 @@ def _normalize_extension(extension: str) -> str:
     return ext if ext.startswith(".") else f".{ext}"
 
 
+def _split_frame_name(frame_path: Path) -> Optional[tuple[str, str, str]]:
+    suffix = frame_path.suffix
+    stem = frame_path.name[: -len(suffix)]
+    frame_start = len(stem)
+    while frame_start > 0 and stem[frame_start - 1].isdigit():
+        frame_start -= 1
+
+    if frame_start == len(stem):
+        return None
+
+    return stem[:frame_start], stem[frame_start:], suffix
+
+
 def _safe_filename_part(value: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
-    safe = safe.strip("._-")
+    safe = "".join(
+        character if character.isascii() and (character.isalnum() or character in "._-") else "_"
+        for character in value.strip()
+    ).strip("._-")
     return safe or "sequence"
