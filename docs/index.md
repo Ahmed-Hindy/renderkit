@@ -13,6 +13,8 @@ The desktop app is the main end-user path; these docs focus on CLI automation, p
 
 - Convert EXR, TIFF, PNG, and JPEG sequences to MP4.
 - Read common Houdini, Maya, and generic frame-pattern styles.
+- Recursively batch-convert sequence trees with CSV and JSONL manifests.
+- Replace source frame sequences with verified review MP4s and JSONL audit records.
 - Convert a single EXR layer/AOV or generate multi-AOV contact sheet movies.
 - Apply common color transforms for review output.
 - Add frame, layer, and FPS burn-ins.
@@ -43,6 +45,18 @@ Generate a still contact sheet:
 
 ```bash
 uv run renderkit contact-sheet render.%04d.exr contact_sheet.jpg --columns 4
+```
+
+Batch-convert all EXR sequences below a show or shot folder:
+
+```bash
+uv run renderkit batch-convert ./shots --out _review_mp4s --fps 24 --overwrite
+```
+
+Dry-run a safe replacement cleanup before deleting source frames:
+
+```bash
+uv run renderkit replace-sequence-with-mp4 render.%04d.exr review.mp4 --verify --delete-source --dry-run
 ```
 
 ## Source Checkout
