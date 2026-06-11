@@ -43,6 +43,7 @@ nav:
           - RenderKit: api/processor.md
           - Config: api/config.md
           - Sequence: api/sequence.md
+          - Sequence Replacement: api/sequence_replacement.md
       - IO:
           - ImageReader: api/io/image_reader.md
           - FileUtils: api/io/file_utils.md

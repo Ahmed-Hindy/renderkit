@@ -21,16 +21,23 @@ renderkit --help
 renderkit ui
 renderkit convert-exr-sequence INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 renderkit batch-convert ROOT [OPTIONS]
+renderkit replace-sequence-with-mp4 INPUT_PATTERN OUTPUT_MP4 [OPTIONS]
+renderkit batch-replace ROOT_PATH [OPTIONS]
 renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 ```
 
 `INPUT_PATTERN` accepts common sequence styles:
 
 ```text
+render.%03d.exr
 render.%04d.exr
+render.%05d.exr
 render.####.exr
 render.$F4.exr
 ```
+
+Printf-style patterns support the padding width used by the sequence, such as `%03d`, `%04d`,
+`%05d`, or another `%0Nd` width.
 
 ## Conversion Recipes
 
@@ -178,10 +185,137 @@ By default, relative output and manifest paths are resolved under `ROOT`. Existi
 skipped unless `--overwrite` is set. The command keeps processing after per-sequence failures and
 exits nonzero if any sequence failed.
 
+Extension matching is case-insensitive, so `--ext exr` also finds `.EXR` frames. Output names are
+built from the relative folder path and sequence prefix. If multiple discovered sequences would
+write the same MP4 path in one run, RenderKit appends a numeric suffix such as `_2`.
+
 Default manifests:
 
 - `_review_mp4s/renderkit_batch_manifest.csv`
 - `_review_mp4s/renderkit_batch_results.jsonl`
+
+Each manifest record includes the source pattern, output path, frame count, frame range, output
+size, status, and error text. Use the JSONL file for automation that tails results while a batch is
+running, and the CSV file for review in spreadsheets or asset-management tools.
+
+### Verify Review MP4s
+
+Use `ffprobe` when you need an independent readability check before publish or cleanup:
+
+```powershell
+$reviews = Get-ChildItem G:\Projects\Data_folder\_review_mp4s -Filter *.mp4 -Recurse
+foreach ($review in $reviews) {
+    ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $review.FullName | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "ffprobe failed for $($review.FullName)"
+    }
+}
+```
+
+`replace-sequence-with-mp4 --verify` and `batch-replace --verify` run the same kind of MP4
+readability check before replacement cleanup.
+
+### Compare Work And Publish Folders
+
+Before replacing source EXRs, compare the work render tree against the publish tree so missing or
+extra sequence groups are visible. This PowerShell helper compares sequence keys by relative folder,
+filename prefix, extension, and frame padding:
+
+```powershell
+function Get-RenderSequenceKeys($root) {
+    Get-ChildItem $root -Recurse -File -Filter *.exr |
+        ForEach-Object {
+            if ($_.BaseName -match '^(.*?)(\d+)$') {
+                $relativeDir = [System.IO.Path]::GetRelativePath($root, $_.DirectoryName)
+                "$relativeDir\$($Matches[1])%0$($Matches[2].Length)d$($_.Extension.ToLower())"
+            }
+        } |
+        Sort-Object -Unique
+}
+
+$workSequences = Get-RenderSequenceKeys "G:\Projects\shot\work"
+$publishSequences = Get-RenderSequenceKeys "G:\Projects\shot\publish"
+Compare-Object $workSequences $publishSequences
+```
+
+Rows marked `<=` exist only in the work folder. Rows marked `=>` exist only in the publish folder.
+Run the comparison before destructive cleanup and keep the command output with the batch manifests
+when the result needs to be audited.
+
+### Safe Sequence Replacement
+
+Use `replace-sequence-with-mp4` after review movies have been approved and source frames can be
+replaced by the MP4. Start with a dry run:
+
+```powershell
+renderkit replace-sequence-with-mp4 render.%04d.exr G:\reviews\render.mp4 --verify --delete-source --dry-run
+```
+
+When the dry run looks correct, remove `--dry-run`:
+
+```powershell
+renderkit replace-sequence-with-mp4 render.%04d.exr G:\reviews\render.mp4 --verify --delete-source
+```
+
+The command detects the exact frames in `INPUT_PATTERN`, copies the replacement MP4 into the source
+sequence folder, optionally verifies the MP4 with `ffprobe`, and writes a JSONL audit record. When
+`--delete-source` is used without `--dry-run`, RenderKit verifies the copied MP4 before deleting
+source frames. Dry runs still require the replacement MP4 to exist, so the preflight cannot report a
+missing movie as replaceable.
+
+Safety behavior:
+
+- RenderKit only deletes frame files that are detected from `INPUT_PATTERN`.
+- The audit report path is checked before copy or delete work begins.
+- `--dry-run` writes an audit record but does not copy the MP4 or delete frames.
+- `--verify` checks the replacement MP4 with `ffprobe`; non-dry-run deletion also verifies the
+  copied MP4 before removing source frames.
+- If verification, copying, deletion, or audit writing fails, the command exits with an error.
+
+By default, the audit file is written next to the source sequence:
+
+```text
+renderkit-replacement-audit.jsonl
+```
+
+Audit records are JSON objects with these fields:
+
+| Field | Description |
+|---|---|
+| `timestamp` | UTC timestamp for the attempt. |
+| `source_pattern` | Sequence pattern passed to the command. |
+| `source_frames` | Exact source frame files detected for replacement. |
+| `source_count` | Number of detected source frames. |
+| `replacement_mp4` | MP4 path supplied to the command. |
+| `copied_mp4` | Destination MP4 path in the source sequence folder. |
+| `deleted_frames` | Frames deleted, or frames that would be deleted during dry-run cleanup. |
+| `deleted_count` | Number of deleted frames. |
+| `reclaimed_bytes` | Bytes reclaimed by deletion, or bytes that would be reclaimed in a dry run. |
+| `dry_run` | Whether the command avoided copy/delete work. |
+| `verified` | Whether MP4 verification ran successfully. |
+| `copied` | Whether RenderKit copied the MP4 into the source sequence folder. |
+
+### Batch Replacement Cleanup
+
+Use `batch-replace` when a folder tree contains EXR sequences and a review folder contains matching
+MP4s named after each sequence prefix:
+
+```powershell
+renderkit batch-replace G:\Projects\Data_folder --mp4-dir _review_mp4s --verify --delete-source --dry-run
+```
+
+`--mp4-dir` is relative to `ROOT_PATH` unless it is absolute. For each detected EXR sequence,
+RenderKit derives the expected MP4 name from the sequence prefix, such as `render.%04d.exr` to
+`render.mp4`, runs the same verification and audit workflow as `replace-sequence-with-mp4`, and
+appends results to:
+
+```text
+renderkit-batch-replace-audit.jsonl
+```
+
+Before using `batch-replace`, confirm the approved MP4 names match that prefix-based convention. If
+your review movies were named from full relative paths, use the batch conversion manifest to drive
+explicit `replace-sequence-with-mp4` calls or stage renamed MP4s in `--mp4-dir`.
 
 ## `convert-exr-sequence` Options
 
@@ -233,6 +367,28 @@ Default manifests:
 | `--manifest-jsonl` | JSONL results path. Relative paths resolve under `ROOT`. | `OUTPUT_DIR/renderkit_batch_results.jsonl` |
 | `--no-progress` | Disable progress bars for stable captured logs. | `False` |
 
+## `replace-sequence-with-mp4` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `INPUT_PATTERN` | Source sequence pattern with a frame placeholder. | Required |
+| `OUTPUT_MP4` | Replacement MP4 to copy into the source sequence folder. | Required |
+| `--delete-source` | Delete source frames after the replacement MP4 is verified. | `False` |
+| `--verify` | Verify the replacement MP4 with `ffprobe` before replacing frames. | `False` |
+| `--dry-run` | Print and audit planned changes without copying or deleting files. | `False` |
+| `--audit-report` | JSONL audit report path. | Source folder `renderkit-replacement-audit.jsonl` |
+
+## `batch-replace` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `ROOT_PATH` | Directory tree to scan for EXR sequences. | Required |
+| `--mp4-dir` | Directory containing replacement MP4s. Relative paths resolve under `ROOT_PATH`. | `_review_mp4s` |
+| `--delete-source` | Delete source frames after each replacement MP4 is verified. | `False` |
+| `--verify` | Verify each replacement MP4 with `ffprobe` before replacing frames. | `False` |
+| `--dry-run` | Print and audit planned changes without copying or deleting files. | `False` |
+| `--audit-report` | JSONL audit report path. | `ROOT_PATH/renderkit-batch-replace-audit.jsonl` |
+
 ## `contact-sheet` Options
 
 | Option | Description | Default |
@@ -259,6 +415,13 @@ Default manifests:
 - `RENDERKIT_LOG_PATH`: Override RenderKit log file path.
 - `RENDERKIT_LOG_LEVEL`: Logging level, such as `DEBUG`, `INFO`, or `WARNING`.
 - `QT_BACKEND`: Force a Qt backend. PySide6 is the supported backend.
+
+## Operational Notes
+
+- FPS auto-detection logs a warning when metadata probing is unavailable or image metadata cannot
+  be read, then falls back to the configured/default FPS behavior.
+- OCIO conversion failures include diagnostics in the RenderKit log, including role and color-space
+  resolution details, available color-space samples, and bundled LUT/config checks where possible.
 
 ## Desktop UI From The CLI
 

@@ -120,6 +120,8 @@ The package is organized with clear separation of concerns:
 
 ### Core Modules
 - **`core/sequence.py`**: Frame sequence detection and parsing
+- **`core/batch.py`**: Recursive frame sequence discovery and batch manifest helpers
+- **`core/sequence_replacement.py`**: Verified MP4 replacement cleanup and audit records
 - **`core/converter.py`**: Main conversion orchestrator
 - **`core/config.py`**: Configuration classes using Builder pattern
 
@@ -134,7 +136,9 @@ The package is organized with clear separation of concerns:
 
 ### Interface Modules
 - **`api/processor.py`**: Public Python API
-- **`cli/main.py`**: Command-line interface
+- **`cli/main.py`**: Command-line command group and UI/contact-sheet/replacement commands
+- **`cli/batch.py`**: Batch conversion CLI command and option handling
+- **`cli/conversion.py`**: Shared CLI conversion configuration builder
 - **`ui/main_window.py`**: PySide/Qt graphical interface
 
 ## Design Patterns

@@ -8,13 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- (nothing yet)
+- `renderkit replace-sequence-with-mp4` for safe replacement of detected source frame sequences with approved MP4s.
+- `renderkit batch-replace` for scanning EXR sequence trees and applying the same verified replacement workflow in bulk.
+- JSONL audit records for sequence replacement cleanup, including dry-run, verification, copy, deletion, and reclaimed-byte details.
 
 ### Changed
-- (nothing yet)
+- Batch conversion output planning now deduplicates colliding MP4 paths within a run.
+- Batch CLI implementation is split into dedicated command and shared conversion modules.
 
 ### Fixed
-- (nothing yet)
+- Sequence replacement validates replacement MP4 existence during dry runs and preflights audit report writability before copy/delete work.
+- FPS metadata probing and OCIO conversion diagnostics now log expected failure details instead of silently dropping them.
 
 ## [1.0.0] - 2026-06-06
 
