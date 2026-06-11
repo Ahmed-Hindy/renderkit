@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -19,13 +20,42 @@ from renderkit.processing.scaler import ImageScaler
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EncoderProbeResult:
+    """Structured result for FFmpeg encoder capability probing."""
+
+    encoders: frozenset[str]
+    error: Optional[str] = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error is None
+
+    @property
+    def failed(self) -> bool:
+        return self.error is not None
+
+
 def _escape_ffreport_path(path: Path) -> str:
     if os.name == "nt":
         return path.as_posix().replace(":", r"\:")
     return str(path)
 
 
-def _probe_available_encoders() -> set[str]:
+def _probe_failure_result(error: str) -> EncoderProbeResult:
+    logger.warning("Unable to query FFmpeg encoders: %s", error)
+    return EncoderProbeResult(frozenset(), error=error)
+
+
+def _last_nonempty_line(text: str) -> Optional[str]:
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line:
+            return line
+    return None
+
+
+def _probe_available_encoders() -> EncoderProbeResult:
     try:
         cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
         result = subprocess.run(
@@ -35,9 +65,15 @@ def _probe_available_encoders() -> set[str]:
             **popen_kwargs(prevent_sigint=True),
         )
         text = (result.stdout or "") + "\n" + (result.stderr or "")
-    except Exception as exc:
-        logger.warning("Unable to query FFmpeg encoders: %s", exc)
-        return set()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _probe_failure_result(str(exc))
+
+    if result.returncode != 0:
+        error = f"ffmpeg -encoders exited with code {result.returncode}"
+        output_tail = _last_nonempty_line(text)
+        if output_tail:
+            error = f"{error}: {output_tail}"
+        return _probe_failure_result(error)
 
     encoders: set[str] = set()
     for line in text.splitlines():
@@ -51,16 +87,20 @@ def _probe_available_encoders() -> set[str]:
             continue
         if parts[0].startswith("V"):
             encoders.add(parts[1])
-    return encoders
+    return EncoderProbeResult(frozenset(encoders))
 
 
 @lru_cache(maxsize=1)
-def _cached_available_encoders() -> frozenset[str]:
-    return frozenset(_probe_available_encoders())
+def _cached_encoder_probe_result() -> EncoderProbeResult:
+    return _probe_available_encoders()
+
+
+def get_encoder_probe_result() -> EncoderProbeResult:
+    return _cached_encoder_probe_result()
 
 
 def get_available_encoders() -> set[str]:
-    return set(_cached_available_encoders())
+    return set(get_encoder_probe_result().encoders)
 
 
 def select_available_encoder(requested: str, available: set[str]) -> tuple[str, Optional[str]]:
@@ -227,13 +267,17 @@ class VideoEncoder:
         self._ffreport_set = False
 
     def _read_ffmpeg_report_tail(self, max_lines: int = 80) -> Optional[str]:
+        """Best-effort FFmpeg report tail for error messages."""
         if self._ffmpeg_report_path is None:
             return None
         if not self._ffmpeg_report_path.exists():
             return None
         try:
             content = self._ffmpeg_report_path.read_text(errors="ignore")
-        except Exception:
+        except OSError as exc:
+            logger.debug(
+                "Unable to read FFmpeg report tail from %s: %s", self._ffmpeg_report_path, exc
+            )
             return None
         lines = [line for line in content.splitlines() if line.strip()]
         if not lines:
@@ -297,12 +341,22 @@ class VideoEncoder:
             "XVID": "mpeg4",
         }
         ffmpeg_codec = codec_map.get(self.codec, self.codec)
-        available_encoders = get_available_encoders()
+        encoder_probe = get_encoder_probe_result()
+        available_encoders = set(encoder_probe.encoders)
         ffmpeg_codec, fallback_warning = select_available_encoder(ffmpeg_codec, available_encoders)
         if fallback_warning:
             logger.warning(fallback_warning)
-        if available_encoders and ffmpeg_codec not in available_encoders:
-            available = ", ".join(sorted(available_encoders))
+        if encoder_probe.failed:
+            logger.warning(
+                "Skipping FFmpeg encoder availability validation because probing failed: %s. "
+                "Attempting '%s'.",
+                encoder_probe.error,
+                ffmpeg_codec,
+            )
+        elif ffmpeg_codec not in encoder_probe.encoders:
+            available = ", ".join(sorted(encoder_probe.encoders))
+            if not available:
+                available = "none"
             raise VideoEncodingError(
                 f"Requested FFmpeg encoder '{ffmpeg_codec}' is not available. "
                 f"Available encoders: {available}"
