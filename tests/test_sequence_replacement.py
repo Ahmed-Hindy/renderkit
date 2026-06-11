@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from renderkit.core.batch import build_safe_output_path, discover_frame_sequences
 from renderkit.core.sequence_replacement import (
     find_exr_sequences,
     find_replacement_mp4,
@@ -147,3 +148,32 @@ def test_find_exr_sequences_and_matching_mp4(tmp_path: Path) -> None:
     assert find_replacement_mp4(patterns[0], tmp_path / "_review_mp4s") == (
         tmp_path / "_review_mp4s" / "beauty.mp4"
     )
+
+
+def test_find_replacement_mp4_matches_batch_convert_nested_output(tmp_path: Path) -> None:
+    """Verify nested batch-convert outputs are found by batch-replace lookup."""
+    _write_sequence(tmp_path / "shot_a", name="render", count=2)
+    output_dir = tmp_path / "_review_mp4s"
+
+    batch_sequence = discover_frame_sequences(tmp_path, "exr")[0]
+    batch_output = build_safe_output_path(tmp_path, output_dir, batch_sequence)
+    replacement_pattern = find_exr_sequences(tmp_path)[0]
+
+    assert batch_output == output_dir / "shot_a_render.mp4"
+    assert find_replacement_mp4(replacement_pattern, output_dir, tmp_path) == batch_output
+
+
+def test_find_replacement_mp4_matches_batch_convert_empty_prefix_output(
+    tmp_path: Path,
+) -> None:
+    """Verify frame-only sequence names still resolve to sequence.mp4."""
+    for frame in [1, 2]:
+        (tmp_path / f"{frame:04d}.exr").write_bytes(b"frame")
+    output_dir = tmp_path / "_review_mp4s"
+
+    batch_sequence = discover_frame_sequences(tmp_path, "exr")[0]
+    batch_output = build_safe_output_path(tmp_path, output_dir, batch_sequence)
+    replacement_pattern = find_exr_sequences(tmp_path)[0]
+
+    assert batch_output == output_dir / "sequence.mp4"
+    assert find_replacement_mp4(replacement_pattern, output_dir, tmp_path) == batch_output

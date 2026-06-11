@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
+from renderkit.core.batch import build_safe_output_path_from_pattern
 from renderkit.core.ffmpeg_utils import get_ffprobe_exe, popen_kwargs
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import SequenceReplacementError
@@ -251,16 +252,23 @@ def find_exr_sequences(root: Path) -> list[str]:
     return sorted(patterns)
 
 
-def find_replacement_mp4(sequence_pattern: str, mp4_dir: Path) -> Path:
+def find_replacement_mp4(
+    sequence_pattern: str, mp4_dir: Path, root_path: Optional[Path] = None
+) -> Path:
     """Return the expected MP4 replacement path for a sequence pattern.
 
     Args:
         sequence_pattern: Detected sequence pattern.
         mp4_dir: Directory containing replacement MP4s.
+        root_path: Optional batch root. When supplied, use the same safe relative-path
+            naming as batch conversion.
 
     Returns:
         Expected MP4 path.
     """
+    if root_path is not None:
+        return build_safe_output_path_from_pattern(root_path, mp4_dir, sequence_pattern)
+
     pattern_name = Path(sequence_pattern).name
     stem = Path(_remove_frame_token(pattern_name)).stem.strip(" ._-")
     return mp4_dir / f"{stem}.mp4"

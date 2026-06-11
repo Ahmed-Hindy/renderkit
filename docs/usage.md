@@ -298,24 +298,23 @@ Audit records are JSON objects with these fields:
 ### Batch Replacement Cleanup
 
 Use `batch-replace` when a folder tree contains EXR sequences and a review folder contains matching
-MP4s named after each sequence prefix:
+MP4s from `batch-convert`:
 
 ```powershell
 renderkit batch-replace G:\Projects\Data_folder --mp4-dir _review_mp4s --verify --delete-source --dry-run
 ```
 
 `--mp4-dir` is relative to `ROOT_PATH` unless it is absolute. For each detected EXR sequence,
-RenderKit derives the expected MP4 name from the sequence prefix, such as `render.%04d.exr` to
-`render.mp4`, runs the same verification and audit workflow as `replace-sequence-with-mp4`, and
-appends results to:
+RenderKit derives the expected MP4 name with the same relative-path naming used by
+`batch-convert`, such as `shot_a/render.%04d.exr` to `shot_a_render.mp4`. It then runs the
+same verification and audit workflow as `replace-sequence-with-mp4` and appends results to:
 
 ```text
 renderkit-batch-replace-audit.jsonl
 ```
 
-Before using `batch-replace`, confirm the approved MP4 names match that prefix-based convention. If
-your review movies were named from full relative paths, use the batch conversion manifest to drive
-explicit `replace-sequence-with-mp4` calls or stage renamed MP4s in `--mp4-dir`.
+For a top-level sequence, this still resolves to the plain sequence stem, such as
+`render.%04d.exr` to `render.mp4`.
 
 ## `convert-exr-sequence` Options
 

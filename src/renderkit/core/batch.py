@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -106,6 +107,32 @@ def build_safe_output_path(root: Path, output_dir: Path, sequence: BatchSequence
     return output_dir / f"{safe_name}.mp4"
 
 
+def build_safe_output_path_from_pattern(
+    root: Path, output_dir: Path, sequence_pattern: str | Path
+) -> Path:
+    """Build the batch MP4 path for an existing sequence pattern."""
+    pattern_path = Path(sequence_pattern)
+    relative_dir = pattern_path.parent.resolve().relative_to(root.resolve())
+    name_parts = [part for part in relative_dir.parts if part not in ("", ".")]
+    stem = _sequence_stem_from_pattern(pattern_path.name)
+    name_parts.append(stem)
+    safe_name = "_".join(_safe_filename_part(part) for part in name_parts)
+    return output_dir / f"{safe_name}.mp4"
+
+
+def deduplicate_output_path(output_path: Path, planned_outputs: set[Path]) -> Path:
+    """Return a unique batch output path within a planned output set."""
+    if output_path not in planned_outputs:
+        return output_path
+
+    index = 2
+    while True:
+        candidate = output_path.with_name(f"{output_path.stem}_{index}{output_path.suffix}")
+        if candidate not in planned_outputs:
+            return candidate
+        index += 1
+
+
 def write_csv_manifest(path: Path, records: list[BatchManifestRecord]) -> None:
     """Write a CSV manifest for all attempted batch conversions."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,3 +185,10 @@ def _safe_filename_part(value: str) -> str:
         for character in value.strip()
     ).strip("._-")
     return safe or "sequence"
+
+
+def _sequence_stem_from_pattern(filename: str) -> str:
+    match = re.search(r"%\d+d|\$F\d+|#+", filename)
+    if match is None:
+        return Path(filename).stem.rstrip("._- ") or "sequence"
+    return filename[: match.start()].rstrip("._- ") or "sequence"

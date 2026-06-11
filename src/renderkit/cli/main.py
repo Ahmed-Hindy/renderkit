@@ -11,6 +11,7 @@ from renderkit import __version__
 from renderkit.api.processor import RenderKit
 from renderkit.cli.batch import batch_convert
 from renderkit.cli.conversion import base_conversion_config_builder
+from renderkit.core.batch import deduplicate_output_path
 from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
@@ -583,9 +584,12 @@ def batch_replace_command(
         return
 
     results = []
+    planned_outputs: set[Path] = set()
     try:
         for pattern in patterns:
-            output_mp4 = find_replacement_mp4(pattern, mp4_root)
+            output_mp4 = find_replacement_mp4(pattern, mp4_root, root_path)
+            output_mp4 = deduplicate_output_path(output_mp4, planned_outputs)
+            planned_outputs.add(output_mp4)
             result = replace_sequence_with_mp4(
                 pattern,
                 output_mp4,
