@@ -129,6 +129,7 @@ def replace_sequence_with_mp4(
     source_mp4 = output_mp4.resolve()
     destination_mp4 = sequence.base_path / output_mp4.name
     report_path = audit_report or (sequence.base_path / "renderkit-replacement-audit.jsonl")
+    _prepare_audit_report(report_path)
     verified = _verify_source_mp4_if_needed(
         source_mp4,
         delete_source=delete_source,
@@ -306,9 +307,20 @@ def _delete_frames(paths: list[Path]) -> tuple[list[Path], int]:
 
 
 def _append_audit_record(audit_report: Path, record: dict[str, object]) -> None:
-    audit_report.parent.mkdir(parents=True, exist_ok=True)
-    with audit_report.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(record, sort_keys=True) + "\n")
+    try:
+        with audit_report.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError as exc:
+        raise SequenceReplacementError(f"Could not write audit report: {audit_report}") from exc
+
+
+def _prepare_audit_report(audit_report: Path) -> None:
+    try:
+        audit_report.parent.mkdir(parents=True, exist_ok=True)
+        with audit_report.open("a", encoding="utf-8") as stream:
+            stream.flush()
+    except OSError as exc:
+        raise SequenceReplacementError(f"Could not write audit report: {audit_report}") from exc
 
 
 def _remove_frame_token(filename: str) -> str:
