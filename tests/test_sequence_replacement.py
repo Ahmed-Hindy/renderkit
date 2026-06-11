@@ -67,6 +67,28 @@ def test_replace_sequence_refuses_delete_when_verification_fails(tmp_path: Path)
     assert all(path.exists() for path in frames)
 
 
+def test_replace_sequence_refuses_delete_when_audit_report_is_unwritable(
+    tmp_path: Path,
+) -> None:
+    """Verify source frames survive when the audit report cannot be opened."""
+    frames = _write_sequence(tmp_path)
+    mp4_path = tmp_path / "render.mp4"
+    mp4_path.write_bytes(b"mp4")
+    audit_parent = tmp_path / "audit-parent"
+    audit_parent.write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(SequenceReplacementError, match="Could not write audit report"):
+        replace_sequence_with_mp4(
+            str(tmp_path / "render.%04d.exr"),
+            mp4_path,
+            delete_source=True,
+            audit_report=audit_parent / "audit.jsonl",
+            verifier=lambda _path: None,
+        )
+
+    assert all(path.exists() for path in frames)
+
+
 def test_replace_sequence_copies_verified_mp4_then_deletes_frames(tmp_path: Path) -> None:
     """Verify a successful replacement copies the MP4 and deletes exact source frames."""
     frames = _write_sequence(tmp_path)
