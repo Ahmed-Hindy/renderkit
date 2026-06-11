@@ -206,10 +206,13 @@ $results = foreach ($seq in $sequences) {
 
     $converted = $LASTEXITCODE -eq 0 -and (Test-Path $seq.Output)
     $probeJson = $null
-    if ($converted) {
-        $probeJson = ffprobe -v error -select_streams v:0 `
+    $probeExitCode = $null
+    $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+    if ($converted -and $ffprobe) {
+        $probeJson = & $ffprobe.Path -v error -select_streams v:0 `
             -show_entries stream=codec_name,width,height,r_frame_rate,nb_frames `
             -of json $seq.Output
+        $probeExitCode = $LASTEXITCODE
     }
 
     [pscustomobject]@{
@@ -217,7 +220,7 @@ $results = foreach ($seq in $sequences) {
         input_pattern = $seq.Pattern
         output_path = $seq.Output
         converted = $converted
-        verified = $converted -and $LASTEXITCODE -eq 0
+        verified = $converted -and $probeExitCode -eq 0
         ffprobe = $probeJson
         checked_at = (Get-Date).ToUniversalTime().ToString("o")
     }
@@ -231,8 +234,14 @@ Before replacing source EXRs, compare the work and publish roots so the cleanup
 step only touches the intended sequences:
 
 ```powershell
-$workFrames = Get-ChildItem $workRoot -Recurse -Filter *.exr | ForEach-Object { $_.FullName }
-$publishFrames = Get-ChildItem $publishRoot -Recurse -Filter *.exr | ForEach-Object { $_.FullName }
+function Get-RelativeExrFrames($Root) {
+    Get-ChildItem $Root -Recurse -Filter *.exr | ForEach-Object {
+        [System.IO.Path]::GetRelativePath($Root, $_.FullName)
+    } | Sort-Object
+}
+
+$workFrames = Get-RelativeExrFrames $workRoot
+$publishFrames = Get-RelativeExrFrames $publishRoot
 Compare-Object $workFrames $publishFrames
 ```
 
@@ -242,15 +251,32 @@ source frames after the review MP4 exists and `ffprobe` verified it:
 ```powershell
 $archiveRoot = "D:\show\shot010\archive\exr"
 
+function ConvertTo-FrameNameRegex($LeafPattern) {
+    $regex = [regex]::Escape($LeafPattern)
+    $regex = [regex]::Replace($regex, '%0?(\d*)d', [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $width = $match.Groups[1].Value
+        if ([string]::IsNullOrEmpty($width)) { '\d+' } else { "\d{$width}" }
+    })
+    $regex = [regex]::Replace($regex, '\\\$F(\d+)', [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        "\d{$($match.Groups[1].Value)}"
+    })
+    $regex = [regex]::Replace($regex, '(\\#)+', [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $width = ($match.Value -replace '\\').Length
+        "\d{$width}"
+    })
+    "^$regex$"
+}
+
 Import-Csv $manifestCsv | Where-Object { $_.converted -eq "True" -and $_.verified -eq "True" } |
     ForEach-Object {
         $archiveDir = Join-Path $archiveRoot $_.name
-        $frameFilter = (Split-Path $_.input_pattern -Leaf) `
-            -replace '%0?\d+d', '*' `
-            -replace '\$F\d+', '*' `
-            -replace '#+', '*'
+        $frameRegex = ConvertTo-FrameNameRegex (Split-Path $_.input_pattern -Leaf)
         New-Item -ItemType Directory -Force $archiveDir | Out-Null
-        Get-ChildItem (Split-Path $_.input_pattern) -Filter $frameFilter |
+        Get-ChildItem (Split-Path $_.input_pattern) -Filter *.exr |
+            Where-Object { $_.Name -match $frameRegex } |
             Move-Item -Destination $archiveDir
     }
 ```
