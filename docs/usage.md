@@ -29,10 +29,15 @@ renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 `INPUT_PATTERN` accepts common sequence styles:
 
 ```text
+render.%03d.exr
 render.%04d.exr
+render.%05d.exr
 render.####.exr
 render.$F4.exr
 ```
+
+Printf-style patterns support the padding width used by the sequence, such as `%03d`, `%04d`,
+`%05d`, or another `%0Nd` width.
 
 ## Conversion Recipes
 
@@ -192,6 +197,50 @@ Default manifests:
 Each manifest record includes the source pattern, output path, frame count, frame range, output
 size, status, and error text. Use the JSONL file for automation that tails results while a batch is
 running, and the CSV file for review in spreadsheets or asset-management tools.
+
+### Verify Review MP4s
+
+Use `ffprobe` when you need an independent readability check before publish or cleanup:
+
+```powershell
+$reviews = Get-ChildItem G:\Projects\Data_folder\_review_mp4s -Filter *.mp4 -Recurse
+foreach ($review in $reviews) {
+    ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $review.FullName | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "ffprobe failed for $($review.FullName)"
+    }
+}
+```
+
+`replace-sequence-with-mp4 --verify` and `batch-replace --verify` run the same kind of MP4
+readability check before replacement cleanup.
+
+### Compare Work And Publish Folders
+
+Before replacing source EXRs, compare the work render tree against the publish tree so missing or
+extra sequence groups are visible. This PowerShell helper compares sequence keys by relative folder,
+filename prefix, extension, and frame padding:
+
+```powershell
+function Get-RenderSequenceKeys($root) {
+    Get-ChildItem $root -Recurse -File -Filter *.exr |
+        ForEach-Object {
+            if ($_.BaseName -match '^(.*?)(\d+)$') {
+                $relativeDir = [System.IO.Path]::GetRelativePath($root, $_.DirectoryName)
+                "$relativeDir\$($Matches[1])%0$($Matches[2].Length)d$($_.Extension.ToLower())"
+            }
+        } |
+        Sort-Object -Unique
+}
+
+$workSequences = Get-RenderSequenceKeys "G:\Projects\shot\work"
+$publishSequences = Get-RenderSequenceKeys "G:\Projects\shot\publish"
+Compare-Object $workSequences $publishSequences
+```
+
+Rows marked `<=` exist only in the work folder. Rows marked `=>` exist only in the publish folder.
+Run the comparison before destructive cleanup and keep the command output with the batch manifests
+when the result needs to be audited.
 
 ### Safe Sequence Replacement
 
