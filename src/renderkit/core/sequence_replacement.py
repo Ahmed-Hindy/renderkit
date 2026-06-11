@@ -192,11 +192,11 @@ def _copy_replacement_mp4(
     dry_run: bool,
     verifier: Mp4Verifier,
 ) -> tuple[bool, bool]:
-    if dry_run:
-        return False, False
-
     if not source_mp4.is_file():
         raise SequenceReplacementError(f"Replacement MP4 does not exist: {source_mp4}")
+
+    if dry_run:
+        return False, False
 
     copied = False
     if source_mp4 != destination_mp4.resolve():

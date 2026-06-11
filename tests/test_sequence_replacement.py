@@ -47,6 +47,22 @@ def test_replace_sequence_dry_run_writes_audit_without_deleting(tmp_path: Path) 
     assert record["deleted_count"] == 3
 
 
+def test_replace_sequence_dry_run_requires_replacement_mp4(tmp_path: Path) -> None:
+    """Verify dry-run fails when the planned replacement MP4 is missing."""
+    frames = _write_sequence(tmp_path)
+    missing_mp4 = tmp_path / "_review_mp4s" / "render.mp4"
+
+    with pytest.raises(SequenceReplacementError, match="Replacement MP4 does not exist"):
+        replace_sequence_with_mp4(
+            str(tmp_path / "render.%04d.exr"),
+            missing_mp4,
+            delete_source=True,
+            dry_run=True,
+        )
+
+    assert all(path.exists() for path in frames)
+
+
 def test_replace_sequence_refuses_delete_when_verification_fails(tmp_path: Path) -> None:
     """Verify source frames survive when MP4 verification fails."""
     frames = _write_sequence(tmp_path)
