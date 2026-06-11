@@ -326,16 +326,16 @@ class OCIOColorSpaceStrategy:
                         resolved = self.config.getRoleColorSpace(role)
                         if resolved:
                             return resolved
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to resolve OCIO input role '%s': %s", input_space, exc)
 
         try:
             if hasattr(self.config, "getColorSpaceNameByRole"):
                 resolved = self.config.getColorSpaceNameByRole(input_space)
                 if resolved:
                     return resolved
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to resolve OCIO role via OIIO API '%s': %s", input_space, exc)
 
         return input_space
 
@@ -396,24 +396,24 @@ class OCIOColorSpaceStrategy:
             major = self.config.getMajorVersion()
             minor = self.config.getMinorVersion()
             config_version = f"{major}.{minor}"
-        except Exception:
-            pass
+        except Exception as exc:
+            config_version = f"unavailable: {exc}"
 
         try:
             search_path = str(self.config.getSearchPath())
-        except Exception:
-            pass
+        except Exception as exc:
+            search_path = f"unavailable: {exc}"
 
         try:
             colorspaces = sorted(self.config.getColorSpaceNames())
-        except Exception:
-            pass
+        except Exception as exc:
+            colorspaces = [f"unavailable: {exc}"]
 
         try:
             role_names = sorted(self.config.getRoleNames())
             roles = [f"{role}={self.config.getRoleColorSpace(role)}" for role in role_names]
-        except Exception:
-            pass
+        except Exception as exc:
+            roles = [f"unavailable: {exc}"]
 
         try:
             default_display = str(self.config.getDefaultDisplay())
@@ -421,8 +421,8 @@ class OCIOColorSpaceStrategy:
             display_view_space = str(
                 self.config.getDisplayViewColorSpaceName(default_display, default_view)
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            default_display = f"unavailable: {exc}"
 
         if resolved_input_space and resolved_output_space:
             try:

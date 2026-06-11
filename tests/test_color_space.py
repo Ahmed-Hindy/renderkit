@@ -1,5 +1,8 @@
 """Tests for color space conversion."""
 
+import logging
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 
@@ -8,6 +11,7 @@ from renderkit.processing.color_space import (
     ColorSpaceError,
     ColorSpacePreset,
     NoConversionStrategy,
+    OCIOColorSpaceStrategy,
 )
 
 try:
@@ -130,6 +134,56 @@ class TestNoConversionStrategy:
         result = _buf_to_array(result_buf)
 
         np.testing.assert_array_equal(test_image, result)
+
+
+class TestOCIOColorSpaceStrategyDiagnostics:
+    """Tests for OCIO fallback diagnostics."""
+
+    def test_resolve_input_space_logs_role_resolution_failures(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test role API failures are visible while preserving fallback behavior."""
+
+        strategy = object.__new__(OCIOColorSpaceStrategy)
+        strategy.config = Mock()
+        strategy.config.getColorSpaceNames.return_value = ["ACEScg"]
+        strategy.config.hasRole.return_value = True
+        strategy.config.getRoleColorSpace.side_effect = RuntimeError("role API drift")
+        strategy.config.getColorSpaceNameByRole.side_effect = RuntimeError("OIIO role API drift")
+
+        with caplog.at_level(logging.DEBUG, logger="renderkit.processing.color_space"):
+            resolved = strategy._resolve_input_space("scene_linear")
+
+        assert resolved == "scene_linear"
+        assert "Failed to resolve OCIO input role" in caplog.text
+        assert "Failed to resolve OCIO role via OIIO API" in caplog.text
+
+    def test_failure_diagnostics_records_unavailable_probe_values(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test diagnostic probe failures are captured in the final log."""
+
+        strategy = object.__new__(OCIOColorSpaceStrategy)
+        strategy.config = Mock()
+        strategy.config.getMajorVersion.side_effect = RuntimeError("version unavailable")
+        strategy.config.getSearchPath.side_effect = RuntimeError("search path unavailable")
+        strategy.config.getColorSpaceNames.side_effect = RuntimeError("colorspaces unavailable")
+        strategy.config.getRoleNames.side_effect = RuntimeError("roles unavailable")
+        strategy.config.getDefaultDisplay.side_effect = RuntimeError("display unavailable")
+
+        with caplog.at_level(logging.ERROR, logger="renderkit.processing.color_space"):
+            strategy._log_ocio_failure_diagnostics(
+                requested_input_space="scene_linear",
+                resolved_input_space=None,
+                resolved_output_space=None,
+                error=RuntimeError("conversion failed"),
+            )
+
+        assert "config_version=unavailable: version unavailable" in caplog.text
+        assert "search_path=unavailable: search path unavailable" in caplog.text
+        assert "colorspaces_sample=['unavailable: colorspaces unavailable']" in caplog.text
+        assert "roles=['unavailable: roles unavailable']" in caplog.text
+        assert "default_display=unavailable: display unavailable" in caplog.text
 
 
 def _has_oiio_colorspace_candidates(candidates: list[str]) -> bool:
