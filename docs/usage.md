@@ -189,6 +189,10 @@ Default manifests:
 - `_review_mp4s/renderkit_batch_manifest.csv`
 - `_review_mp4s/renderkit_batch_results.jsonl`
 
+Each manifest record includes the source pattern, output path, frame count, frame range, output
+size, status, and error text. Use the JSONL file for automation that tails results while a batch is
+running, and the CSV file for review in spreadsheets or asset-management tools.
+
 ### Safe Sequence Replacement
 
 Use `replace-sequence-with-mp4` after review movies have been approved and source frames can be
@@ -210,11 +214,37 @@ sequence folder, optionally verifies the MP4 with `ffprobe`, and writes a JSONL 
 source frames. Dry runs still require the replacement MP4 to exist, so the preflight cannot report a
 missing movie as replaceable.
 
+Safety behavior:
+
+- RenderKit only deletes frame files that are detected from `INPUT_PATTERN`.
+- The audit report path is checked before copy or delete work begins.
+- `--dry-run` writes an audit record but does not copy the MP4 or delete frames.
+- `--verify` checks the replacement MP4 with `ffprobe`; non-dry-run deletion also verifies the
+  copied MP4 before removing source frames.
+- If verification, copying, deletion, or audit writing fails, the command exits with an error.
+
 By default, the audit file is written next to the source sequence:
 
 ```text
 renderkit-replacement-audit.jsonl
 ```
+
+Audit records are JSON objects with these fields:
+
+| Field | Description |
+|---|---|
+| `timestamp` | UTC timestamp for the attempt. |
+| `source_pattern` | Sequence pattern passed to the command. |
+| `source_frames` | Exact source frame files detected for replacement. |
+| `source_count` | Number of detected source frames. |
+| `replacement_mp4` | MP4 path supplied to the command. |
+| `copied_mp4` | Destination MP4 path in the source sequence folder. |
+| `deleted_frames` | Frames deleted, or frames that would be deleted during dry-run cleanup. |
+| `deleted_count` | Number of deleted frames. |
+| `reclaimed_bytes` | Bytes reclaimed by deletion, or bytes that would be reclaimed in a dry run. |
+| `dry_run` | Whether the command avoided copy/delete work. |
+| `verified` | Whether MP4 verification ran successfully. |
+| `copied` | Whether RenderKit copied the MP4 into the source sequence folder. |
 
 ### Batch Replacement Cleanup
 
@@ -233,6 +263,10 @@ appends results to:
 ```text
 renderkit-batch-replace-audit.jsonl
 ```
+
+Before using `batch-replace`, confirm the approved MP4 names match that prefix-based convention. If
+your review movies were named from full relative paths, use the batch conversion manifest to drive
+explicit `replace-sequence-with-mp4` calls or stage renamed MP4s in `--mp4-dir`.
 
 ## `convert-exr-sequence` Options
 
