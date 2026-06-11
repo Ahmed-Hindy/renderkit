@@ -80,9 +80,13 @@ uv run ruff format .
 # Lint code
 uv run ruff check .
 
-# Type checking (optional)
-uv run mypy src/
+# Type checking for the current mypy baseline
+uv run --extra dev mypy
 ```
+
+The mypy baseline is intentionally scoped in `pyproject.toml` to CLI, core, and
+public API code. UI and image-processing modules still depend on third-party
+Qt/OIIO/OCIO typing that is being brought under mypy incrementally.
 
 ## Testing
 

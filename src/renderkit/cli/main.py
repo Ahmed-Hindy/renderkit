@@ -3,7 +3,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 
@@ -14,17 +14,21 @@ from renderkit.cli.conversion import base_conversion_config_builder
 from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
-    ContactSheetConfigBuilder,
+    ContactSheetConfig,
 )
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.core.profiler import get_profile_env_config, profile_context
+from renderkit.core.sequence import SequenceDetector
 from renderkit.core.sequence_replacement import (
     find_exr_sequences,
     find_replacement_mp4,
     replace_sequence_with_mp4,
 )
 from renderkit.exceptions import RenderKitError
+from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.logging_utils import setup_logging
+from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger("renderkit.cli.main")
 
@@ -43,6 +47,104 @@ def _launch_ui() -> None:
     from renderkit.ui.main_window import run_ui
 
     run_ui()
+
+
+def _label_height(config: ContactSheetConfig) -> int:
+    if not config.show_labels:
+        return 0
+    label_gap = max(4, int(config.font_size * 0.01))
+    return label_gap + int(config.font_size * 1.4)
+
+
+def _to_rgb_buf(oiio: Any, buf: Any) -> Any:
+    spec = buf.spec()
+    if spec.nchannels == 3:
+        return buf
+    if spec.nchannels >= 3:
+        rgb_buf = oiio.ImageBufAlgo.channels(buf, (0, 1, 2), ("R", "G", "B"))
+    elif spec.nchannels == 2:
+        rgb_buf = oiio.ImageBufAlgo.channels(buf, (0, 1, 1), ("R", "G", "B"))
+    else:
+        rgb_buf = oiio.ImageBufAlgo.channels(buf, (0, 0, 0), ("R", "G", "B"))
+    if rgb_buf.has_error:
+        raise RuntimeError(f"Failed to convert contact sheet frame to RGB: {rgb_buf.geterror()}")
+    return rgb_buf
+
+
+def _write_sequence_contact_sheet(
+    input_pattern: str,
+    output_path: Path,
+    config: ContactSheetConfig,
+    layer: Optional[str],
+    start_frame: Optional[int],
+    end_frame: Optional[int],
+) -> None:
+    """Write a still contact sheet made from frames in a sequence."""
+    try:
+        import OpenImageIO as oiio
+    except ImportError as exc:
+        raise RuntimeError("OpenImageIO library not available.") from exc
+
+    sequence = SequenceDetector.detect_sequence(input_pattern)
+    frame_numbers = sequence.frame_numbers
+    if start_frame is not None:
+        frame_numbers = [frame for frame in frame_numbers if frame >= start_frame]
+    if end_frame is not None:
+        frame_numbers = [frame for frame in frame_numbers if frame <= end_frame]
+    if not frame_numbers:
+        raise ValueError("No frames found in specified range")
+
+    first_path = sequence.get_file_path(frame_numbers[0])
+    reader = ImageReaderFactory.create_reader(first_path, image_cache=get_shared_image_cache())
+    first_buf = _to_rgb_buf(oiio, reader.read_imagebuf(first_path, layer=layer))
+    first_spec = first_buf.spec()
+    thumb_w, thumb_h = config.resolve_layer_size(first_spec.width, first_spec.height)
+    padding = config.padding
+    label_h = _label_height(config)
+    label_gap = max(4, int(config.font_size * 0.01)) if config.show_labels else 0
+    cell_w = thumb_w + (padding * 2)
+    cell_h = thumb_h + (padding * 2) + label_h
+    rows = (len(frame_numbers) + config.columns - 1) // config.columns
+
+    canvas_spec = oiio.ImageSpec(cell_w * config.columns, cell_h * rows, 3, oiio.FLOAT)
+    canvas = oiio.ImageBuf(canvas_spec)
+    oiio.ImageBufAlgo.fill(canvas, config.background_color)
+
+    for index, frame_number in enumerate(frame_numbers):
+        frame_path = sequence.get_file_path(frame_number)
+        buf = (
+            first_buf
+            if index == 0
+            else _to_rgb_buf(oiio, reader.read_imagebuf(frame_path, layer=layer))
+        )
+        spec = buf.spec()
+        if spec.width != thumb_w or spec.height != thumb_h:
+            buf = ImageScaler.scale_buf(buf, thumb_w, thumb_h)
+
+        row = index // config.columns
+        col = index % config.columns
+        x_offset = col * cell_w + padding
+        y_offset = row * cell_h + padding
+        if not oiio.ImageBufAlgo.paste(canvas, x_offset, y_offset, 0, 0, buf):
+            raise RuntimeError(f"Failed to paste frame {frame_number}: {oiio.geterror()}")
+
+        if config.show_labels:
+            label_y = y_offset + thumb_h + label_gap + config.font_size
+            if not oiio.ImageBufAlgo.render_text(
+                canvas,
+                x_offset,
+                label_y,
+                str(frame_number),
+                fontsize=config.font_size,
+                textcolor=(1, 1, 1, 1),
+            ):
+                raise RuntimeError(
+                    f"Failed to render frame label {frame_number}: {oiio.geterror()}"
+                )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not canvas.write(str(output_path)):
+        raise RuntimeError(f"Failed to write contact sheet: {canvas.geterror() or oiio.geterror()}")
 
 
 @main.command(name="ui")
@@ -174,7 +276,7 @@ def convert_exr_sequence(
     burnin_opacity: int,
     contact_sheet: bool,
     cs_columns: int,
-    cs_thumb_width: int,
+    cs_thumb_width: Optional[int],
     cs_padding: int,
     cs_no_labels: bool,
     profile: bool,
@@ -322,7 +424,7 @@ def contact_sheet(
     input_pattern: str,
     output_path: str,
     columns: int,
-    thumb_width: int,
+    thumb_width: Optional[int],
     padding: int,
     no_labels: bool,
     font_size: int,
@@ -345,29 +447,22 @@ def contact_sheet(
         click.echo("Use --overwrite to overwrite it.", err=True)
         sys.exit(1)
 
-    # Build configuration
-    config_builder = (
-        ContactSheetConfigBuilder()
-        .with_input_pattern(input_pattern)
-        .with_output_path(output_path)
-        .with_columns(columns)
-        .with_padding(padding)
-        .with_labels(not no_labels, font_size=font_size)
-    )
-
-    if thumb_width is not None:
-        config_builder = config_builder.with_thumbnail_width(thumb_width)
-
-    if layer:
-        config_builder.with_layer(layer)
-
-    if start_frame is not None and end_frame is not None:
-        config_builder.with_frame_range(start_frame, end_frame)
-
     try:
-        config = config_builder.build()
-        processor = RenderKit()
-        processor.create_contact_sheet(config)
+        config = ContactSheetConfig(
+            columns=columns,
+            thumbnail_width=thumb_width,
+            padding=padding,
+            show_labels=not no_labels,
+            font_size=font_size,
+        )
+        _write_sequence_contact_sheet(
+            input_pattern=input_pattern,
+            output_path=output_path_obj,
+            config=config,
+            layer=layer,
+            start_frame=start_frame,
+            end_frame=end_frame,
+        )
         logger.info(f"Successfully created contact sheet: {output_path}")
         click.echo(f"Successfully created contact sheet: {output_path}")
     except (RenderKitError, OSError, RuntimeError, ValueError) as e:

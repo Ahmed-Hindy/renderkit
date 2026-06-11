@@ -2,9 +2,10 @@ import logging
 import sys
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
+from types import TracebackType
+from typing import Any, Optional
 
 from renderkit.core.config import ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
@@ -16,7 +17,7 @@ from renderkit.exceptions import (
     VideoEncodingError,
 )
 from renderkit.io.file_info import FileInfo
-from renderkit.io.image_reader import ImageReader, ImageReaderFactory
+from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapEntry
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
@@ -32,7 +33,7 @@ class _FramePrefetcher:
 
     def __init__(
         self,
-        prefetch_fn: Callable[[int], object],
+        prefetch_fn: Callable[[int], Any],
         frames: list[int],
         max_workers: int,
         thread_name_prefix: str = "renderkit-prefetch",
@@ -44,7 +45,7 @@ class _FramePrefetcher:
             max_workers=max_workers,
             thread_name_prefix=thread_name_prefix,
         )
-        self._pending: dict[int, object] = {}
+        self._pending: dict[int, Future[Any]] = {}
         self._next_index = 0
         self._prime()
 
@@ -60,7 +61,7 @@ class _FramePrefetcher:
         while len(self._pending) < self._max_pending and self._submit_next():
             pass
 
-    def get_future(self, frame_num: int):
+    def get_future(self, frame_num: int) -> Future[Any]:
         future = self._pending.pop(frame_num, None)
         if future is None:
             future = self._executor.submit(self._prefetch_fn, frame_num)
@@ -73,10 +74,15 @@ class _FramePrefetcher:
         except TypeError:
             self._executor.shutdown(wait=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "_FramePrefetcher":
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         self.close()
 
 
@@ -91,12 +97,12 @@ class SequenceConverter:
         """
         self.config = config
         self.sequence: Optional[FrameSequence] = None
-        self.reader = None
+        self.reader: Optional[ImageReader] = None
         self.color_converter: Optional[ColorSpaceConverter] = None
         self.encoder: Optional[VideoEncoder] = None
         self.burnin_processor = BurnInProcessor()
         self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
-        self._layer_map = None
+        self._layer_map: Optional[dict[str, LayerMapEntry]] = None
 
     def convert(
         self,
@@ -185,6 +191,8 @@ class SequenceConverter:
         self, first_frame_num: int
     ) -> tuple[FileInfo, int, int, Optional[str]]:
         """Initialize reader, metadata caches, and contact sheet generator."""
+        if self.sequence is None:
+            raise RuntimeError("Sequence must be detected before initializing the reader.")
         first_frame_path = self.sequence.get_file_path(first_frame_num)
         self.reader = ImageReaderFactory.create_reader(
             first_frame_path, image_cache=get_shared_image_cache()
@@ -227,20 +235,19 @@ class SequenceConverter:
         output_width = self.config.width or width
         output_height = self.config.height or height
 
-        if self.config.contact_sheet_mode and self.contact_sheet_generator:
+        cs_config = self.config.contact_sheet_config
+        if self.config.contact_sheet_mode and self.contact_sheet_generator and cs_config:
             layers = file_info.layers
             if layers:
-                cols = self.config.contact_sheet_config.columns
+                cols = cs_config.columns
                 rows = (len(layers) + cols - 1) // cols
 
-                thumb_w, thumb_h = self.config.contact_sheet_config.resolve_layer_size(
-                    width, height
-                )
+                thumb_w, thumb_h = cs_config.resolve_layer_size(width, height)
 
-                padding = self.config.contact_sheet_config.padding
+                padding = cs_config.padding
                 label_h = 0
-                if self.config.contact_sheet_config.show_labels:
-                    label_h = int(self.config.contact_sheet_config.font_size * 2.5)
+                if cs_config.show_labels:
+                    label_h = int(cs_config.font_size * 2.5)
 
                 cell_w = thumb_w + (padding * 2)
                 cell_h = thumb_h + (padding * 2) + label_h
@@ -271,6 +278,8 @@ class SequenceConverter:
 
     def _initialize_encoder(self, output_width: int, output_height: int) -> None:
         """Initialize the video encoder for output."""
+        if self.config.fps is None:
+            raise ValueError("FPS must be resolved before initializing the encoder.")
         self.encoder = VideoEncoder(
             Path(self.config.output_path),
             self.config.fps,
@@ -294,6 +303,9 @@ class SequenceConverter:
     ) -> None:
         """Process all frames and write them to the encoder."""
         logger.debug(f"Processing {len(frame_numbers)} frames...")
+        if self.sequence is None:
+            raise RuntimeError("Sequence must be detected before processing frames.")
+        sequence = self.sequence
 
         all_frames, existing_frames, start_frame, end_frame, total_frames = self._build_frame_range(
             frame_numbers
@@ -308,15 +320,16 @@ class SequenceConverter:
 
         scaler = ImageScaler()
         success_count = 0
-        last_valid_buf = None
+        last_valid_buf: Any = None
         prefetch_workers = max(1, self.config.prefetch_workers)
-        contact_sheet_enabled = (
-            self.config.contact_sheet_mode and self.config.contact_sheet_config is not None
+        contact_sheet_config = (
+            self.config.contact_sheet_config if self.config.contact_sheet_mode else None
         )
+        contact_sheet_enabled = contact_sheet_config is not None
         if show_progress is None:
             stderr_isatty = getattr(sys.stderr, "isatty", None)
             show_progress = bool(stderr_isatty and stderr_isatty())
-        pbar = None
+        pbar: Any = None
 
         def _tick_progress(current_index: int) -> None:
             if progress_callback:
@@ -336,7 +349,7 @@ class SequenceConverter:
                 thread_state = threading.local()
                 layers_for_cs = file_info.layers if contact_sheet_enabled else None
 
-                def _get_thread_resources(frame_path: Path):
+                def _get_thread_resources(frame_path: Path) -> Any:
                     reader = getattr(thread_state, "reader", None)
                     if reader is None:
                         reader = ImageReaderFactory.create_reader(
@@ -355,8 +368,9 @@ class SequenceConverter:
                     if contact_sheet_enabled and not hasattr(
                         thread_state, "contact_sheet_generator"
                     ):
+                        assert contact_sheet_config is not None
                         thread_state.contact_sheet_generator = ContactSheetGenerator(
-                            self.config.contact_sheet_config,
+                            contact_sheet_config,
                             reader=reader,
                             layers=layers_for_cs,
                             layer_map=self._layer_map,
@@ -364,8 +378,8 @@ class SequenceConverter:
 
                     return thread_state
 
-                def _prefetch_frame(frame_num: int):
-                    frame_path = self.sequence.get_file_path(frame_num)
+                def _prefetch_frame(frame_num: int) -> Any:
+                    frame_path = sequence.get_file_path(frame_num)
                     resources = _get_thread_resources(frame_path)
                     return self._prepare_frame_buf(
                         frame_num,
@@ -445,8 +459,10 @@ class SequenceConverter:
         color_converter: ColorSpaceConverter,
         burnin_processor: Optional[BurnInProcessor],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
-    ):
+    ) -> Any:
         """Prepare a single frame buffer without writing it to the encoder."""
+        if self.sequence is None:
+            raise RuntimeError("Sequence must be detected before preparing frames.")
         frame_path = self.sequence.get_file_path(frame_num)
 
         if contact_sheet_generator:
@@ -521,8 +537,10 @@ class SequenceConverter:
         total_frames = len(all_frames)
         return all_frames, existing_frames, start_frame, end_frame, total_frames
 
-    def _write_frame_buf(self, frame_num: int, buf, label: str = "frame") -> None:
+    def _write_frame_buf(self, frame_num: int, buf: Any, label: str = "frame") -> None:
         """Write an ImageBuf to the encoder with consistent error handling."""
+        if self.encoder is None:
+            raise VideoEncodingError("Video encoder is not initialized.")
         try:
             self.encoder.write_frame(buf)
         except VideoEncodingError:
@@ -532,7 +550,7 @@ class SequenceConverter:
             raise VideoEncodingError(f"Failed to write {label} {frame_num}: {e}") from e
 
     def _write_freeze_frame(
-        self, frame_num: int, last_valid_buf, index: int, log_every: int = 10
+        self, frame_num: int, last_valid_buf: Any, index: int, log_every: int = 10
     ) -> bool:
         """Write a freeze-frame if available, otherwise log and skip."""
         if last_valid_buf is None:
@@ -554,8 +572,12 @@ class SequenceConverter:
         scaler: "ImageScaler",
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
-    ):
+    ) -> Any:
         """Process a single frame using ImageBuf-first operations."""
+        if self.reader is None:
+            raise RuntimeError("Reader must be initialized before processing frames.")
+        if self.color_converter is None:
+            raise RuntimeError("Color converter must be initialized before processing frames.")
         buf = self._prepare_frame_buf(
             frame_num,
             output_width,

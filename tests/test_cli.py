@@ -158,3 +158,65 @@ def test_convert_defaults_to_auto_progress_detection(monkeypatch, tmp_path) -> N
     assert len(calls) == 1
     _, show_progress = calls.pop()
     assert show_progress is None
+
+
+def test_contact_sheet_command_uses_still_writer(monkeypatch, tmp_path: Path) -> None:
+    """Verify the still contact sheet command wires CLI options into the writer."""
+    calls = []
+    output_path = tmp_path / "contact_sheet.jpg"
+
+    def fake_write_sequence_contact_sheet(
+        input_pattern,
+        output_path,
+        config,
+        layer,
+        start_frame,
+        end_frame,
+    ) -> None:
+        calls.append((input_pattern, output_path, config, layer, start_frame, end_frame))
+        output_path.touch()
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        cli_main, "_write_sequence_contact_sheet", fake_write_sequence_contact_sheet
+    )
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "contact-sheet",
+            "render.%04d.exr",
+            str(output_path),
+            "--columns",
+            "3",
+            "--thumb-width",
+            "256",
+            "--padding",
+            "8",
+            "--no-labels",
+            "--font-size",
+            "12",
+            "--layer",
+            "diffuse",
+            "--start-frame",
+            "1001",
+            "--end-frame",
+            "1008",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    input_pattern, called_output_path, config, layer, start_frame, end_frame = calls[0]
+    assert input_pattern == "render.%04d.exr"
+    assert called_output_path == output_path
+    assert config.columns == 3
+    assert config.thumbnail_width == 256
+    assert config.padding == 8
+    assert config.show_labels is False
+    assert config.font_size == 12
+    assert layer == "diffuse"
+    assert start_frame == 1001
+    assert end_frame == 1008
+    assert "Successfully created contact sheet" in result.output
