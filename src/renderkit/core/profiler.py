@@ -8,6 +8,7 @@ import logging
 import os
 import pstats
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -69,7 +70,7 @@ def profile_context(
     enabled: bool,
     output_path: Optional[Path],
     label: str,
-) -> cProfile.Profile | None:
+) -> Iterator[cProfile.Profile | None]:
     """Context manager to run cProfile and persist results to disk."""
     if not enabled:
         yield None

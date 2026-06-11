@@ -68,9 +68,11 @@ class ContactSheetConfig:
             target_w = self.thumbnail_width
 
         if target_w is None:
+            assert target_h is not None
             scale = target_h / source_height
             target_w = max(1, int(source_width * scale))
         if target_h is None:
+            assert target_w is not None
             scale = target_w / source_width
             target_h = max(1, int(source_height * scale))
 

@@ -71,12 +71,16 @@ class RenderKit:
             .with_input_pattern(input_pattern)
             .with_output_path(output_path)
             .with_prefetch_workers(prefetch_workers)
-            .with_fps(fps)
             .with_color_space_preset(color_space_preset)
             .with_codec(codec)
             .with_quality(quality)
-            .with_layer(layer)
         )
+
+        if fps is not None:
+            config.with_fps(fps)
+
+        if layer is not None:
+            config.with_layer(layer)
 
         if width is not None and height is not None:
             config.with_resolution(width, height)

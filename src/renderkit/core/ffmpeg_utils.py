@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _get_vendor_ffmpeg_candidates(root: Path) -> list[Path]:
     }
     platform_dir = platform_map.get(sys.platform)
     names = ["ffmpeg.exe"] if sys.platform == "win32" else ["ffmpeg"]
-    candidates = []
+    candidates: list[Path] = []
     if platform_dir:
         platform_root = vendor_root / platform_dir
         candidates.extend(platform_root / name for name in names)
@@ -40,7 +40,7 @@ def ensure_ffmpeg_env() -> None:
     if os.environ.get("IMAGEIO_FFMPEG_EXE"):
         return
 
-    candidates = []
+    candidates: list[Path] = []
     executable_dir = Path(sys.executable).resolve().parent
     compiled = getattr(builtins, "__compiled__", None)
     compiled_dir = Path(compiled.containing_dir) if compiled is not None else None
@@ -114,9 +114,9 @@ def get_ffprobe_exe() -> str:
     return name
 
 
-def popen_kwargs(prevent_sigint: bool = True) -> dict[str, object]:
+def popen_kwargs(prevent_sigint: bool = True) -> dict[str, Any]:
     """Return subprocess kwargs tuned for FFmpeg execution."""
-    kwargs: dict[str, object] = {}
+    kwargs: dict[str, Any] = {}
     if os.name == "nt":
         creationflags = subprocess.CREATE_NO_WINDOW
         if prevent_sigint:
