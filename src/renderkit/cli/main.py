@@ -27,6 +27,11 @@ from renderkit.core.config import (
 )
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.core.profiler import get_profile_env_config, profile_context
+from renderkit.core.sequence_replacement import (
+    find_exr_sequences,
+    find_replacement_mp4,
+    replace_sequence_with_mp4,
+)
 from renderkit.exceptions import RenderKitError
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import ColorSpacePreset
@@ -700,6 +705,145 @@ def contact_sheet(
         logger.exception("Contact sheet generation failed")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+@main.command(name="replace-sequence-with-mp4")
+@click.argument("input_pattern", type=str)
+@click.argument("output_mp4", type=click.Path(path_type=Path))
+@click.option(
+    "--delete-source",
+    is_flag=True,
+    default=False,
+    help="Delete source frames after the replacement MP4 is verified.",
+)
+@click.option(
+    "--verify",
+    is_flag=True,
+    default=False,
+    help="Verify the MP4 with ffprobe before replacing frames.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print and audit planned changes without copying or deleting files.",
+)
+@click.option(
+    "--audit-report",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="JSONL audit report path (default: source folder).",
+)
+def replace_sequence_command(
+    input_pattern: str,
+    output_mp4: Path,
+    delete_source: bool,
+    verify: bool,
+    dry_run: bool,
+    audit_report: Optional[Path],
+) -> None:
+    """Replace one detected image sequence with an MP4."""
+    try:
+        result = replace_sequence_with_mp4(
+            input_pattern,
+            output_mp4,
+            delete_source=delete_source,
+            verify=verify,
+            dry_run=dry_run,
+            audit_report=audit_report,
+        )
+    except RenderKitError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    action = "Would replace" if dry_run else "Replaced"
+    click.echo(f"{action}: {input_pattern}")
+    click.echo(f"MP4: {result.copied_mp4}")
+    if delete_source:
+        verb = "would delete" if dry_run else "deleted"
+        click.echo(f"Source frames {verb}: {result.deleted_count}")
+        click.echo(f"Reclaimed bytes: {result.reclaimed_bytes}")
+    click.echo(f"Audit report: {result.audit_report}")
+
+
+@main.command(name="batch-replace")
+@click.argument(
+    "root_path",
+    type=click.Path(path_type=Path, exists=True, file_okay=False, dir_okay=True),
+)
+@click.option(
+    "--mp4-dir",
+    type=click.Path(path_type=Path),
+    default=Path("_review_mp4s"),
+    show_default=True,
+    help="Directory containing replacement MP4s, relative to ROOT_PATH unless absolute.",
+)
+@click.option(
+    "--delete-source",
+    is_flag=True,
+    default=False,
+    help="Delete source frames after each replacement MP4 is verified.",
+)
+@click.option(
+    "--verify",
+    is_flag=True,
+    default=False,
+    help="Verify each MP4 with ffprobe before replacing frames.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print and audit planned changes without copying or deleting files.",
+)
+@click.option(
+    "--audit-report",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="JSONL audit report path (default: ROOT_PATH/renderkit-batch-replace-audit.jsonl).",
+)
+def batch_replace_command(
+    root_path: Path,
+    mp4_dir: Path,
+    delete_source: bool,
+    verify: bool,
+    dry_run: bool,
+    audit_report: Optional[Path],
+) -> None:
+    """Replace detected EXR sequences below ROOT_PATH with matching MP4s."""
+    mp4_root = mp4_dir if mp4_dir.is_absolute() else root_path / mp4_dir
+    report_path = audit_report or (root_path / "renderkit-batch-replace-audit.jsonl")
+    patterns = find_exr_sequences(root_path)
+    if not patterns:
+        click.echo(f"No EXR sequences found below: {root_path}")
+        return
+
+    results = []
+    try:
+        for pattern in patterns:
+            output_mp4 = find_replacement_mp4(pattern, mp4_root)
+            result = replace_sequence_with_mp4(
+                pattern,
+                output_mp4,
+                delete_source=delete_source,
+                verify=verify,
+                dry_run=dry_run,
+                audit_report=report_path,
+            )
+            results.append(result)
+    except RenderKitError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    action = "Would replace" if dry_run else "Replaced"
+    click.echo(f"{action} sequences: {len(results)}")
+    if delete_source:
+        deleted_count = sum(result.deleted_count for result in results)
+        reclaimed_bytes = sum(result.reclaimed_bytes for result in results)
+        verb = "would delete" if dry_run else "deleted"
+        click.echo(f"Source frames {verb}: {deleted_count}")
+        click.echo(f"Reclaimed bytes: {reclaimed_bytes}")
+    click.echo(f"Audit report: {report_path}")
 
 
 if __name__ == "__main__":

@@ -98,6 +98,22 @@ def get_ffmpeg_exe() -> str:
     return "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
 
 
+def get_ffprobe_exe() -> str:
+    """Return the best FFprobe executable path for the current environment."""
+    ffmpeg_exe = Path(get_ffmpeg_exe())
+    name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
+    if ffmpeg_exe.parent:
+        sibling = ffmpeg_exe.with_name(name)
+        if sibling.is_file():
+            return str(sibling)
+
+    path_exe = shutil.which(name)
+    if path_exe:
+        return path_exe
+
+    return name
+
+
 def popen_kwargs(prevent_sigint: bool = True) -> dict[str, object]:
     """Return subprocess kwargs tuned for FFmpeg execution."""
     kwargs: dict[str, object] = {}

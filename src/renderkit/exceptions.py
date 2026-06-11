@@ -31,6 +31,12 @@ class VideoEncodingError(RenderKitError):
     pass
 
 
+class SequenceReplacementError(RenderKitError):
+    """Raised when replacing a frame sequence with a video fails."""
+
+    pass
+
+
 class ConfigurationError(RenderKitError):
     """Raised when configuration is invalid."""
 

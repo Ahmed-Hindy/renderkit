@@ -49,7 +49,7 @@ class FrameSequence:
             lambda m: str(frame_number).zfill(int(m.group(1))),
             self.pattern,
         )
-        file_path = file_path.replace("$F4", frame_str)
+        file_path = re.sub(r"\$F\d+", frame_str, file_path)
         file_path = re.sub(r"#+", lambda m: frame_str.zfill(len(m.group())), file_path)
 
         return self.base_path / file_path
@@ -147,7 +147,8 @@ class SequenceDetector:
                 )
                 if frame_numbers:
                     padding = len(numeric_match.group(1))
-                    detected_pattern = filename
+                    start_pos, end_pos = numeric_match.span()
+                    detected_pattern = f"{filename[:start_pos]}%0{padding}d{filename[end_pos:]}"
 
         if not frame_numbers:
             raise SequenceDetectionError("Could not detect frame sequence.")
@@ -170,17 +171,19 @@ class SequenceDetector:
             List of frame numbers found
         """
         frame_numbers: list[int] = []
-        pattern_regex = pattern
-
-        # Convert pattern to regex
+        token_pattern = ""
         if placeholder == "%04d":
-            pattern_regex = re.sub(r"%\d+d", lambda m: r"(\d+)", pattern)
+            token_pattern = r"%\d+d"
         elif placeholder == "$F4":
-            pattern_regex = re.sub(r"\$F\d+", lambda m: r"(\d+)", pattern)
+            token_pattern = r"\$F\d+"
         elif placeholder == "####":
-            pattern_regex = re.sub(r"#+", lambda m: r"(\d+)", pattern)
+            token_pattern = r"#+"
 
-        regex = re.compile(pattern_regex)
+        parts = re.split(f"({token_pattern})", pattern, maxsplit=1)
+        if len(parts) != 3:
+            return frame_numbers
+
+        regex = re.compile(rf"^{re.escape(parts[0])}(\d{{{padding}}}){re.escape(parts[2])}$")
 
         # Search for matching files
         if base_path.exists():
@@ -217,7 +220,10 @@ class SequenceDetector:
 
         # Try to find files with same prefix/suffix but different numbers
         if base_path.exists():
-            pattern_regex = re.compile(re.escape(prefix) + r"(\d+)" + re.escape(suffix))
+            padding = end_pos - start_pos
+            pattern_regex = re.compile(
+                rf"^{re.escape(prefix)}(\d{{{padding}}}){re.escape(suffix)}$"
+            )
             for file_path in base_path.iterdir():
                 if file_path.is_file():
                     match = pattern_regex.match(file_path.name)
