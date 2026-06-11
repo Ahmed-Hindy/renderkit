@@ -148,6 +148,12 @@ def gui() -> None:
     default=None,
     help="Output .prof file or directory (default: temp directory).",
 )
+@click.option(
+    "--no-progress",
+    is_flag=True,
+    default=False,
+    help="Disable progress bars for stable captured logs.",
+)
 def convert_exr_sequence(
     input_pattern: str,
     output_path: str,
@@ -173,6 +179,7 @@ def convert_exr_sequence(
     cs_no_labels: bool,
     profile: bool,
     profile_out: Optional[Path],
+    no_progress: bool,
 ) -> None:
     """Convert an EXR sequence to MP4 video.
 
@@ -283,7 +290,7 @@ def convert_exr_sequence(
             enabled, output_path_opt = get_profile_env_config()
 
         with profile_context(enabled, output_path_opt, label="cli-convert"):
-            processor.convert_with_config(config)
+            processor.convert_with_config(config, show_progress=False if no_progress else None)
         logger.info(f"Successfully converted to: {output_path}")
         click.echo(f"Successfully converted to: {output_path}")
     except (RenderKitError, OSError, RuntimeError, ValueError) as e:
