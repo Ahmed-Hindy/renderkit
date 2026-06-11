@@ -403,7 +403,7 @@ main.add_command(batch_convert)
 )
 @click.option("--padding", type=int, default=4, help="Padding between thumbnails (default: 4)")
 @click.option(
-    "--no-labels", is_flag=True, default=False, help="Disable filename labels below thumbnails"
+    "--no-labels", is_flag=True, default=False, help="Disable layer labels below thumbnails"
 )
 @click.option("--font-size", type=int, default=16, help="Font size for labels (default: 16)")
 @click.option(

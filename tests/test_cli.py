@@ -23,6 +23,18 @@ def test_help_lists_ui_command(monkeypatch) -> None:
     assert "gui" not in result.output
 
 
+def test_contact_sheet_help_describes_layer_labels(monkeypatch) -> None:
+    """Contact sheet labels identify EXR layers, not source filenames."""
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+
+    result = CliRunner().invoke(cli_main.main, ["contact-sheet", "--help"])
+
+    assert result.exit_code == 0
+    assert "Disable layer labels below thumbnails" in result.output
+    assert "filename labels" not in result.output
+
+
 def test_ui_command_launches_gui(monkeypatch) -> None:
     """Verify the ui command dispatches to the Qt launcher."""
     launched = False
