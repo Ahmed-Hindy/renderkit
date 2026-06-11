@@ -27,9 +27,13 @@ renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 
 ```text
 render.%04d.exr
+render.%05d.exr
 render.####.exr
 render.$F4.exr
 ```
+
+Printf-style `%0Nd` patterns use the requested padding width, so `%03d`, `%04d`,
+`%05d`, and similar variants are valid when the source frames use that padding.
 
 ## Conversion Recipes
 
@@ -163,6 +167,97 @@ for shot in shots/*; do
   renderkit convert-exr-sequence "$shot/render.%04d.exr" "$shot/review.mp4" --fps 24 --overwrite
 done
 ```
+
+### Batch Review Movies With Verification
+
+For farm or pipeline automation, treat conversion, verification, and cleanup as
+separate steps. This keeps source EXRs safe until a review MP4 has been created
+and checked.
+
+1. Build a manifest of candidate sequences from the work and publish roots.
+2. Convert each sequence with `--fps 24 --overwrite --no-progress`.
+3. Verify every MP4 with `ffprobe`.
+4. Write CSV and JSONL audit records before moving or deleting any source frames.
+5. Archive or replace source EXRs only for rows whose conversion and verification
+   both succeeded.
+
+PowerShell example:
+
+```powershell
+$workRoot = "D:\show\shot010\work"
+$publishRoot = "D:\show\shot010\publish"
+$reviewRoot = "D:\show\shot010\review"
+$manifestCsv = ".\renderkit-review-manifest.csv"
+$auditJsonl = ".\renderkit-review-audit.jsonl"
+
+$sequences = @(
+    [pscustomobject]@{ Name = "beauty"; Pattern = "$workRoot\beauty.%04d.exr"; Output = "$reviewRoot\beauty.mp4" },
+    [pscustomobject]@{ Name = "diffuse"; Pattern = "$workRoot\diffuse.`$F4.exr"; Output = "$reviewRoot\diffuse.mp4" },
+    [pscustomobject]@{ Name = "crypto"; Pattern = "$publishRoot\crypto.####.exr"; Output = "$reviewRoot\crypto.mp4" }
+)
+
+$results = foreach ($seq in $sequences) {
+    uv --native-tls run renderkit convert-exr-sequence `
+        $seq.Pattern `
+        $seq.Output `
+        --fps 24 `
+        --overwrite `
+        --no-progress
+
+    $converted = $LASTEXITCODE -eq 0 -and (Test-Path $seq.Output)
+    $probeJson = $null
+    if ($converted) {
+        $probeJson = ffprobe -v error -select_streams v:0 `
+            -show_entries stream=codec_name,width,height,r_frame_rate,nb_frames `
+            -of json $seq.Output
+    }
+
+    [pscustomobject]@{
+        name = $seq.Name
+        input_pattern = $seq.Pattern
+        output_path = $seq.Output
+        converted = $converted
+        verified = $converted -and $LASTEXITCODE -eq 0
+        ffprobe = $probeJson
+        checked_at = (Get-Date).ToUniversalTime().ToString("o")
+    }
+}
+
+$results | Export-Csv $manifestCsv -NoTypeInformation
+$results | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content $auditJsonl
+```
+
+Before replacing source EXRs, compare the work and publish roots so the cleanup
+step only touches the intended sequences:
+
+```powershell
+$workFrames = Get-ChildItem $workRoot -Recurse -Filter *.exr | ForEach-Object { $_.FullName }
+$publishFrames = Get-ChildItem $publishRoot -Recurse -Filter *.exr | ForEach-Object { $_.FullName }
+Compare-Object $workFrames $publishFrames
+```
+
+Then gate cleanup on the audit manifest. Prefer archiving first; only remove
+source frames after the review MP4 exists and `ffprobe` verified it:
+
+```powershell
+$archiveRoot = "D:\show\shot010\archive\exr"
+
+Import-Csv $manifestCsv | Where-Object { $_.converted -eq "True" -and $_.verified -eq "True" } |
+    ForEach-Object {
+        $archiveDir = Join-Path $archiveRoot $_.name
+        $frameFilter = (Split-Path $_.input_pattern -Leaf) `
+            -replace '%0?\d+d', '*' `
+            -replace '\$F\d+', '*' `
+            -replace '#+', '*'
+        New-Item -ItemType Directory -Force $archiveDir | Out-Null
+        Get-ChildItem (Split-Path $_.input_pattern) -Filter $frameFilter |
+            Move-Item -Destination $archiveDir
+    }
+```
+
+Keep the CSV/JSONL files with the review deliverables so a publish cleanup can be
+audited later. If you need a dry run, replace `Move-Item` with `Write-Host` until
+the manifest rows and destination paths are correct.
 
 ## `convert-exr-sequence` Options
 
