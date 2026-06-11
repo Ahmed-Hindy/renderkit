@@ -20,6 +20,7 @@ If RenderKit is already installed or you are using a release build that adds the
 renderkit --help
 renderkit ui
 renderkit convert-exr-sequence INPUT_PATTERN OUTPUT_PATH [OPTIONS]
+renderkit batch-convert ROOT [OPTIONS]
 renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 ```
 
@@ -164,6 +165,24 @@ for shot in shots/*; do
 done
 ```
 
+### Recursive Batch Convert
+
+Use `batch-convert` when RenderKit should discover sequences recursively and write review MP4s
+plus audit manifests:
+
+```powershell
+renderkit batch-convert G:\Projects\Data_folder --ext exr --out _review_mp4s --fps 24 --overwrite
+```
+
+By default, relative output and manifest paths are resolved under `ROOT`. Existing MP4s are
+skipped unless `--overwrite` is set. The command keeps processing after per-sequence failures and
+exits nonzero if any sequence failed.
+
+Default manifests:
+
+- `_review_mp4s/renderkit_batch_manifest.csv`
+- `_review_mp4s/renderkit_batch_results.jsonl`
+
 ## `convert-exr-sequence` Options
 
 | Option | Description | Default |
@@ -192,6 +211,26 @@ done
 | `--cs-no-labels` | Disable layer name labels. | `False` |
 | `--profile` | Enable cProfile output for this conversion. | `False` |
 | `--profile-out` | Output `.prof` path or directory. | Temp dir |
+| `--no-progress` | Disable progress bars for stable captured logs. | `False` |
+
+## `batch-convert` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `ROOT` | Directory tree to scan recursively. | Required |
+| `--ext` | Frame extension to discover, with or without a leading dot. | `exr` |
+| `--out` | Output directory for generated MP4 files. Relative paths resolve under `ROOT`. | `_review_mp4s` |
+| `--prefetch-workers` | Number of frame prefetch workers; use `1` to disable concurrent prefetch. | `2` |
+| `--fps` | Frame rate. If omitted, RenderKit attempts auto-detection per sequence. | Auto-detect |
+| `--quality` | Visual quality on a 0-10 scale. | `10` |
+| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, or `no_conversion`. | `linear_to_srgb` |
+| `--width` | Output width. Must be paired with `--height`. | Source width |
+| `--height` | Output height. Must be paired with `--width`. | Source height |
+| `--codec` | FFmpeg codec, commonly `libx264`, `libx265`, or `libaom-av1`. | `libx264` |
+| `--layer` | EXR layer/AOV to extract. | None |
+| `--overwrite` | Overwrite output files if they exist. | `False` |
+| `--manifest-csv` | CSV manifest path. Relative paths resolve under `ROOT`. | `OUTPUT_DIR/renderkit_batch_manifest.csv` |
+| `--manifest-jsonl` | JSONL results path. Relative paths resolve under `ROOT`. | `OUTPUT_DIR/renderkit_batch_results.jsonl` |
 | `--no-progress` | Disable progress bars for stable captured logs. | `False` |
 
 ## `contact-sheet` Options
