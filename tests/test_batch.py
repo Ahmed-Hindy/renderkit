@@ -234,3 +234,81 @@ def test_batch_convert_rejects_one_sided_resolution(monkeypatch, tmp_path: Path)
     assert "--width and --height must be used together" in result.output
     assert calls == []
     assert not (tmp_path / "_review_mp4s").exists()
+
+
+def test_batch_replace_uses_nested_batch_convert_output_names(monkeypatch, tmp_path: Path) -> None:
+    """Batch replacement should consume nested review MP4 names from batch conversion."""
+    shot_dir = tmp_path / "shot_a"
+    shot_dir.mkdir()
+    (shot_dir / "render.0001.exr").touch()
+    replacement = tmp_path / "_review_mp4s" / "shot_a_render.mp4"
+    replacement.parent.mkdir()
+    replacement.write_bytes(b"mp4")
+    output_paths: list[Path] = []
+
+    def fake_replace_sequence_with_mp4(input_pattern: str, output_mp4: Path, **_kwargs):
+        output_paths.append(output_mp4)
+        assert input_pattern == str(shot_dir / "render.%04d.exr")
+        return object()
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        cli_main,
+        "replace_sequence_with_mp4",
+        fake_replace_sequence_with_mp4,
+    )
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "batch-replace",
+            str(tmp_path),
+            "--mp4-dir",
+            "_review_mp4s",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_paths == [replacement]
+
+
+def test_batch_replace_deduplicates_colliding_batch_convert_output_names(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Batch replacement should mirror batch-convert suffixes for colliding names."""
+    (tmp_path / "render.001.exr").touch()
+    (tmp_path / "render.0001.exr").touch()
+    review_dir = tmp_path / "_review_mp4s"
+    review_dir.mkdir()
+    (review_dir / "render.mp4").write_bytes(b"mp4")
+    (review_dir / "render_2.mp4").write_bytes(b"mp4")
+    output_paths: list[Path] = []
+
+    def fake_replace_sequence_with_mp4(_input_pattern: str, output_mp4: Path, **_kwargs):
+        output_paths.append(output_mp4)
+        return object()
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        cli_main,
+        "replace_sequence_with_mp4",
+        fake_replace_sequence_with_mp4,
+    )
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "batch-replace",
+            str(tmp_path),
+            "--mp4-dir",
+            "_review_mp4s",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_paths == [
+        review_dir / "render.mp4",
+        review_dir / "render_2.mp4",
+    ]

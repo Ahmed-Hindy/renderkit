@@ -147,3 +147,17 @@ def test_find_exr_sequences_and_matching_mp4(tmp_path: Path) -> None:
     assert find_replacement_mp4(patterns[0], tmp_path / "_review_mp4s") == (
         tmp_path / "_review_mp4s" / "beauty.mp4"
     )
+
+
+def test_find_replacement_mp4_matches_nested_batch_convert_name(tmp_path: Path) -> None:
+    """Nested sequence replacement names should match batch-convert output names."""
+    _write_sequence(tmp_path / "shot_a", name="render", count=1)
+    patterns = find_exr_sequences(tmp_path)
+
+    replacement_path = find_replacement_mp4(
+        patterns[0],
+        tmp_path / "_review_mp4s",
+        root=tmp_path,
+    )
+
+    assert replacement_path == tmp_path / "_review_mp4s" / "shot_a_render.mp4"
