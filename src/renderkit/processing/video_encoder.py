@@ -193,6 +193,11 @@ class _RawFfmpegPipeWriter:
             except Exception as exc:
                 logger.warning("Error closing FFmpeg stdin: %s", exc)
             self._process.wait()
+        if self._process.returncode:
+            raise RuntimeError(
+                f"FFmpeg exited with code {self._process.returncode} while finalizing video."
+                f"\n\nFFMPEG COMMAND:\n{self._cmd_str}"
+            )
 
 
 class VideoEncoder:
@@ -497,15 +502,23 @@ class VideoEncoder:
 
     def close(self) -> None:
         """Close the video writer."""
-        if self._writer is not None:
-            try:
-                self._writer.close()
-                logger.info("Video encoding completed.")
-            except Exception as e:
-                logger.error(f"Error closing video writer: {e}")
-            finally:
-                self._writer = None
-        self._restore_ffmpeg_report_env()
+        try:
+            if self._writer is not None:
+                try:
+                    self._writer.close()
+                    logger.info("Video encoding completed.")
+                except Exception as e:
+                    logger.error(f"Error closing video writer: {e}")
+                    report_tail = self._read_ffmpeg_report_tail()
+                    if report_tail:
+                        raise VideoEncodingError(
+                            f"Failed to finalize video encoding: {e}\n\n{report_tail}"
+                        ) from e
+                    raise VideoEncodingError(f"Failed to finalize video encoding: {e}") from e
+                finally:
+                    self._writer = None
+        finally:
+            self._restore_ffmpeg_report_env()
 
     def is_initialized(self) -> bool:
         """Check if encoder is initialized."""

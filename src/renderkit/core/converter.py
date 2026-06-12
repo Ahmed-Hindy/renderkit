@@ -444,7 +444,13 @@ class SequenceConverter:
             if pbar is not None:
                 pbar.close()
             if self.encoder:
-                self.encoder.close()
+                if sys.exception() is None:
+                    self.encoder.close()
+                else:
+                    try:
+                        self.encoder.close()
+                    except VideoEncodingError:
+                        logger.exception("Video encoder finalization failed during cleanup.")
 
     def _prepare_frame_buf(
         self,
