@@ -9,7 +9,7 @@ from typing import Any, Optional, TypeVar
 import click
 
 from renderkit.api.processor import RenderKit
-from renderkit.cli.conversion import base_conversion_config_builder
+from renderkit.cli.conversion import base_conversion_config_builder, validate_paired_resolution
 from renderkit.core.batch import (
     BatchManifestRecord,
     BatchSequence,
@@ -157,6 +157,8 @@ def batch_convert(
     no_progress: bool,
 ) -> None:
     """Recursively convert discovered frame sequences under ROOT to review MP4s."""
+    validate_paired_resolution(width, height)
+
     root = root.resolve()
     if not root.is_dir():
         click.echo(f"Error: root directory does not exist: {root}", err=True)

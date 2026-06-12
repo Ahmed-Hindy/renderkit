@@ -262,7 +262,9 @@ class ConversionConfigBuilder:
         self._layer = layer
         return self
 
-    def with_frame_range(self, start: int, end: int) -> "ConversionConfigBuilder":
+    def with_frame_range(
+        self, start: Optional[int], end: Optional[int]
+    ) -> "ConversionConfigBuilder":
         """Set the frame range."""
         self._start_frame = start
         self._end_frame = end

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from renderkit.cli import main as cli_main
@@ -173,6 +174,116 @@ def test_convert_defaults_to_auto_progress_detection(monkeypatch, tmp_path) -> N
     assert show_progress is None
 
 
+@pytest.mark.parametrize(
+    ("option", "value", "missing_option"),
+    [
+        ("--width", "1920", "--height"),
+        ("--height", "1080", "--width"),
+    ],
+)
+def test_convert_rejects_one_sided_resolution(
+    monkeypatch, tmp_path: Path, option: str, value: str, missing_option: str
+) -> None:
+    """Lone resize dimensions should fail instead of being silently ignored."""
+    calls = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config, show_progress=None) -> None:
+            calls.append(config)
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "convert-exr-sequence",
+            "render.%04d.exr",
+            str(tmp_path / "output.mp4"),
+            "--fps",
+            "24",
+            option,
+            value,
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--width and --height must be used together" in result.output
+    assert missing_option in result.output
+    assert calls == []
+
+
+def test_convert_resolution_validation_runs_before_output_exists_check(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Invalid resize options should report usage before runtime output checks."""
+    output_path = tmp_path / "output.mp4"
+    output_path.touch()
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "convert-exr-sequence",
+            "render.%04d.exr",
+            str(output_path),
+            "--fps",
+            "24",
+            "--width",
+            "1920",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--width and --height must be used together" in result.output
+    assert "Use --overwrite" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("option", "value", "expected_range"),
+    [
+        ("--start-frame", "1001", (1001, None)),
+        ("--end-frame", "1008", (None, 1008)),
+    ],
+)
+def test_convert_preserves_one_sided_frame_range(
+    monkeypatch,
+    tmp_path: Path,
+    option: str,
+    value: str,
+    expected_range: tuple[int | None, int | None],
+) -> None:
+    """A single range bound should stay open-ended for sequence filtering."""
+    captured_ranges = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config, show_progress=None) -> None:
+            captured_ranges.append((config.start_frame, config.end_frame))
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_main, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "convert-exr-sequence",
+            "render.%04d.exr",
+            str(tmp_path / "output.mp4"),
+            "--fps",
+            "24",
+            option,
+            value,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured_ranges == [expected_range]
+
+
 def test_contact_sheet_command_uses_still_writer(monkeypatch, tmp_path: Path) -> None:
     """Verify the still contact sheet command wires CLI options into the writer."""
     calls = []
@@ -233,6 +344,27 @@ def test_contact_sheet_command_uses_still_writer(monkeypatch, tmp_path: Path) ->
     assert start_frame == 1001
     assert end_frame == 1008
     assert "Successfully created contact sheet" in result.output
+
+
+def test_contact_sheet_invalid_input_returns_clean_cli_error(monkeypatch, tmp_path: Path) -> None:
+    """Invalid contact sheet inputs should not expose implementation tracebacks."""
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "contact-sheet",
+            str(tmp_path / "missing.%04d.exr"),
+            str(tmp_path / "contact_sheet.jpg"),
+            "--overwrite",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Could not detect frame sequence." in result.output
+    assert "Traceback" not in result.output
+    assert "AttributeError" not in result.output
 
 
 def test_batch_replace_uses_batch_convert_nested_output_names(monkeypatch, tmp_path: Path) -> None:
