@@ -343,3 +343,23 @@ def test_contact_sheet_command_uses_still_writer(monkeypatch, tmp_path: Path) ->
     assert start_frame == 1001
     assert end_frame == 1008
     assert "Successfully created contact sheet" in result.output
+
+
+def test_contact_sheet_invalid_input_returns_clean_cli_error(monkeypatch, tmp_path: Path) -> None:
+    """Invalid contact sheet inputs should not expose implementation tracebacks."""
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "contact-sheet",
+            str(tmp_path / "missing.%04d.exr"),
+            str(tmp_path / "contact_sheet.jpg"),
+            "--overwrite",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error: Could not detect frame sequence." in result.output
+    assert "Traceback" not in result.output
+    assert "AttributeError" not in result.output

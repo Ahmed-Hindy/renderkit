@@ -466,7 +466,7 @@ def contact_sheet(
         logger.info(f"Successfully created contact sheet: {output_path}")
         click.echo(f"Successfully created contact sheet: {output_path}")
     except (RenderKitError, OSError, RuntimeError, ValueError) as e:
-        logger.exception("Contact sheet generation failed")
+        logger.debug("Contact sheet generation failed", exc_info=True)
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
