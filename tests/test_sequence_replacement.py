@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from renderkit.core.batch import build_safe_output_path, discover_frame_sequences
+from renderkit.core.batch import (
+    build_safe_output_path,
+    build_safe_output_path_from_pattern,
+    discover_frame_sequences,
+)
 from renderkit.core.sequence_replacement import (
     find_exr_sequences,
     find_replacement_mp4,
@@ -177,3 +181,15 @@ def test_find_replacement_mp4_matches_batch_convert_empty_prefix_output(
 
     assert batch_output == output_dir / "sequence.mp4"
     assert find_replacement_mp4(replacement_pattern, output_dir, tmp_path) == batch_output
+
+
+def test_safe_output_path_from_pattern_strips_bare_dollar_frame_token(
+    tmp_path: Path,
+) -> None:
+    """Verify Houdini-style bare $F tokens are removed from safe MP4 names."""
+    output_dir = tmp_path / "_review_mp4s"
+    sequence_pattern = tmp_path / "shot_b" / "beauty.$F.exr"
+
+    assert build_safe_output_path_from_pattern(tmp_path, output_dir, sequence_pattern) == (
+        output_dir / "shot_b_beauty.mp4"
+    )
