@@ -9,7 +9,7 @@ from renderkit.ui.qt_compat import QApplication
 
 def _close_renderkit_logging_handlers() -> None:
     root_logger = logging.getLogger()
-    for handler in list(root_logger.handlers):
+    for handler in root_logger.handlers.copy():
         if getattr(handler, "renderkit_handler", None):
             root_logger.removeHandler(handler)
             handler.close()
