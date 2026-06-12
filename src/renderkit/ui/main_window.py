@@ -82,7 +82,7 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self.timeline_controller: Optional[TimelineController] = None
 
         self._setup_logging()
-        self._ensure_ocio_env()
+        self._ensure_bundled_ocio_config()
 
         # UI element references for responsive layout
         self.main_splitter: Optional[QSplitter] = None

@@ -12,6 +12,7 @@ from renderkit.processing.color_space import (
     ColorSpacePreset,
     NoConversionStrategy,
     OCIOColorSpaceStrategy,
+    get_bundled_ocio_config_path,
 )
 
 try:
@@ -193,7 +194,7 @@ def _has_oiio_colorspace_candidates(candidates: list[str]) -> bool:
         return False
 
     try:
-        config = oiio.ColorConfig()
+        config = oiio.ColorConfig(str(get_bundled_ocio_config_path()))
         names = config.getColorSpaceNames()
     except Exception:
         return False

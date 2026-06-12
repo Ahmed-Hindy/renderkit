@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 import math
-import os
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +21,7 @@ from renderkit.io.file_utils import FileUtils
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import (
     ColorSpacePreset,
+    get_bundled_ocio_config_path,
     get_ocio_colorspace_label,
     get_ocio_role_display_options,
     resolve_ocio_role_label_for_colorspace,
@@ -211,32 +210,15 @@ SETTINGS_SCHEMA: tuple[_SettingSpec, ...] = (
 class MainWindowLogicMixin:
     """Signal handlers, validation, and worker orchestration."""
 
-    def _ensure_ocio_env(self) -> None:
-        """Ensure OCIO environment variable is set, using bundled config if needed."""
-        bundled_config = None
-        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-            candidate = Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio"
-            if candidate.exists():
-                bundled_config = candidate
-        else:
-            # Dev mode: assuming this file is in src/renderkit/ui/main_window.py
-            # Config is in src/renderkit/data/ocio/config.ocio
-            # ../../data/ocio/config.ocio
-            current_dir = Path(__file__).parent
-            candidate = current_dir.parent / "data" / "ocio" / "config.ocio"
-            if candidate.exists():
-                bundled_config = candidate
-
-        if bundled_config:
-            logger.info(f"Setting OCIO environment variable to bundled config: {bundled_config}")
-            os.environ["OCIO"] = str(bundled_config.resolve())
+    def _ensure_bundled_ocio_config(self) -> None:
+        """Ensure RenderKit's bundled OCIO config is available."""
+        try:
+            bundled_config = get_bundled_ocio_config_path()
+        except RenderKitError as exc:
+            logger.warning("Could not find bundled ocio/config.ocio: %s", exc)
             return
 
-        if os.environ.get("OCIO"):
-            logger.info(f"Using existing OCIO environment variable: {os.environ['OCIO']}")
-            return
-
-        logger.warning("Could not find bundled ocio/config.ocio and OCIO env var is not set.")
+        logger.info("Using bundled OCIO config: %s", bundled_config)
 
     def keyPressEvent(self, event) -> None:
         """Handle global key presses for the main window."""

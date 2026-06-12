@@ -1,8 +1,8 @@
 """Color space conversion using Strategy pattern."""
 
 import logging
-import os
 import re
+import sys
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Protocol
@@ -24,6 +24,27 @@ _OIIO_REC709_CANDIDATES = [
     "Output - Rec709",
 ]
 _OIIO_COLOR_SPACE_CACHE: Optional[dict[str, str]] = None
+_BUNDLED_OCIO_CONFIG_CACHE: Optional[Path] = None
+
+
+def get_bundled_ocio_config_path() -> Path:
+    """Return RenderKit's bundled OCIO config path."""
+    global _BUNDLED_OCIO_CONFIG_CACHE
+    if _BUNDLED_OCIO_CONFIG_CACHE is not None:
+        return _BUNDLED_OCIO_CONFIG_CACHE
+
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "renderkit" / "data" / "ocio" / "config.ocio")
+
+    candidates.append(Path(__file__).resolve().parent.parent / "data" / "ocio" / "config.ocio")
+
+    for candidate in candidates:
+        if candidate.exists():
+            _BUNDLED_OCIO_CONFIG_CACHE = candidate.resolve()
+            return _BUNDLED_OCIO_CONFIG_CACHE
+
+    raise ColorSpaceError("Bundled OCIO config not found.")
 
 
 def _summarize_list(values: list[str], max_items: int = 20) -> str:
@@ -44,7 +65,7 @@ def _get_oiio_color_space_map(oiio) -> dict[str, str]:
     if _OIIO_COLOR_SPACE_CACHE is not None:
         return _OIIO_COLOR_SPACE_CACHE
     try:
-        config = oiio.ColorConfig()
+        config = oiio.ColorConfig(str(get_bundled_ocio_config_path()))
         names = config.getColorSpaceNames()
         if not names:
             raise ColorSpaceError("OCIO config does not define any color spaces.")
@@ -122,13 +143,20 @@ def _oiio_tone_map_reinhard(oiio, buf):
     return _oiio_clamp_buf(oiio, tone, 0.0, 1.0)
 
 
-def _oiio_colorconvert_buf(oiio, src_buf, from_spaces: list[str], to_spaces: list[str]):
+def _oiio_colorconvert_buf(
+    oiio,
+    src_buf,
+    from_spaces: list[str],
+    to_spaces: list[str],
+    color_config_path: Optional[str] = None,
+):
     src_buf = _ensure_float_buf(oiio, src_buf)
     spec = src_buf.spec()
     channels = spec.nchannels
     if channels not in (3, 4):
         raise ColorSpaceError("Color conversion expects 3 or 4 channel images.")
 
+    resolved_color_config_path = color_config_path or str(get_bundled_ocio_config_path())
     space_map = _get_oiio_color_space_map(oiio)
     from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
     to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
@@ -139,7 +167,16 @@ def _oiio_colorconvert_buf(oiio, src_buf, from_spaces: list[str], to_spaces: lis
             dst_buf = oiio.ImageBuf(
                 oiio.ImageSpec(spec.width, spec.height, spec.nchannels, oiio.FLOAT)
             )
-            if oiio.ImageBufAlgo.colorconvert(dst_buf, src_buf, from_space, to_space):
+            if oiio.ImageBufAlgo.colorconvert(
+                dst_buf,
+                src_buf,
+                from_space,
+                to_space,
+                True,
+                "",
+                "",
+                resolved_color_config_path,
+            ):
                 return dst_buf
             err = dst_buf.geterror()
             if err:
@@ -185,7 +222,7 @@ def get_ocio_role_space_map() -> dict[str, str]:
         return {}
 
     try:
-        config = OCIO.GetCurrentConfig()
+        config = OCIO.Config.CreateFromFile(str(get_bundled_ocio_config_path()))
         roles = list(config.getRoleNames())
     except Exception:
         return {}
@@ -221,7 +258,7 @@ def get_ocio_colorspace_label(name: str) -> Optional[str]:
         return None
 
     try:
-        config = OCIO.GetCurrentConfig()
+        config = OCIO.Config.CreateFromFile(str(get_bundled_ocio_config_path()))
         spaces = set(config.getColorSpaceNames())
     except Exception:
         return None
@@ -292,9 +329,10 @@ class OCIOColorSpaceStrategy:
             raise ColorSpaceError("PyOpenColorIO not available.") from e
 
         try:
-            self.config = OCIO.GetCurrentConfig()
+            self.config_path = get_bundled_ocio_config_path()
+            self.config = OCIO.Config.CreateFromFile(str(self.config_path))
         except Exception as e:
-            raise ColorSpaceError(f"Failed to get OCIO config: {e}") from e
+            raise ColorSpaceError(f"Failed to load bundled OCIO config: {e}") from e
 
     def _resolve_input_space(self, input_space: str) -> str:
         if not input_space or not self.config:
@@ -372,14 +410,6 @@ class OCIOColorSpaceStrategy:
         resolved_output_space: Optional[str],
         error: Exception,
     ) -> None:
-        ocio_env = os.environ.get("OCIO")
-        ocio_env_exists = False
-        if ocio_env:
-            try:
-                ocio_env_exists = Path(ocio_env).exists()
-            except OSError:
-                ocio_env_exists = False
-
         config_version = "unknown"
         search_path = "unknown"
         default_display = "unknown"
@@ -391,6 +421,7 @@ class OCIOColorSpaceStrategy:
         config_file_crlf = "unknown"
         lut_sources_count = 0
         lut_diagnostics: list[str] = []
+        config_path: Optional[Path] = getattr(self, "config_path", None)
 
         try:
             major = self.config.getMajorVersion()
@@ -431,9 +462,9 @@ class OCIOColorSpaceStrategy:
             except Exception as proc_error:
                 processor_status = f"failed: {proc_error}"
 
-        if ocio_env_exists and ocio_env:
+        if config_path and config_path.exists():
             try:
-                ocio_path = Path(ocio_env)
+                ocio_path = config_path
                 config_bytes = ocio_path.read_bytes()
                 config_file_crlf = str(_count_crlf_pairs(config_bytes))
                 config_text = config_bytes.decode("utf-8", errors="replace")
@@ -455,7 +486,7 @@ class OCIOColorSpaceStrategy:
 
         logger.error(
             "OCIO diagnostics: error=%s requested_input=%s resolved_input=%s resolved_output=%s "
-            "ocio_env=%s ocio_env_exists=%s config_version=%s search_path=%s "
+            "config_path=%s config_exists=%s config_version=%s search_path=%s "
             "default_display=%s default_view=%s display_view_space=%s processor_status=%s "
             "colorspaces_count=%s colorspaces_sample=%s roles=%s "
             "config_crlf=%s lut_sources_count=%s lut_diagnostics=%s",
@@ -463,8 +494,8 @@ class OCIOColorSpaceStrategy:
             requested_input_space,
             resolved_input_space,
             resolved_output_space,
-            ocio_env,
-            ocio_env_exists,
+            config_path,
+            bool(config_path and config_path.exists()),
             config_version,
             search_path,
             default_display,
@@ -503,7 +534,11 @@ class OCIOColorSpaceStrategy:
                 resolved_output_space,
             )
             return _oiio_colorconvert_buf(
-                oiio, buf, [resolved_input_space], [resolved_output_space]
+                oiio,
+                buf,
+                [resolved_input_space],
+                [resolved_output_space],
+                color_config_path=str(self.config_path),
             )
         except Exception as e:
             self._log_ocio_failure_diagnostics(
