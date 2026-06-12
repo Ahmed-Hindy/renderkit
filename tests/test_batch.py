@@ -203,3 +203,34 @@ def test_batch_convert_deduplicates_colliding_output_names(monkeypatch, tmp_path
         tmp_path / "_review_mp4s" / "render.mp4",
         tmp_path / "_review_mp4s" / "render_2.mp4",
     ]
+
+
+def test_batch_convert_rejects_one_sided_resolution(monkeypatch, tmp_path: Path) -> None:
+    """Batch conversion should use the same paired resize validation."""
+    (tmp_path / "render.0001.exr").touch()
+    calls = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config, show_progress=None) -> None:
+            calls.append(config)
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_batch, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "batch-convert",
+            str(tmp_path),
+            "--fps",
+            "24",
+            "--width",
+            "1920",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--width and --height must be used together" in result.output
+    assert calls == []
+    assert not (tmp_path / "_review_mp4s").exists()

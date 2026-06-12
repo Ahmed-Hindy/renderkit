@@ -10,7 +10,11 @@ import click
 from renderkit import __version__
 from renderkit.api.processor import RenderKit
 from renderkit.cli.batch import batch_convert
-from renderkit.cli.conversion import base_conversion_config_builder
+from renderkit.cli.conversion import (
+    apply_frame_range,
+    base_conversion_config_builder,
+    validate_paired_resolution,
+)
 from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
@@ -304,6 +308,7 @@ def convert_exr_sequence(
         renderkit convert-exr-sequence render.%04d.exr output.mp4 --fps 24 --start-frame 100 --end-frame 200
     """
     output_path_obj = Path(output_path)
+    validate_paired_resolution(width, height)
 
     # Check if output exists
     if output_path_obj.exists() and not overwrite:
@@ -336,12 +341,7 @@ def convert_exr_sequence(
         )
         config_builder.with_contact_sheet(True, cs_config)
 
-    if start_frame is not None and end_frame is not None:
-        config_builder.with_frame_range(start_frame, end_frame)
-    elif start_frame is not None:
-        config_builder.with_frame_range(start_frame, start_frame)
-    elif end_frame is not None:
-        config_builder.with_frame_range(0, end_frame)
+    apply_frame_range(config_builder, start_frame, end_frame)
 
     burnin_elements = []
     font_size = 20

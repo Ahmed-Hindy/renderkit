@@ -141,6 +141,19 @@ class TestConversionConfigBuilder:
         assert config.start_frame == 100
         assert config.end_frame == 200
 
+    def test_builder_with_open_ended_frame_range(self) -> None:
+        """Test builder with an open-ended frame range."""
+        config = (
+            ConversionConfigBuilder()
+            .with_input_pattern("render.%04d.exr")
+            .with_output_path("output.mp4")
+            .with_frame_range(100, None)
+            .build()
+        )
+
+        assert config.start_frame == 100
+        assert config.end_frame is None
+
     def test_builder_with_prefetch_workers(self) -> None:
         """Test builder with prefetch workers."""
         config = (
