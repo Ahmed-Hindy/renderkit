@@ -188,7 +188,9 @@ def _safe_filename_part(value: str) -> str:
 
 
 def _sequence_stem_from_pattern(filename: str) -> str:
-    match = re.search(r"%\d+d|\$F\d*|#+", filename)
-    if match is None:
+    stem = Path(filename).stem
+    matches = list(re.finditer(r"%\d+d|\$F\d*|#+", stem))
+    if not matches:
         return Path(filename).stem.rstrip("._- ") or "sequence"
+    match = matches[-1]
     return filename[: match.start()].rstrip("._- ") or "sequence"

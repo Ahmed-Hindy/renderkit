@@ -313,3 +313,43 @@ def test_batch_replace_uses_batch_convert_deduplicated_output_names(
         str(first_mp4.resolve()),
         str(second_mp4.resolve()),
     ]
+
+
+def test_batch_replace_deduplicates_sanitized_directory_collisions_in_batch_order(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Verify sanitized directory-name collisions match batch-convert ordering."""
+    for directory_name in ["a", "a!"]:
+        shot_dir = tmp_path / directory_name
+        shot_dir.mkdir()
+        (shot_dir / "z.0001.exr").write_bytes(b"frame")
+
+    review_dir = tmp_path / "_review_mp4s"
+    review_dir.mkdir()
+    (review_dir / "a_z.mp4").write_bytes(b"first")
+    (review_dir / "a_z_2.mp4").write_bytes(b"second")
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "batch-replace",
+            str(tmp_path),
+            "--dry-run",
+            "--delete-source",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    audit_path = tmp_path / "renderkit-batch-replace-audit.jsonl"
+    records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert [
+        (Path(record["source_pattern"]).parent.name, Path(record["replacement_mp4"]).name)
+        for record in records
+    ] == [
+        ("a", "a_z.mp4"),
+        ("a!", "a_z_2.mp4"),
+    ]

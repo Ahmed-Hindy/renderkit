@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
-from renderkit.core.batch import build_safe_output_path_from_pattern
+from renderkit.core.batch import build_safe_output_path_from_pattern, discover_frame_sequences
 from renderkit.core.ffmpeg_utils import get_ffprobe_exe, popen_kwargs
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import SequenceReplacementError
@@ -231,25 +231,9 @@ def find_exr_sequences(root: Path) -> list[str]:
         root: Directory to scan recursively.
 
     Returns:
-        Detected sequence patterns sorted by path.
+        Detected sequence patterns sorted in batch-convert order.
     """
-    groups: dict[tuple[Path, str, str, int], list[int]] = {}
-    for file_path in root.rglob("*.exr"):
-        if not file_path.is_file():
-            continue
-        numbered_name = _split_numbered_exr_name(file_path.name)
-        if numbered_name is None:
-            continue
-        prefix, frame, suffix = numbered_name
-        key = (file_path.parent, prefix, suffix, len(frame))
-        groups.setdefault(key, []).append(int(frame))
-
-    patterns = []
-    for directory, prefix, suffix, padding in groups:
-        if not groups[(directory, prefix, suffix, padding)]:
-            continue
-        patterns.append(str(directory / f"{prefix}%0{padding}d{suffix}"))
-    return sorted(patterns)
+    return [str(sequence.input_pattern) for sequence in discover_frame_sequences(root, "exr")]
 
 
 def find_replacement_mp4(
@@ -280,22 +264,6 @@ def _existing_sequence_frames(sequence: FrameSequence) -> list[Path]:
         for frame_number in sequence.frame_numbers
         if (path := sequence.get_file_path(frame_number)).is_file()
     ]
-
-
-def _split_numbered_exr_name(filename: str) -> Optional[tuple[str, str, str]]:
-    path = Path(filename)
-    if path.suffix.lower() != ".exr":
-        return None
-
-    stem = path.stem
-    frame_start = len(stem)
-    while frame_start > 0 and stem[frame_start - 1].isdigit():
-        frame_start -= 1
-
-    if frame_start == len(stem):
-        return None
-
-    return stem[:frame_start], stem[frame_start:], path.suffix
 
 
 def _sum_existing_sizes(paths: list[Path]) -> int:

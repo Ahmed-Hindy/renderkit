@@ -193,3 +193,25 @@ def test_safe_output_path_from_pattern_strips_bare_dollar_frame_token(
     assert build_safe_output_path_from_pattern(tmp_path, output_dir, sequence_pattern) == (
         output_dir / "shot_b_beauty.mp4"
     )
+
+
+@pytest.mark.parametrize(
+    ("sequence_name", "expected_mp4"),
+    [
+        ("take#1", "take_1.mp4"),
+        ("take$F1", "take_F1.mp4"),
+    ],
+)
+def test_find_replacement_mp4_preserves_placeholder_like_prefix_tokens(
+    tmp_path: Path, sequence_name: str, expected_mp4: str
+) -> None:
+    """Verify prefix text that resembles frame tokens stays in the MP4 stem."""
+    _write_sequence(tmp_path, name=sequence_name, count=2)
+    output_dir = tmp_path / "_review_mp4s"
+
+    batch_sequence = discover_frame_sequences(tmp_path, "exr")[0]
+    batch_output = build_safe_output_path(tmp_path, output_dir, batch_sequence)
+    replacement_pattern = find_exr_sequences(tmp_path)[0]
+
+    assert batch_output == output_dir / expected_mp4
+    assert find_replacement_mp4(replacement_pattern, output_dir, tmp_path) == batch_output
