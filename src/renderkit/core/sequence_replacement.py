@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 
+from renderkit.core.batch import BatchSequence, build_safe_output_path
 from renderkit.core.ffmpeg_utils import get_ffprobe_exe, popen_kwargs
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import SequenceReplacementError
@@ -251,16 +252,31 @@ def find_exr_sequences(root: Path) -> list[str]:
     return sorted(patterns)
 
 
-def find_replacement_mp4(sequence_pattern: str, mp4_dir: Path) -> Path:
+def find_replacement_mp4(sequence_pattern: str, mp4_dir: Path, root: Optional[Path] = None) -> Path:
     """Return the expected MP4 replacement path for a sequence pattern.
 
     Args:
         sequence_pattern: Detected sequence pattern.
         mp4_dir: Directory containing replacement MP4s.
+        root: Optional scan root used to match batch-convert's nested output names.
 
     Returns:
         Expected MP4 path.
     """
+    if root is not None:
+        sequence_path = Path(sequence_pattern)
+        sequence_parts = _split_sequence_pattern_name(sequence_path.name)
+        if sequence_parts is not None:
+            prefix, suffix, padding = sequence_parts
+            sequence = BatchSequence(
+                directory=sequence_path.parent,
+                prefix=prefix,
+                suffix=suffix,
+                padding=padding,
+                frame_numbers=[0],
+            )
+            return build_safe_output_path(root, mp4_dir, sequence)
+
     pattern_name = Path(sequence_pattern).name
     stem = Path(_remove_frame_token(pattern_name)).stem.strip(" ._-")
     return mp4_dir / f"{stem}.mp4"
@@ -328,3 +344,14 @@ def _remove_frame_token(filename: str) -> str:
     filename = re.sub(r"\$F\d+", "", filename)
     filename = re.sub(r"#+", "", filename)
     return filename
+
+
+def _split_sequence_pattern_name(pattern_name: str) -> Optional[tuple[str, str, int]]:
+    match = re.search(r"(%0?(\d+)d|\$F(\d+)|#+)", pattern_name)
+    if match is None:
+        return None
+
+    token = match.group(0)
+    padding_text = match.group(2) or match.group(3)
+    padding = int(padding_text) if padding_text else len(token)
+    return pattern_name[: match.start()], pattern_name[match.end() :], padding

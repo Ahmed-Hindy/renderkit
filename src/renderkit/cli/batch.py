@@ -15,6 +15,7 @@ from renderkit.core.batch import (
     BatchSequence,
     append_jsonl_manifest,
     build_safe_output_path,
+    deduplicate_output_path,
     discover_frame_sequences,
     write_csv_manifest,
 )
@@ -191,7 +192,7 @@ def batch_convert(
 
     for sequence in sequences:
         output_path = build_safe_output_path(root, output_dir, sequence)
-        output_path = _deduplicate_batch_output_path(output_path, planned_outputs)
+        output_path = deduplicate_output_path(output_path, planned_outputs)
         planned_outputs.add(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -250,18 +251,6 @@ def _resolve_batch_manifest_path(
     if manifest_path.is_absolute():
         return manifest_path
     return root / manifest_path
-
-
-def _deduplicate_batch_output_path(output_path: Path, planned_outputs: set[Path]) -> Path:
-    if output_path not in planned_outputs:
-        return output_path
-
-    index = 2
-    while True:
-        candidate = output_path.with_name(f"{output_path.stem}_{index}{output_path.suffix}")
-        if candidate not in planned_outputs:
-            return candidate
-        index += 1
 
 
 def _build_batch_conversion_config(

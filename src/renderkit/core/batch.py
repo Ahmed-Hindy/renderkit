@@ -106,6 +106,19 @@ def build_safe_output_path(root: Path, output_dir: Path, sequence: BatchSequence
     return output_dir / f"{safe_name}.mp4"
 
 
+def deduplicate_output_path(output_path: Path, planned_outputs: set[Path]) -> Path:
+    """Return a suffixed output path when a planned batch path already exists."""
+    if output_path not in planned_outputs:
+        return output_path
+
+    index = 2
+    while True:
+        candidate = output_path.with_name(f"{output_path.stem}_{index}{output_path.suffix}")
+        if candidate not in planned_outputs:
+            return candidate
+        index += 1
+
+
 def write_csv_manifest(path: Path, records: list[BatchManifestRecord]) -> None:
     """Write a CSV manifest for all attempted batch conversions."""
     path.parent.mkdir(parents=True, exist_ok=True)
