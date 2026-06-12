@@ -40,6 +40,13 @@ def _has_handler(logger: logging.Logger, handler_key: str) -> bool:
     )
 
 
+def _get_handler(logger: logging.Logger, handler_key: str) -> logging.Handler | None:
+    for handler in logger.handlers:
+        if getattr(handler, "renderkit_handler", None) == handler_key:
+            return handler
+    return None
+
+
 def _log_level() -> int:
     level_name = os.environ.get("RENDERKIT_LOG_LEVEL", "INFO").upper()
     return getattr(logging, level_name, logging.INFO)
@@ -92,7 +99,8 @@ def setup_logging(
     )
 
     # 3. Manage File Handler
-    if not _has_handler(root_logger, "file"):
+    file_handler = _get_handler(root_logger, "file")
+    if file_handler is None:
         file_handler = RotatingFileHandler(
             log_path,
             maxBytes=5 * 1024 * 1024,
@@ -100,10 +108,10 @@ def setup_logging(
             encoding="utf-8",
         )
         file_handler.renderkit_handler = "file"
-        file_handler.setLevel(logging.INFO)  # File captures INFO+
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
         rk_logger.info("Logging to %s", log_path)
+    file_handler.setLevel(log_level)
 
     # 4. Manage Console Handler
     if enable_console is None:
