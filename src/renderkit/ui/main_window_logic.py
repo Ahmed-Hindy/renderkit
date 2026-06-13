@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from renderkit import constants
 from renderkit.core.config import (
-    BurnInConfig,
-    BurnInElement,
     ContactSheetConfig,
     ConversionConfig,
     ConversionConfigBuilder,
@@ -31,6 +27,17 @@ from renderkit.processing.video_encoder import get_encoder_probe_result, select_
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.file_info_worker import FileInfoWorker
 from renderkit.ui.icons import icon_manager
+from renderkit.ui.main_window_preview import build_burnin_config, build_preview_request
+from renderkit.ui.main_window_sequence import (
+    build_pattern_from_path,
+    derive_sequence_stem,
+    pattern_has_frame_token,
+)
+from renderkit.ui.main_window_settings import (
+    load_settings,
+    reset_settings,
+    save_settings,
+)
 from renderkit.ui.main_window_widgets import UiLogForwarder
 from renderkit.ui.qt_compat import (
     QApplication,
@@ -50,162 +57,6 @@ logger = logging.getLogger("renderkit.ui.main_window")
 RECENT_PATTERNS_LIMIT = 10
 RECENT_PATTERNS_KEY = "recent_patterns"
 RECENT_PATTERNS_CLEAR_LABEL = "Clear recent patterns"
-
-
-@dataclass(frozen=True)
-class _SettingSpec:
-    key: str
-    default: Any
-    value_type: type[Any]
-    getter: Callable[[Any], Any]
-    setter: Callable[[Any, Any], None]
-    is_available: Callable[[Any], bool] = lambda _: True
-
-
-SETTINGS_SCHEMA: tuple[_SettingSpec, ...] = (
-    _SettingSpec(
-        "fps",
-        24,
-        int,
-        lambda ui: ui.fps_spin.value(),
-        lambda ui, value: ui.fps_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "keep_source_fps",
-        True,
-        bool,
-        lambda ui: ui.keep_source_fps_check.isChecked(),
-        lambda ui, value: ui.keep_source_fps_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "keep_source_frame_range",
-        True,
-        bool,
-        lambda ui: ui.keep_source_frame_range_check.isChecked(),
-        lambda ui, value: ui.keep_source_frame_range_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "width",
-        1920,
-        int,
-        lambda ui: ui.width_spin.value(),
-        lambda ui, value: ui.width_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "height",
-        1080,
-        int,
-        lambda ui: ui.height_spin.value(),
-        lambda ui, value: ui.height_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "codec_text",
-        "",
-        str,
-        lambda ui: ui.codec_combo.currentText(),
-        lambda ui, value: ui.codec_combo.setCurrentText(value),
-    ),
-    _SettingSpec(
-        "keep_resolution",
-        True,
-        bool,
-        lambda ui: ui.keep_resolution_check.isChecked(),
-        lambda ui, value: ui.keep_resolution_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "aspect_linked",
-        True,
-        bool,
-        lambda ui: ui.aspect_link_btn.isChecked(),
-        lambda ui, value: ui.aspect_link_btn.setChecked(value),
-        lambda ui: hasattr(ui, "aspect_link_btn"),
-    ),
-    _SettingSpec(
-        "quality",
-        10,
-        int,
-        lambda ui: ui.quality_slider.value(),
-        lambda ui, value: ui.quality_slider.setValue(value),
-    ),
-    _SettingSpec(
-        "prefetch_workers",
-        2,
-        int,
-        lambda ui: ui.prefetch_workers_spin.value(),
-        lambda ui, value: ui.prefetch_workers_spin.setValue(value),
-        lambda ui: hasattr(ui, "prefetch_workers_spin"),
-    ),
-    _SettingSpec(
-        "burnin_enable",
-        True,
-        bool,
-        lambda ui: ui.burnin_enable_check.isChecked(),
-        lambda ui, value: ui.burnin_enable_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "burnin_frame",
-        True,
-        bool,
-        lambda ui: ui.burnin_frame_check.isChecked(),
-        lambda ui, value: ui.burnin_frame_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "burnin_layer",
-        True,
-        bool,
-        lambda ui: ui.burnin_layer_check.isChecked(),
-        lambda ui, value: ui.burnin_layer_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "burnin_fps",
-        True,
-        bool,
-        lambda ui: ui.burnin_fps_check.isChecked(),
-        lambda ui, value: ui.burnin_fps_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "burnin_font_size",
-        20,
-        int,
-        lambda ui: ui.burnin_font_size_spin.value(),
-        lambda ui, value: ui.burnin_font_size_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "burnin_opacity",
-        30,
-        int,
-        lambda ui: ui.burnin_opacity_spin.value(),
-        lambda ui, value: ui.burnin_opacity_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "cs_enable",
-        False,
-        bool,
-        lambda ui: ui.cs_enable_check.isChecked(),
-        lambda ui, value: ui.cs_enable_check.setChecked(value),
-    ),
-    _SettingSpec(
-        "cs_columns",
-        4,
-        int,
-        lambda ui: ui.cs_columns_spin.value(),
-        lambda ui, value: ui.cs_columns_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "cs_padding",
-        4,
-        int,
-        lambda ui: ui.cs_padding_spin.value(),
-        lambda ui, value: ui.cs_padding_spin.setValue(value),
-    ),
-    _SettingSpec(
-        "preview_scale",
-        75,
-        int,
-        lambda ui: ui.preview_scale_spin.value(),
-        lambda ui, value: ui.preview_scale_spin.setValue(value),
-    ),
-)
 
 
 class MainWindowLogicMixin:
@@ -500,28 +351,7 @@ class MainWindowLogicMixin:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        self.fps_spin.setValue(24)
-        self.keep_source_fps_check.setChecked(True)
-        self.keep_source_frame_range_check.setChecked(True)
-        self.width_spin.setValue(1920)
-        self.height_spin.setValue(1080)
-        self.codec_combo.setCurrentIndex(0)
-        self.keep_resolution_check.setChecked(True)
-        self.quality_slider.setValue(10)
-        if hasattr(self, "prefetch_workers_spin"):
-            self.prefetch_workers_spin.setValue(2)
-
-        self.burnin_enable_check.setChecked(True)
-        self.burnin_frame_check.setChecked(True)
-        self.burnin_layer_check.setChecked(True)
-        self.burnin_fps_check.setChecked(True)
-        self.burnin_font_size_spin.setValue(20)
-        self.burnin_opacity_spin.setValue(30)
-
-        self.cs_enable_check.setChecked(False)
-        self.cs_columns_spin.setValue(4)
-        self.cs_padding_spin.setValue(4)
-        self.preview_scale_spin.setValue(75)
+        reset_settings(self)
         if hasattr(self, "overwrite_check"):
             self.overwrite_check.setChecked(True)
 
@@ -743,91 +573,6 @@ class MainWindowLogicMixin:
         if controller:
             controller.set_sequence(sequence)
 
-    def _pattern_has_frame_token(self, filename: str) -> bool:
-        if "%" in filename:
-            percent_index = filename.find("%")
-            i = percent_index + 1
-            while i < len(filename) and filename[i].isdigit():
-                i += 1
-            if i < len(filename) and filename[i] == "d":
-                return True
-
-        if "$F" in filename:
-            return True
-
-        if "#" in filename:
-            return True
-
-        stem = Path(filename).stem
-        if not stem:
-            return False
-        i = len(stem) - 1
-        while i >= 0 and stem[i].isdigit():
-            i -= 1
-        return i < len(stem) - 1
-
-    def _extract_frame_number(self, path: Path) -> Optional[int]:
-        """Extract trailing frame number from a filename."""
-        stem = path.stem
-        if not stem:
-            return None
-        import re
-
-        match = re.search(r"(\d+)$", stem)
-        if not match:
-            return None
-        try:
-            return int(match.group(1))
-        except ValueError:
-            return None
-
-    def _build_burnin_elements(self, *, include_layer: bool) -> list[BurnInElement]:
-        if not self.burnin_enable_check.isChecked():
-            return []
-
-        burnin_elements = []
-        font_size = self.burnin_font_size_spin.value()
-        if self.burnin_frame_check.isChecked():
-            burnin_elements.append(
-                BurnInElement(
-                    text_template="Frame: {frame}",
-                    x=0,
-                    y=10,
-                    font_size=font_size,
-                    alignment="left",
-                )
-            )
-        if include_layer and self.burnin_layer_check.isChecked():
-            burnin_elements.append(
-                BurnInElement(
-                    text_template="Layer: {layer}",
-                    x=0,
-                    y=10,
-                    font_size=font_size,
-                    alignment="center",
-                )
-            )
-        if self.burnin_fps_check.isChecked():
-            burnin_elements.append(
-                BurnInElement(
-                    text_template="FPS: {fps:.2f}",
-                    x=0,
-                    y=10,
-                    font_size=font_size,
-                    alignment="right",
-                )
-            )
-        return burnin_elements
-
-    def _build_burnin_config(self, *, include_layer: bool) -> Optional[BurnInConfig]:
-        burnin_elements = self._build_burnin_elements(include_layer=include_layer)
-        if not burnin_elements:
-            return None
-        return BurnInConfig(
-            elements=burnin_elements,
-            background_opacity=self.burnin_opacity_spin.value(),
-        )
-
     def _validate_input_pattern(self, pattern: str) -> tuple[bool, str]:
         if not pattern:
             return False, "No pattern specified."
@@ -846,7 +591,7 @@ class MainWindowLogicMixin:
         if suffix not in constants.OIIO_SUPPORTED_EXTENSIONS:
             return False, f"Unsupported image extension: .{suffix}"
 
-        if not self._pattern_has_frame_token(filename):
+        if not pattern_has_frame_token(filename):
             return (
                 False,
                 "Pattern must include a frame token (e.g., %04d, ####, $F4) or frame number.",
@@ -890,84 +635,32 @@ class MainWindowLogicMixin:
             return
 
         preset, input_space = self._get_current_color_space_config()
-
-        # Determine if we are in Contact Sheet mode
-        cs_config = None
-        layer = self.layer_combo.currentText()
-
-        if self.cs_enable_check.isChecked() and not scrubbing:
-            # Build config from UI
-            layer_width = None
-            layer_height = None
-            if not self.keep_resolution_check.isChecked():
-                layer_width = self.width_spin.value()
-                layer_height = self.height_spin.value()
-
-            show_labels = (
-                self.burnin_enable_check.isChecked() and self.burnin_layer_check.isChecked()
-            )
-            cs_config = ContactSheetConfig(
-                columns=self.cs_columns_spin.value(),
-                thumbnail_width=None,
-                padding=self.cs_padding_spin.value(),
-                show_labels=show_labels,
-                font_size=self.burnin_font_size_spin.value(),
-                background_color=(0.1, 0.1, 0.1, 1.0),  # Dark background for preview
-                layer_width=layer_width,
-                layer_height=layer_height,
-            )
-            # Set layer to None to avoid "Layer not found" warnings when generator handles it
-            layer = None
-
-        burnin_config = None
-        burnin_metadata = None
-        if not scrubbing:
-            burnin_config = self._build_burnin_config(
-                include_layer=not self.cs_enable_check.isChecked()
-            )
-            if burnin_config is not None:
-                frame_number = self._extract_frame_number(sample_path)
-                burnin_metadata = {
-                    "frame": frame_number if frame_number is not None else 0,
-                    "file": sample_path.name,
-                    "fps": float(self.fps_spin.value()),
-                    "layer": layer or "RGBA",
-                    "colorspace": input_space or "Unknown",
-                }
-
-        self._last_preview_path = sample_path
-        preview_scale = self.preview_scale_spin.value() / 100.0
-        self.preview_widget.load_preview(
+        request = build_preview_request(
+            self,
             sample_path,
-            preset,
+            preset=preset,
             input_space=input_space,
-            layer=layer,
-            cs_config=cs_config,
-            burnin_config=burnin_config,
-            burnin_metadata=burnin_metadata,
-            preview_scale=preview_scale,
+            scrubbing=scrubbing,
         )
 
-        if cs_config:
+        self._last_preview_path = sample_path
+        self.preview_widget.load_preview(
+            request.sample_path,
+            request.preset,
+            input_space=request.input_space,
+            layer=request.layer,
+            cs_config=request.cs_config,
+            burnin_config=request.burnin_config,
+            burnin_metadata=request.burnin_metadata,
+            preview_scale=request.preview_scale,
+        )
+
+        if request.cs_config:
             logger.debug(f"Loading Contact Sheet preview: {sample_path.name}")
         elif scrubbing:
-            logger.debug(f"Loading scrub preview: {sample_path.name} (Layer: {layer})")
+            logger.debug(f"Loading scrub preview: {sample_path.name} (Layer: {request.layer})")
         else:
-            logger.debug(f"Loading preview: {sample_path.name} (Layer: {layer})")
-
-    def _derive_sequence_stem(self, pattern: str) -> str:
-        if not pattern:
-            return ""
-        name = Path(pattern).name
-        stem = Path(name).stem
-
-        import re
-
-        stem = re.sub(r"%\d*d", "", stem)
-        stem = re.sub(r"\$F\d*", "", stem)
-        stem = re.sub(r"#+", "", stem)
-        stem = re.sub(r"\d+$", "", stem)
-        return stem.rstrip("._- ").strip()
+            logger.debug(f"Loading preview: {sample_path.name} (Layer: {request.layer})")
 
     def _scale_thumbnail_pixmap(self, pixmap):
         if pixmap.isNull():
@@ -1013,9 +706,9 @@ class MainWindowLogicMixin:
             )
             return
 
-        sequence_stem = self._derive_sequence_stem(self.input_pattern_combo.currentText().strip())
+        sequence_stem = derive_sequence_stem(self.input_pattern_combo.currentText().strip())
         if not sequence_stem and self._last_preview_path:
-            sequence_stem = self._derive_sequence_stem(self._last_preview_path.name)
+            sequence_stem = derive_sequence_stem(self._last_preview_path.name)
         if not sequence_stem:
             sequence_stem = "sequence"
 
@@ -1171,7 +864,7 @@ class MainWindowLogicMixin:
         pattern_groups: dict[str, list[Path]] = {}
         order: list[str] = []
         for path in files:
-            pattern = self._build_pattern_from_path(path)
+            pattern = build_pattern_from_path(path)
             if not pattern:
                 continue
             if pattern not in pattern_groups:
@@ -1211,7 +904,7 @@ class MainWindowLogicMixin:
             self._apply_input_path(supported[0])
             return
 
-        patterns = [self._build_pattern_from_path(path) for path in supported]
+        patterns = [build_pattern_from_path(path) for path in supported]
         if all(patterns) and len(set(patterns)) == 1:
             self._set_input_pattern(patterns[0], supported[0].parent)
             return
@@ -1259,29 +952,6 @@ class MainWindowLogicMixin:
         suffix = path.suffix.lower().lstrip(".")
         return suffix in constants.OIIO_SUPPORTED_EXTENSIONS
 
-    def _build_pattern_from_path(self, path: Path) -> Optional[str]:
-        if not path or not path.is_file():
-            return None
-
-        name_part, ext = path.stem, path.suffix
-        if not name_part or not ext:
-            return None
-
-        import re
-
-        digit_matches = list(re.finditer(r"\d+", name_part))
-        if not digit_matches:
-            return None
-
-        last_match = digit_matches[-1]
-        frame_number = last_match.group(0)
-        padding = len(frame_number)
-        pattern_name = (
-            name_part[: last_match.start()] + f"%0{padding}d" + name_part[last_match.end() :]
-        )
-        pattern_filename = pattern_name + ext
-        return str(path.parent / pattern_filename)
-
     def _set_input_pattern(self, pattern: str, base_dir: Optional[Path] = None) -> None:
         if base_dir is not None:
             self.settings.setValue("last_input_dir", str(base_dir))
@@ -1290,7 +960,7 @@ class MainWindowLogicMixin:
 
     def _apply_input_path(self, path: Path) -> None:
         self.settings.setValue("last_input_dir", str(path.parent))
-        pattern = self._build_pattern_from_path(path)
+        pattern = build_pattern_from_path(path)
         if pattern:
             self._set_input_pattern(pattern, path.parent)
             return
@@ -1723,7 +1393,7 @@ class MainWindowLogicMixin:
         if cs_config is not None:
             config_builder.with_contact_sheet(True, cs_config)
 
-        burnin_config = self._build_burnin_config(include_layer=cs_config is None)
+        burnin_config = build_burnin_config(self, include_layer=cs_config is None)
         if burnin_config is not None:
             config_builder.with_burnin(burnin_config)
 
@@ -1980,9 +1650,7 @@ class MainWindowLogicMixin:
 
     def _save_settings(self) -> None:
         """Save current settings."""
-        for spec in SETTINGS_SCHEMA:
-            if spec.is_available(self):
-                self.settings.setValue(spec.key, spec.getter(self))
+        save_settings(self)
 
     def _on_progress_update(self, current: int, total: int) -> None:
         """Handle progress update from worker.
@@ -2004,11 +1672,7 @@ class MainWindowLogicMixin:
 
     def _load_settings(self) -> None:
         """Load saved settings."""
-        for spec in SETTINGS_SCHEMA:
-            if not spec.is_available(self):
-                continue
-            value = self.settings.value(spec.key, spec.default, type=spec.value_type)
-            spec.setter(self, value)
+        load_settings(self)
 
         if hasattr(self, "aspect_link_btn"):
             self._update_aspect_link_icon()
