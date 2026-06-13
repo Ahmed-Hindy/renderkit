@@ -6,8 +6,9 @@ from renderkit.ui.main_window_settings import load_settings, reset_settings, sav
 class _Settings:
     def __init__(self) -> None:
         self.values = {}
+        self.setValue = self.set_value
 
-    def setValue(self, key, value) -> None:
+    def set_value(self, key, value) -> None:
         self.values[key] = value
 
     def value(self, key, default, type=None):
@@ -20,22 +21,25 @@ class _Settings:
 class _ValueWidget:
     def __init__(self, value) -> None:
         self._value = value
+        self.setValue = self.set_value
 
     def value(self):
         return self._value
 
-    def setValue(self, value) -> None:
+    def set_value(self, value) -> None:
         self._value = value
 
 
 class _CheckWidget:
     def __init__(self, checked: bool) -> None:
         self._checked = checked
+        self.isChecked = self.is_checked
+        self.setChecked = self.set_checked
 
-    def isChecked(self) -> bool:
+    def is_checked(self) -> bool:
         return self._checked
 
-    def setChecked(self, checked: bool) -> None:
+    def set_checked(self, checked: bool) -> None:
         self._checked = checked
 
 
@@ -43,19 +47,23 @@ class _ComboWidget:
     def __init__(self, text: str) -> None:
         self._text = text
         self._index = 1
+        self.currentText = self.current_text
+        self.currentIndex = self.current_index
+        self.setCurrentText = self.set_current_text
+        self.setCurrentIndex = self.set_current_index
 
-    def currentText(self) -> str:
+    def current_text(self) -> str:
         return self._text
 
-    def setCurrentText(self, text: str) -> None:
+    def set_current_text(self, text: str) -> None:
         self._text = text
 
-    def setCurrentIndex(self, index: int) -> None:
+    def set_current_index(self, index: int) -> None:
         self._index = index
         if index == 0:
             self._text = "H.264"
 
-    def currentIndex(self) -> int:
+    def current_index(self) -> int:
         return self._index
 
 

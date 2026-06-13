@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.main_window_preview import build_burnin_config, build_preview_request
 
@@ -17,16 +19,18 @@ class _DummyValue:
 class _DummyCheck:
     def __init__(self, checked: bool) -> None:
         self._checked = checked
+        self.isChecked = self.is_checked
 
-    def isChecked(self) -> bool:
+    def is_checked(self) -> bool:
         return self._checked
 
 
 class _DummyCombo:
     def __init__(self, text: str) -> None:
         self._text = text
+        self.currentText = self.current_text
 
-    def currentText(self) -> str:
+    def current_text(self) -> str:
         return self._text
 
 
@@ -69,7 +73,7 @@ def test_build_preview_request_keeps_single_layer_preview_simple(tmp_path: Path)
     assert request.cs_config is None
     assert request.burnin_config is None
     assert request.burnin_metadata is None
-    assert request.preview_scale == 0.5
+    assert request.preview_scale == pytest.approx(0.5)
 
 
 def test_build_preview_request_uses_contact_sheet_config(tmp_path: Path) -> None:
