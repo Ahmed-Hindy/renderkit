@@ -17,6 +17,7 @@ PLATFORM_DIRS = {
     "darwin": "macos",
 }
 REQUIRED_ENCODERS = ("libx264", "libx265", "libaom-av1")
+FFMPEG_VERIFY_TIMEOUT_SECONDS = 30
 
 
 def _target_name() -> str:
@@ -37,6 +38,7 @@ def _verify_ffmpeg(path: Path) -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=FFMPEG_VERIFY_TIMEOUT_SECONDS,
     )
     first_line = (
         version_result.stdout.splitlines()[0] if version_result.stdout else "ffmpeg version unknown"
@@ -48,6 +50,7 @@ def _verify_ffmpeg(path: Path) -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=FFMPEG_VERIFY_TIMEOUT_SECONDS,
     )
     encoders = encoders_result.stdout
     missing = [encoder for encoder in REQUIRED_ENCODERS if encoder not in encoders]
