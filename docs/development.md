@@ -82,10 +82,23 @@ release-style zip is written to `dist-nuitka/RenderKit-nuitka-<platform>-standal
 Before using the Nuitka zip for a release, test it by extracting the zip on the
 target platform and running a real conversion.
 
-## Bundled FFmpeg (Windows, Hybrid)
+## Bundled FFmpeg
 
-The repo does not commit `vendor/ffmpeg/`. You can build and stage a minimal
-GPL FFmpeg locally (x265 + AV1 only), and CI will also generate it for releases.
+The repo does not commit `vendor/ffmpeg/`. Packaging workflows stage FFmpeg
+into `vendor/ffmpeg/<platform>/` before building artifacts, and the packaged
+app uses that binary ahead of any system `ffmpeg` on `PATH`.
+
+Linux and macOS use the packaging extra's portable `imageio-ffmpeg` binary:
+
+```bash
+uv --native-tls run --extra packaging python scripts/stage_portable_ffmpeg.py
+```
+
+The staging helper verifies the binary starts and includes the required
+`libx264`, `libx265`, and `libaom-av1` encoders.
+
+Windows uses a minimal GPL FFmpeg build from MSYS2 so the required DLLs can be
+copied alongside `ffmpeg.exe`.
 
 ### Prerequisites (MSYS2 UCRT64)
 
@@ -106,9 +119,9 @@ pacman -S --needed \
 ./scripts/build_ffmpeg_windows_msys2.sh
 ```
 
-This script writes `ffmpeg.exe` and required DLLs to `vendor/ffmpeg/`, which the
-PyInstaller spec bundles automatically. To build a different version, set
-`FFMPEG_VERSION` (default: 8.0.1):
+This script writes `ffmpeg.exe` and required DLLs to `vendor/ffmpeg/windows/`,
+which the packaging workflows bundle automatically. To build a different
+version, set `FFMPEG_VERSION` (default: 8.0.1):
 
 ```bash
 FFMPEG_VERSION=8.0.1 ./scripts/build_ffmpeg_windows_msys2.sh

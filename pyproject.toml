@@ -49,6 +49,7 @@ docs = [
 ]
 
 packaging = [
+    "imageio-ffmpeg>=0.6.0,<0.7",
     "nuitka>=4.1.0",
     "ordered-set>=4.1.0",
     "pyinstaller>=6.0.0",

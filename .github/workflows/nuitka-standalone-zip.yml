@@ -1,15 +1,32 @@
 name: Nuitka Standalone Zip
 
 on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  FFMPEG_VERSION: "8.0.1"
+
 jobs:
-  build-windows:
-    name: Build Nuitka Standalone Zip (Windows)
-    runs-on: windows-latest
+  build:
+    name: Build Nuitka Standalone Zip (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
     steps:
       - uses: actions/checkout@v4
 
@@ -24,15 +41,31 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Cache bundled FFmpeg
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libopenexr-dev libilmbase-dev \
+            libegl1 libopengl0 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 \
+            patchelf zip
+
+      - name: Stage portable FFmpeg (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: uv --native-tls run --extra packaging python scripts/stage_portable_ffmpeg.py
+
+      - name: Cache bundled FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
         id: cache-ffmpeg
         uses: actions/cache@v4
         with:
           path: vendor/ffmpeg/windows
-          key: ffmpeg-windows-8.0.1-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh', 'scripts/build_ffmpeg_windows_msys2_bootstrap.sh') }}
+          key: ffmpeg-nuitka-${{ matrix.os }}-${{ env.FFMPEG_VERSION }}-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh', 'scripts/build_ffmpeg_windows_msys2_bootstrap.sh') }}
 
-      - name: Set up MSYS2
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      - name: Set up MSYS2 (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -47,9 +80,11 @@ jobs:
             mingw-w64-ucrt-x86_64-x265
             mingw-w64-ucrt-x86_64-aom
 
-      - name: Build FFmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      - name: Build FFmpeg (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         shell: msys2 {0}
+        env:
+          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
         run: |
           set -euo pipefail
           repo_root="$(cygpath -u "$GITHUB_WORKSPACE")"
@@ -58,10 +93,54 @@ jobs:
 
       - name: Build Nuitka artifact
         shell: pwsh
-        run: .\scripts\build_nuitka.ps1
+        run: ./scripts/build_nuitka.ps1
+
+      - name: Verify Nuitka artifact
+        shell: pwsh
+        run: |
+          $zipPath = "dist-nuitka/RenderKit-nuitka-${{ matrix.platform }}-standalone.zip"
+          if (-not (Test-Path $zipPath)) {
+              throw "Expected Nuitka artifact was not created: $zipPath"
+          }
+          Get-Item $zipPath
+
+      - name: Smoke test bundled FFmpeg
+        shell: pwsh
+        run: |
+          $zipPath = "dist-nuitka/RenderKit-nuitka-${{ matrix.platform }}-standalone.zip"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "renderkit-nuitka-smoke"
+          if (Test-Path $extractRoot) {
+              Remove-Item $extractRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+          Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+
+          $ffmpegName = if ($IsWindows) { "ffmpeg.exe" } else { "ffmpeg" }
+          $escapedFfmpegName = [regex]::Escape($ffmpegName)
+          $ffmpeg = Get-ChildItem -Path $extractRoot -Recurse -File -Filter $ffmpegName |
+              Where-Object { $_.FullName -match "[/\\]ffmpeg[/\\]$escapedFfmpegName$" } |
+              Select-Object -First 1
+          if ($null -eq $ffmpeg) {
+              throw "Bundled FFmpeg was not found in $zipPath"
+          }
+
+          & $ffmpeg.FullName -version
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+          $encoders = & $ffmpeg.FullName -hide_banner -encoders
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+          foreach ($encoder in @("libx264", "libx265", "libaom-av1")) {
+              if (-not ($encoders -match $encoder)) {
+                  throw "Bundled FFmpeg is missing required encoder: $encoder"
+              }
+          }
 
       - name: Upload Nuitka artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RenderKit-nuitka-windows-standalone
-          path: dist-nuitka/RenderKit-nuitka-windows-standalone.zip
+          name: RenderKit-nuitka-${{ matrix.platform }}-standalone
+          path: dist-nuitka/RenderKit-nuitka-${{ matrix.platform }}-standalone.zip

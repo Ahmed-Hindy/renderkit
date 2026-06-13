@@ -68,30 +68,7 @@ jobs:
             libegl1 libopengl0 libxkbcommon-x11-0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0 \
-            ffmpeg
-
-      - name: Detect FFmpeg version (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        id: ffmpeg-version-linux
-        shell: bash
-        run: |
-          version="$(ffmpeg -version | head -n1 | awk '{print $3}')"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache bundled FFmpeg (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        id: cache-ffmpeg-linux
-        uses: actions/cache@v4
-        with:
-          path: vendor/ffmpeg/linux
-          key: ffmpeg-${{ matrix.os }}-${{ runner.image_version }}-${{ steps.ffmpeg-version-linux.outputs.version }}-bundle
-
-      - name: Bundle FFmpeg (Linux)
-        if: matrix.os == 'ubuntu-latest' && steps.cache-ffmpeg-linux.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p vendor/ffmpeg/linux
-          cp "$(command -v ffmpeg)" vendor/ffmpeg/linux/ffmpeg
-          chmod +x vendor/ffmpeg/linux/ffmpeg
+            zip
 
       - name: Cache bundled FFmpeg (Windows)
         if: matrix.os == 'windows-latest'
@@ -128,46 +105,9 @@ jobs:
           cd "$repo_root"
           ./scripts/build_ffmpeg_windows_msys2.sh
 
-      - name: Detect FFmpeg version (macOS)
-        if: matrix.os == 'macos-latest'
-        id: ffmpeg-version-macos
-        shell: bash
-        run: |
-          export HOMEBREW_NO_AUTO_UPDATE=1
-          export HOMEBREW_NO_INSTALL_CLEANUP=1
-          export HOMEBREW_NO_ENV_HINTS=1
-          brew_info="$(brew info --json=v2 ffmpeg 2>/dev/null || true)"
-          version="$(BREW_INFO="$brew_info" python - <<'PY'
-          import json
-          import os
-          data = os.environ.get("BREW_INFO", "").strip()
-          if not data:
-              print("unknown")
-          else:
-              try:
-                  parsed = json.loads(data)
-                  print(parsed["formulae"][0]["versions"]["stable"])
-              except Exception:
-                  print("unknown")
-          PY
-          )"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache bundled FFmpeg (macOS)
-        if: matrix.os == 'macos-latest'
-        id: cache-ffmpeg-macos
-        uses: actions/cache@v4
-        with:
-          path: vendor/ffmpeg/macos
-          key: ffmpeg-${{ matrix.os }}-${{ runner.image_version }}-${{ steps.ffmpeg-version-macos.outputs.version }}-bundle
-
-      - name: Bundle FFmpeg (macOS)
-        if: matrix.os == 'macos-latest' && steps.cache-ffmpeg-macos.outputs.cache-hit != 'true'
-        run: |
-          brew install ffmpeg
-          mkdir -p vendor/ffmpeg/macos
-          cp "$(brew --prefix)/bin/ffmpeg" vendor/ffmpeg/macos/ffmpeg
-          chmod +x vendor/ffmpeg/macos/ffmpeg
+      - name: Stage portable FFmpeg (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: uv --native-tls run --extra packaging python scripts/stage_portable_ffmpeg.py
 
       - name: Install dependencies
         run: uv pip install --system -e . pyinstaller
@@ -180,8 +120,47 @@ jobs:
         shell: bash
         run: |
           out="dist/RenderKit-${{ steps.meta.outputs.os_label }}${{ steps.meta.outputs.artifact_suffix }}.zip"
-          python -m zipfile -c "$out" dist/RenderKit
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            python -m zipfile -c "$out" dist/RenderKit
+          else
+            zip -qry "$out" dist/RenderKit
+          fi
           echo "package_path=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test bundled FFmpeg
+        shell: pwsh
+        run: |
+          $zipPath = "${{ steps.package.outputs.package_path }}"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "renderkit-pyinstaller-smoke"
+          if (Test-Path $extractRoot) {
+              Remove-Item $extractRoot -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
+          Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+
+          $ffmpegName = if ($IsWindows) { "ffmpeg.exe" } else { "ffmpeg" }
+          $escapedFfmpegName = [regex]::Escape($ffmpegName)
+          $ffmpeg = Get-ChildItem -Path $extractRoot -Recurse -File -Filter $ffmpegName |
+              Where-Object { $_.FullName -match "[/\\]ffmpeg[/\\]$escapedFfmpegName$" } |
+              Select-Object -First 1
+          if ($null -eq $ffmpeg) {
+              throw "Bundled FFmpeg was not found in $zipPath"
+          }
+
+          & $ffmpeg.FullName -version
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+          $encoders = & $ffmpeg.FullName -hide_banner -encoders
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+          foreach ($encoder in @("libx264", "libx265", "libaom-av1")) {
+              if (-not ($encoders -match $encoder)) {
+                  throw "Bundled FFmpeg is missing required encoder: $encoder"
+              }
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
