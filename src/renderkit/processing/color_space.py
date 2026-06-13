@@ -148,7 +148,6 @@ def _oiio_colorconvert_buf(
     src_buf,
     from_spaces: list[str],
     to_spaces: list[str],
-    color_config_path: Optional[str] = None,
 ):
     src_buf = _ensure_float_buf(oiio, src_buf)
     spec = src_buf.spec()
@@ -156,7 +155,7 @@ def _oiio_colorconvert_buf(
     if channels not in (3, 4):
         raise ColorSpaceError("Color conversion expects 3 or 4 channel images.")
 
-    resolved_color_config_path = color_config_path or str(get_bundled_ocio_config_path())
+    bundled_color_config_path = str(get_bundled_ocio_config_path())
     space_map = _get_oiio_color_space_map(oiio)
     from_candidates = _resolve_oiio_spaces(from_spaces, space_map)
     to_candidates = _resolve_oiio_spaces(to_spaces, space_map)
@@ -175,7 +174,7 @@ def _oiio_colorconvert_buf(
                 True,
                 "",
                 "",
-                resolved_color_config_path,
+                bundled_color_config_path,
             ):
                 return dst_buf
             err = dst_buf.geterror()
@@ -538,7 +537,6 @@ class OCIOColorSpaceStrategy:
                 buf,
                 [resolved_input_space],
                 [resolved_output_space],
-                color_config_path=str(self.config_path),
             )
         except Exception as e:
             self._log_ocio_failure_diagnostics(
