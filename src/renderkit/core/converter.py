@@ -11,7 +11,6 @@ from typing import Any, Optional
 from renderkit.core.config import ContactSheetConfig, ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import (
-    ColorSpaceError,
     ConversionCancelledError,
     ImageReadError,
     SequenceDetectionError,
@@ -23,6 +22,7 @@ from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.contact_sheet import ContactSheetGenerator
+from renderkit.processing.frame_pipeline import FramePreparationOptions, prepare_frame_buffer
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
 
@@ -606,63 +606,26 @@ class SequenceConverter:
         if self.sequence is None:
             raise RuntimeError("Sequence must be detected before preparing frames.")
         frame_path = self.sequence.get_file_path(frame_num)
-
-        if contact_sheet_generator:
-            try:
-                buf = contact_sheet_generator.composite_layers(frame_path)
-            except ImageReadError as e:
-                raise ImageReadError(
-                    f"Failed to build contact sheet for frame {frame_num}: {e}"
-                ) from e
-            except (RuntimeError, TypeError, ValueError) as e:
-                raise VideoEncodingError(
-                    f"Failed to build contact sheet for frame {frame_num}: {e}"
-                ) from e
-            spec = buf.spec()
-            width, height = spec.width, spec.height
-        else:
-            try:
-                buf = reader.read_imagebuf(
-                    frame_path,
-                    layer=self.config.layer,
-                    layer_map=self._layer_map,
-                )
-            except ImageReadError as e:
-                raise ImageReadError(f"Failed to read frame {frame_num}: {e}") from e
-
-        try:
-            buf = color_converter.convert_buf(buf, input_space=input_space)
-        except ColorSpaceError as e:
-            raise ColorSpaceError(
-                f"Color space conversion failed for frame {frame_num}: {e}"
-            ) from e
-
-        if output_width != width or output_height != height:
-            try:
-                buf = scaler.scale_buf(buf, output_width, output_height)
-            except (RuntimeError, TypeError, ValueError) as e:
-                raise VideoEncodingError(f"Failed to scale frame {frame_num}: {e}") from e
-
-        if self.config.burnin_config and burnin_processor:
-            try:
-                metadata = {
-                    "frame": frame_num,
-                    "file": frame_path.name,
-                    "fps": self.config.fps,
-                    "layer": self.config.layer or "RGBA",
-                    "colorspace": input_space or "Unknown",
-                }
-                buf = burnin_processor.apply_burnins(
-                    buf,
-                    metadata,
-                    self.config.burnin_config,
-                )
-            except (RuntimeError, TypeError, ValueError) as e:
-                raise VideoEncodingError(
-                    f"Failed to apply burn-ins for frame {frame_num}: {e}"
-                ) from e
-
-        return buf
+        return prepare_frame_buffer(
+            FramePreparationOptions(
+                frame_path=frame_path,
+                frame_num=frame_num,
+                output_width=output_width,
+                output_height=output_height,
+                source_width=width,
+                source_height=height,
+                scaler=scaler,
+                input_space=input_space,
+                reader=reader,
+                color_converter=color_converter,
+                burnin_processor=burnin_processor,
+                burnin_config=self.config.burnin_config,
+                contact_sheet_generator=contact_sheet_generator,
+                layer=self.config.layer,
+                layer_map=self._layer_map,
+                fps=self.config.fps,
+            )
+        ).buf
 
     def _build_frame_range(
         self, frame_numbers: list[int]

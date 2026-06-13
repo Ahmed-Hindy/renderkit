@@ -1,11 +1,22 @@
 """Tests for shared UI widget helpers."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from renderkit.core.config import BurnInConfig, BurnInElement
 from renderkit.processing.color_space import ColorSpacePreset
-from renderkit.ui.widgets import _prepare_buf_for_preview_display, _scaled_burnin_config_for_preview
+from renderkit.processing.frame_pipeline import (
+    FramePreparationOptions,
+    PreparedFrameBuffer,
+    prepare_frame_buffer,
+)
+from renderkit.ui.widgets import (
+    PreviewWorker,
+    _prepare_buf_for_preview_display,
+    _scaled_burnin_config_for_preview,
+)
 
 try:
     import OpenImageIO as oiio
@@ -79,6 +90,92 @@ def test_prepare_buf_for_preview_display_expands_data_channels(channels: int) ->
     np.testing.assert_allclose(result_pixels[:, :, 0], pixels[:, :, 0])
     np.testing.assert_allclose(result_pixels[:, :, 1], pixels[:, :, 0])
     np.testing.assert_allclose(result_pixels[:, :, 2], pixels[:, :, 0])
+
+
+def test_prepare_frame_buffer_expands_data_channels_without_color_conversion() -> None:
+    """Shared frame prep should keep data-channel buffers preview/render safe."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    pixels = np.array(
+        [
+            [[0.1, 0.8], [0.2, 0.7]],
+            [[0.3, 0.6], [0.4, 0.5]],
+        ],
+        dtype=np.float32,
+    )
+    spec = oiio.ImageSpec(2, 2, 2, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), pixels)
+
+    class Reader:
+        def read_imagebuf(self, path, layer=None, layer_map=None):
+            return buf
+
+    class FailingColorConverter:
+        def convert_buf(self, buf, input_space=None):
+            raise AssertionError("data-channel buffers should not be color converted")
+
+    prepared = prepare_frame_buffer(
+        FramePreparationOptions(
+            frame_path=Path("render.0001.exr"),
+            frame_num=1,
+            output_width=2,
+            output_height=2,
+            source_width=2,
+            source_height=2,
+            scaler=object(),
+            input_space="rendering",
+            color_converter=FailingColorConverter(),
+            reader=Reader(),
+        )
+    )
+
+    result_spec = prepared.buf.spec()
+    assert result_spec.nchannels == 3
+    result_pixels = prepared.buf.get_pixels(oiio.FLOAT)
+    np.testing.assert_allclose(result_pixels[:, :, 0], pixels[:, :, 0])
+    np.testing.assert_allclose(result_pixels[:, :, 1], pixels[:, :, 0])
+    np.testing.assert_allclose(result_pixels[:, :, 2], pixels[:, :, 0])
+
+
+def test_preview_worker_delegates_imagebuf_processing(monkeypatch, qapp) -> None:
+    """Preview worker should keep shared processing separate from Qt image creation."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    spec = oiio.ImageSpec(1, 1, 3, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), np.ones((1, 1, 3), dtype=np.float32))
+
+    calls = []
+
+    def fake_prepare_frame_buffer(options):
+        calls.append(options)
+        return PreparedFrameBuffer(buf=buf, applied_scale=0.5)
+
+    monkeypatch.setattr("renderkit.ui.widgets.prepare_frame_buffer", fake_prepare_frame_buffer)
+
+    emitted = []
+    worker = PreviewWorker(
+        file_path="render.0001.exr",
+        color_space=ColorSpacePreset.LINEAR_TO_SRGB,
+        input_space="rendering",
+        layer="beauty",
+        preview_scale=0.5,
+    )
+    worker.preview_ready.connect(emitted.append)
+
+    worker.run()
+
+    assert emitted
+    assert calls
+    call = calls[0]
+    assert call.frame_path == "render.0001.exr"
+    assert call.layer == "beauty"
+    assert call.input_space == "rendering"
+    assert call.output_scale == pytest.approx(0.5)
+    assert call.contact_sheet_config is None
 
 
 def test_no_wheel_combo_popup_tracks_hover(qtbot, qapp) -> None:
