@@ -408,7 +408,6 @@ calls or stage renamed MP4s in `--mp4-dir`.
 
 ## Environment Variables
 
-- `OCIO`: Path to your system OCIO config when using custom/ACES input spaces.
 - `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary; overrides the bundled or PATH ffmpeg.
 - `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging. Use `0` to disable, `1` for a temp log, or a full file path.
 - `RENDERKIT_PROFILE`: Enable cProfile output for UI/CLI when set to `1`, `true`, or `yes`.
@@ -421,6 +420,7 @@ calls or stage renamed MP4s in `--mp4-dir`.
 
 - FPS auto-detection logs a warning when metadata probing is unavailable or image metadata cannot
   be read, then falls back to the configured/default FPS behavior.
+- OCIO conversions use RenderKit's bundled OCIO config.
 - OCIO conversion failures include diagnostics in the RenderKit log, including role and color-space
   resolution details, available color-space samples, and bundled LUT/config checks where possible.
 

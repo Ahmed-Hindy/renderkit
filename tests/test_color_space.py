@@ -1,6 +1,7 @@
 """Tests for color space conversion."""
 
 import logging
+import os
 from unittest.mock import Mock
 
 import numpy as np
@@ -12,6 +13,7 @@ from renderkit.processing.color_space import (
     ColorSpacePreset,
     NoConversionStrategy,
     OCIOColorSpaceStrategy,
+    get_bundled_ocio_config_path,
 )
 
 try:
@@ -56,6 +58,20 @@ class TestColorSpaceConverter:
         assert srgb_image.dtype == np.float32
         assert np.all(srgb_image >= 0.0)
         assert np.all(srgb_image <= 1.0)
+
+    def test_linear_to_srgb_uses_bundled_config_when_ocio_env_is_invalid(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OIIO color conversion ignores an invalid OCIO environment variable."""
+        monkeypatch.setenv("OCIO", "C:/does/not/exist/config.ocio")
+        converter = ColorSpaceConverter(ColorSpacePreset.LINEAR_TO_SRGB)
+
+        linear_image = np.array([[[0.18, 0.18, 0.18]]], dtype=np.float32)
+        result_buf = converter.convert_buf(_make_buf(linear_image))
+        result = _buf_to_array(result_buf)
+
+        assert result.shape == linear_image.shape
+        assert os.environ["OCIO"] == "C:/does/not/exist/config.ocio"
 
     def test_no_conversion(self) -> None:
         """Test no conversion strategy."""
@@ -193,7 +209,7 @@ def _has_oiio_colorspace_candidates(candidates: list[str]) -> bool:
         return False
 
     try:
-        config = oiio.ColorConfig()
+        config = oiio.ColorConfig(str(get_bundled_ocio_config_path()))
         names = config.getColorSpaceNames()
     except Exception:
         return False
