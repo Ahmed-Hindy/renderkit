@@ -420,8 +420,7 @@ calls or stage renamed MP4s in `--mp4-dir`.
 
 - FPS auto-detection logs a warning when metadata probing is unavailable or image metadata cannot
   be read, then falls back to the configured/default FPS behavior.
-- OCIO conversions use RenderKit's bundled OCIO config. The `OCIO` environment variable is not
-  read or modified by RenderKit.
+- OCIO conversions use RenderKit's bundled OCIO config.
 - OCIO conversion failures include diagnostics in the RenderKit log, including role and color-space
   resolution details, available color-space samples, and bundled LUT/config checks where possible.
 
