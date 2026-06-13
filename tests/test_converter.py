@@ -274,6 +274,95 @@ class TestSequenceConverterFailures:
                 contact_sheet_generator=FailingContactSheetGenerator(),
             )
 
+    def test_process_frames_raises_encoder_finalization_failure(self) -> None:
+        """Close-time encoder failures should fail an otherwise successful conversion."""
+
+        class FailingCloseEncoder:
+            def write_frame(self, _buf) -> None:
+                # This test isolates encoder finalization; frame writing is stubbed out.
+                pass
+
+            def close(self) -> None:
+                raise VideoEncodingError("final mp4 flush failed")
+
+        converter = self._converter()
+        converter.encoder = FailingCloseEncoder()
+        converter._process_single_frame_buf = lambda *args, **kwargs: _FakeBuf()
+
+        with pytest.raises(VideoEncodingError, match="final mp4 flush failed"):
+            converter._process_frames(
+                frame_numbers=[1],
+                output_width=100,
+                output_height=100,
+                width=100,
+                height=100,
+                input_space=None,
+                file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+                progress_callback=None,
+                show_progress=False,
+            )
+
+    def test_process_frames_preserves_frame_failure_over_cleanup_failure(self) -> None:
+        """Cleanup failures should not hide the frame-processing error already in flight."""
+
+        class FailingCloseEncoder:
+            def close(self) -> None:
+                raise VideoEncodingError("final mp4 flush failed")
+
+        converter = self._converter()
+        converter.encoder = FailingCloseEncoder()
+
+        def raise_frame_failure(*args, **kwargs):
+            raise VideoEncodingError("frame preparation failed")
+
+        converter._process_single_frame_buf = raise_frame_failure
+
+        with pytest.raises(VideoEncodingError, match="frame preparation failed"):
+            converter._process_frames(
+                frame_numbers=[1],
+                output_width=100,
+                output_height=100,
+                width=100,
+                height=100,
+                input_space=None,
+                file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+                progress_callback=None,
+                show_progress=False,
+            )
+
+    def test_process_frames_finalizes_after_successful_frame_writes(self) -> None:
+        """Successful frame writes should still reach encoder finalization."""
+
+        class ClosingEncoder:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def write_frame(self, _buf) -> None:
+                # This test only asserts finalization after successful frame processing.
+                pass
+
+            def close(self) -> None:
+                self.closed = True
+
+        encoder = ClosingEncoder()
+        converter = self._converter()
+        converter.encoder = encoder
+        converter._process_single_frame_buf = lambda *args, **kwargs: _FakeBuf()
+
+        converter._process_frames(
+            frame_numbers=[1],
+            output_width=100,
+            output_height=100,
+            width=100,
+            height=100,
+            input_space=None,
+            file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+            progress_callback=None,
+            show_progress=False,
+        )
+
+        assert encoder.closed
+
 
 class TestSequenceConverterProgress:
     """Tests for CLI progress-bar behavior."""
