@@ -10,9 +10,13 @@ import OpenImageIO as oiio
 
 from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
 from renderkit.exceptions import RenderKitError
-from renderkit.io.image_reader import ImageReaderFactory
-from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
+from renderkit.processing.frame_pipeline import (
+    FramePreparationOptions,
+    expand_data_channels_to_rgb,
+    prepare_frame_buffer,
+)
+from renderkit.processing.scaler import ImageScaler
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.qt_compat import (
     QApplication,
@@ -84,10 +88,7 @@ def _prepare_buf_for_preview_display(
             "Skipping color conversion for non-RGB preview buffer. channels=%s",
             spec.nchannels,
         )
-        display_buf = oiio.ImageBufAlgo.channels(buf, (0, 0, 0), ("R", "G", "B"))
-        if display_buf.has_error:
-            raise ValueError(f"Failed to prepare data-channel preview: {display_buf.geterror()}")
-        return display_buf
+        return expand_data_channels_to_rgb(buf)
 
     converter = ColorSpaceConverter(color_space)
     return converter.convert_buf(buf, input_space=input_space)
@@ -134,54 +135,38 @@ class PreviewWorker(QThread):
     def run(self) -> None:
         """Load and process preview image."""
         try:
-            if self.cs_config:
-                from renderkit.processing.contact_sheet import ContactSheetGenerator
+            from renderkit.processing.burnin import BurnInProcessor
 
-                generator = ContactSheetGenerator(self.cs_config)
-                buf = generator.composite_layers(self.file_path)
-            else:
-                reader = ImageReaderFactory.create_reader(
-                    self.file_path, image_cache=get_shared_image_cache()
-                )
-                buf = reader.read_imagebuf(self.file_path, layer=self.layer)
-
-            applied_preview_scale = 1.0
-
-            # Apply preview scale
-            if self.preview_scale < 1.0:
-                spec = buf.spec()
-                h, w = spec.height, spec.width
-                new_w = max(1, int(w * self.preview_scale))
-                new_h = max(1, int(h * self.preview_scale))
-                from renderkit.processing.scaler import ImageScaler
-
-                buf = ImageScaler.scale_buf(buf, width=new_w, height=new_h)
-                scaled_spec = buf.spec()
-                applied_preview_scale = min(
-                    scaled_spec.width / float(w),
-                    scaled_spec.height / float(h),
-                )
-
-            buf = _prepare_buf_for_preview_display(
-                buf,
-                self.color_space,
-                self.input_space,
+            burnin_processor = (
+                BurnInProcessor()
+                if self.burnin_config is not None and self.burnin_metadata is not None
+                else None
             )
-
-            if self.burnin_config and self.burnin_metadata:
-                from renderkit.processing.burnin import BurnInProcessor
-
-                processor = BurnInProcessor()
-                burnin_config = _scaled_burnin_config_for_preview(
-                    self.burnin_config,
-                    applied_preview_scale,
-                    buf.spec().width,
+            prepared = prepare_frame_buffer(
+                FramePreparationOptions(
+                    frame_path=self.file_path,
+                    frame_num=0,
+                    output_width=None,
+                    output_height=None,
+                    source_width=None,
+                    source_height=None,
+                    scaler=ImageScaler(),
+                    input_space=self.input_space,
+                    color_converter=ColorSpaceConverter(self.color_space),
+                    layer=self.layer,
+                    burnin_processor=burnin_processor,
+                    burnin_config=self.burnin_config if self.burnin_metadata else None,
+                    burnin_metadata=self.burnin_metadata,
+                    burnin_config_adapter=_scaled_burnin_config_for_preview,
+                    contact_sheet_config=self.cs_config,
+                    output_scale=self.preview_scale,
                 )
-                buf = processor.apply_burnins(
-                    buf,
-                    self.burnin_metadata,
-                    burnin_config,
-                )
+            )
+            buf = _prepare_buf_for_preview_display(
+                prepared.buf,
+                ColorSpacePreset.NO_CONVERSION,
+                input_space=None,
+            )
 
             image = buf.get_pixels(oiio.FLOAT)
             if image is None or image.size == 0:
