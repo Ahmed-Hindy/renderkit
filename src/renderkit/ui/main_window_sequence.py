@@ -2,9 +2,67 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional
+
+
+def _trailing_digit_span(text: str) -> Optional[tuple[int, int]]:
+    end = len(text)
+    start = end
+    while start > 0 and text[start - 1].isdigit():
+        start -= 1
+    if start == end:
+        return None
+    return start, end
+
+
+def _last_digit_run_span(text: str) -> Optional[tuple[int, int]]:
+    end = len(text)
+    while end > 0 and not text[end - 1].isdigit():
+        end -= 1
+    if end == 0:
+        return None
+
+    start = end
+    while start > 0 and text[start - 1].isdigit():
+        start -= 1
+    return start, end
+
+
+def _remove_percent_frame_tokens(text: str) -> str:
+    result = []
+    index = 0
+    while index < len(text):
+        if text[index] != "%":
+            result.append(text[index])
+            index += 1
+            continue
+
+        token_end = index + 1
+        while token_end < len(text) and text[token_end].isdigit():
+            token_end += 1
+        if token_end < len(text) and text[token_end] == "d":
+            index = token_end + 1
+            continue
+
+        result.append(text[index])
+        index += 1
+    return "".join(result)
+
+
+def _remove_houdini_frame_tokens(text: str) -> str:
+    result = []
+    index = 0
+    while index < len(text):
+        if text.startswith("$F", index):
+            index += 2
+            while index < len(text) and text[index].isdigit():
+                index += 1
+            continue
+
+        result.append(text[index])
+        index += 1
+    return "".join(result)
 
 
 def pattern_has_frame_token(filename: str) -> bool:
@@ -38,11 +96,11 @@ def extract_frame_number(path: Path) -> Optional[int]:
     if not stem:
         return None
 
-    match = re.search(r"(\d+)$", stem)
-    if not match:
+    span = _trailing_digit_span(stem)
+    if span is None:
         return None
     try:
-        return int(match.group(1))
+        return int(stem[span[0] : span[1]])
     except ValueError:
         return None
 
@@ -54,10 +112,12 @@ def derive_sequence_stem(pattern: str) -> str:
     name = Path(pattern).name
     stem = Path(name).stem
 
-    stem = re.sub(r"%\d*d", "", stem)
-    stem = re.sub(r"\$F\d*", "", stem)
-    stem = re.sub(r"#+", "", stem)
-    stem = re.sub(r"\d+$", "", stem)
+    stem = _remove_percent_frame_tokens(stem)
+    stem = _remove_houdini_frame_tokens(stem)
+    stem = stem.replace("#", "")
+    span = _trailing_digit_span(stem)
+    if span is not None:
+        stem = stem[: span[0]]
     return stem.rstrip("._- ").strip()
 
 
@@ -70,13 +130,12 @@ def build_pattern_from_path(path: Path) -> Optional[str]:
     if not name_part or not ext:
         return None
 
-    digit_matches = list(re.finditer(r"\d+", name_part))
-    if not digit_matches:
+    span = _last_digit_run_span(name_part)
+    if span is None:
         return None
 
-    last_match = digit_matches[-1]
-    frame_number = last_match.group(0)
+    frame_number = name_part[span[0] : span[1]]
     padding = len(frame_number)
-    pattern_name = name_part[: last_match.start()] + f"%0{padding}d" + name_part[last_match.end() :]
+    pattern_name = name_part[: span[0]] + f"%0{padding}d" + name_part[span[1] :]
     pattern_filename = pattern_name + ext
     return str(path.parent / pattern_filename)
