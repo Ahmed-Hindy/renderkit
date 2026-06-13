@@ -14,6 +14,7 @@ from renderkit.core.config import (
     BurnInConfig,
     BurnInElement,
     ContactSheetConfig,
+    ConversionConfig,
     ConversionConfigBuilder,
 )
 from renderkit.exceptions import RenderKitError
@@ -1615,6 +1616,119 @@ class MainWindowLogicMixin:
         else:
             self._ocio_role_display_map = {}
 
+    def _selected_codec_id(self) -> str:
+        """Return the codec id selected in the UI."""
+        codec_index = self.codec_combo.currentIndex()
+        return self._codec_map.get(codec_index, "libx264")
+
+    def _resolve_encoder_for_conversion(self, codec_id: str) -> Optional[str]:
+        """Validate and resolve the codec that should be used for conversion."""
+        encoder_probe = get_encoder_probe_result()
+        available_encoders = set(encoder_probe.encoders)
+        resolved_codec, fallback_warning = select_available_encoder(codec_id, available_encoders)
+
+        if encoder_probe.failed:
+            QMessageBox.warning(
+                self,
+                "Encoder Probe Failed",
+                (
+                    "Unable to validate FFmpeg encoder availability.\n\n"
+                    f"{encoder_probe.error}\n\n"
+                    f"RenderKit will attempt to use '{resolved_codec}'."
+                ),
+            )
+            logger.warning(
+                "Skipping FFmpeg encoder availability validation because probing failed: %s. "
+                "Attempting '%s'.",
+                encoder_probe.error,
+                resolved_codec,
+            )
+        elif resolved_codec not in encoder_probe.encoders:
+            available = ", ".join(sorted(encoder_probe.encoders)) or "none"
+            QMessageBox.critical(
+                self,
+                "Encoder Unavailable",
+                (
+                    f"Requested encoder '{codec_id}' is not available.\n\n"
+                    f"Available encoders: {available}"
+                ),
+            )
+            return None
+
+        if fallback_warning:
+            QMessageBox.warning(
+                self,
+                "Encoder Unavailable",
+                f"{fallback_warning}\n\nUsing '{resolved_codec}' for this conversion.",
+            )
+            logger.warning(fallback_warning)
+            for index, mapped_codec in self._codec_map.items():
+                if mapped_codec == resolved_codec:
+                    self.codec_combo.setCurrentIndex(index)
+                    break
+
+        return resolved_codec
+
+    def _build_contact_sheet_config_for_conversion(self) -> Optional[ContactSheetConfig]:
+        """Build contact-sheet settings for conversion from the current UI state."""
+        if not self.cs_enable_check.isChecked():
+            return None
+
+        layer_width = None
+        layer_height = None
+        if not self.keep_resolution_check.isChecked():
+            layer_width = self.width_spin.value()
+            layer_height = self.height_spin.value()
+
+        show_labels = self.burnin_enable_check.isChecked() and self.burnin_layer_check.isChecked()
+        return ContactSheetConfig(
+            columns=self.cs_columns_spin.value(),
+            padding=self.cs_padding_spin.value(),
+            show_labels=show_labels,
+            font_size=self.burnin_font_size_spin.value(),
+            layer_width=layer_width,
+            layer_height=layer_height,
+        )
+
+    def _build_conversion_config_from_ui(
+        self, output_path: Path, resolved_codec: str
+    ) -> ConversionConfig:
+        """Build conversion configuration from widget state without starting work."""
+        config_builder = (
+            ConversionConfigBuilder()
+            .with_input_pattern(self.input_pattern_combo.currentText().strip())
+            .with_output_path(str(output_path))
+            .with_fps(float(self.fps_spin.value()))
+            .with_quality(self.quality_slider.value())
+            .with_layer(self.layer_combo.currentText())
+            .with_codec(resolved_codec)
+        )
+        if hasattr(self, "prefetch_workers_spin"):
+            config_builder.with_prefetch_workers(self.prefetch_workers_spin.value())
+
+        preset, input_space = self._get_current_color_space_config()
+        config_builder.with_color_space_preset(preset)
+        if input_space:
+            config_builder.with_explicit_input_color_space(input_space)
+
+        if not self.keep_resolution_check.isChecked():
+            config_builder.with_resolution(self.width_spin.value(), self.height_spin.value())
+
+        start_frame = self.start_frame_spin.value()
+        end_frame = self.end_frame_spin.value()
+        if start_frame > 0 and end_frame > 0 and end_frame >= start_frame:
+            config_builder.with_frame_range(start_frame, end_frame)
+
+        cs_config = self._build_contact_sheet_config_for_conversion()
+        if cs_config is not None:
+            config_builder.with_contact_sheet(True, cs_config)
+
+        burnin_config = self._build_burnin_config(include_layer=cs_config is None)
+        if burnin_config is not None:
+            config_builder.with_burnin(burnin_config)
+
+        return config_builder.build()
+
     def _start_conversion(self) -> None:
         """Start the conversion process."""
         # Validate inputs
@@ -1641,110 +1755,10 @@ class MainWindowLogicMixin:
 
         # Build configuration
         try:
-            config_builder = (
-                ConversionConfigBuilder()
-                .with_input_pattern(self.input_pattern_combo.currentText().strip())
-                .with_output_path(str(output_path))
-                .with_fps(float(self.fps_spin.value()))
-                .with_quality(self.quality_slider.value())
-                .with_layer(self.layer_combo.currentText())
-            )
-            if hasattr(self, "prefetch_workers_spin"):
-                config_builder.with_prefetch_workers(self.prefetch_workers_spin.value())
-
-            # Color space
-            preset, input_space = self._get_current_color_space_config()
-
-            config_builder.with_color_space_preset(preset)
-            if input_space:
-                config_builder.with_explicit_input_color_space(input_space)
-
-            # Resolution
-            if not self.keep_resolution_check.isChecked():
-                config_builder.with_resolution(self.width_spin.value(), self.height_spin.value())
-
-            # Codec
-            codec_index = self.codec_combo.currentIndex()
-            codec_id = self._codec_map.get(codec_index, "libx264")
-            encoder_probe = get_encoder_probe_result()
-            available_encoders = set(encoder_probe.encoders)
-            resolved_codec, fallback_warning = select_available_encoder(
-                codec_id, available_encoders
-            )
-            if encoder_probe.failed:
-                QMessageBox.warning(
-                    self,
-                    "Encoder Probe Failed",
-                    (
-                        "Unable to validate FFmpeg encoder availability.\n\n"
-                        f"{encoder_probe.error}\n\n"
-                        f"RenderKit will attempt to use '{resolved_codec}'."
-                    ),
-                )
-                logger.warning(
-                    "Skipping FFmpeg encoder availability validation because probing failed: %s. "
-                    "Attempting '%s'.",
-                    encoder_probe.error,
-                    resolved_codec,
-                )
-            elif resolved_codec not in encoder_probe.encoders:
-                available = ", ".join(sorted(encoder_probe.encoders)) or "none"
-                QMessageBox.critical(
-                    self,
-                    "Encoder Unavailable",
-                    (
-                        f"Requested encoder '{codec_id}' is not available.\n\n"
-                        f"Available encoders: {available}"
-                    ),
-                )
+            resolved_codec = self._resolve_encoder_for_conversion(self._selected_codec_id())
+            if resolved_codec is None:
                 return
-            if fallback_warning:
-                QMessageBox.warning(
-                    self,
-                    "Encoder Unavailable",
-                    f"{fallback_warning}\n\nUsing '{resolved_codec}' for this conversion.",
-                )
-                logger.warning(fallback_warning)
-                for idx, mapped_codec in self._codec_map.items():
-                    if mapped_codec == resolved_codec:
-                        self.codec_combo.setCurrentIndex(idx)
-                        break
-            config_builder.with_codec(resolved_codec)
-
-            # Frame range
-            start_frame = self.start_frame_spin.value()
-            end_frame = self.end_frame_spin.value()
-            if start_frame > 0 and end_frame > 0 and end_frame >= start_frame:
-                config_builder.with_frame_range(start_frame, end_frame)
-
-            # Contact Sheet Mode
-            if self.cs_enable_check.isChecked():
-                layer_width = None
-                layer_height = None
-                if not self.keep_resolution_check.isChecked():
-                    layer_width = self.width_spin.value()
-                    layer_height = self.height_spin.value()
-
-                show_labels = (
-                    self.burnin_enable_check.isChecked() and self.burnin_layer_check.isChecked()
-                )
-                cs_config = ContactSheetConfig(
-                    columns=self.cs_columns_spin.value(),
-                    padding=self.cs_padding_spin.value(),
-                    show_labels=show_labels,
-                    font_size=self.burnin_font_size_spin.value(),
-                    layer_width=layer_width,
-                    layer_height=layer_height,
-                )
-                config_builder.with_contact_sheet(True, cs_config)
-
-            burnin_config = self._build_burnin_config(
-                include_layer=not self.cs_enable_check.isChecked()
-            )
-            if burnin_config is not None:
-                config_builder.with_burnin(burnin_config)
-
-            config = config_builder.build()
+            config = self._build_conversion_config_from_ui(output_path, resolved_codec)
 
         except (RenderKitError, OSError, RuntimeError, ValueError) as e:
             QMessageBox.critical(self, "Configuration Error", f"Error building configuration:\n{e}")

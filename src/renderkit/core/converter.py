@@ -3,11 +3,12 @@ import sys
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Optional
 
-from renderkit.core.config import ConversionConfig
+from renderkit.core.config import ContactSheetConfig, ConversionConfig
 from renderkit.core.sequence import FrameSequence, SequenceDetector
 from renderkit.exceptions import (
     ColorSpaceError,
@@ -26,6 +27,17 @@ from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _FrameProcessingPlan:
+    """Resolved frame range and lookup data for conversion."""
+
+    all_frames: tuple[int, ...]
+    existing_frames: frozenset[int]
+    start_frame: int
+    end_frame: int
+    total_frames: int
 
 
 class _FramePrefetcher:
@@ -305,23 +317,12 @@ class SequenceConverter:
         logger.debug(f"Processing {len(frame_numbers)} frames...")
         if self.sequence is None:
             raise RuntimeError("Sequence must be detected before processing frames.")
-        sequence = self.sequence
 
-        all_frames, existing_frames, start_frame, end_frame, total_frames = self._build_frame_range(
-            frame_numbers
-        )
-
-        missing_count = total_frames - len(existing_frames)
-        if missing_count > 0:
-            logger.warning(
-                f"Detected {missing_count} missing frames in range {start_frame}-{end_frame}. "
-                f"Will use freeze-frame (hold last valid frame) for missing frames."
-            )
+        plan = self._build_frame_processing_plan(frame_numbers)
+        self._log_missing_frame_policy(plan)
 
         scaler = ImageScaler()
         success_count = 0
-        last_valid_buf: Any = None
-        prefetch_workers = max(1, self.config.prefetch_workers)
         contact_sheet_config = (
             self.config.contact_sheet_config if self.config.contact_sheet_mode else None
         )
@@ -333,7 +334,7 @@ class SequenceConverter:
 
         def _tick_progress(current_index: int) -> None:
             if progress_callback:
-                if progress_callback(current_index, total_frames) is False:
+                if progress_callback(current_index, plan.total_frames) is False:
                     logger.info("Conversion cancelled by progress callback")
                     raise ConversionCancelledError("Conversion cancelled by user")
             elif pbar is not None:
@@ -343,94 +344,37 @@ class SequenceConverter:
             if progress_callback is None and show_progress:
                 from tqdm import tqdm
 
-                pbar = tqdm(total=total_frames, desc="Converting frames")
+                pbar = tqdm(total=plan.total_frames, desc="Converting frames")
 
-            if prefetch_workers > 1:
-                thread_state = threading.local()
-                layers_for_cs = file_info.layers if contact_sheet_enabled else None
-
-                def _get_thread_resources(frame_path: Path) -> Any:
-                    reader = getattr(thread_state, "reader", None)
-                    if reader is None:
-                        reader = ImageReaderFactory.create_reader(
-                            frame_path, image_cache=get_shared_image_cache()
-                        )
-                        thread_state.reader = reader
-
-                    if not hasattr(thread_state, "color_converter"):
-                        thread_state.color_converter = ColorSpaceConverter(
-                            self.config.color_space_preset
-                        )
-
-                    if self.config.burnin_config and not hasattr(thread_state, "burnin_processor"):
-                        thread_state.burnin_processor = BurnInProcessor()
-
-                    if contact_sheet_enabled and not hasattr(
-                        thread_state, "contact_sheet_generator"
-                    ):
-                        assert contact_sheet_config is not None
-                        thread_state.contact_sheet_generator = ContactSheetGenerator(
-                            contact_sheet_config,
-                            reader=reader,
-                            layers=layers_for_cs,
-                            layer_map=self._layer_map,
-                        )
-
-                    return thread_state
-
-                def _prefetch_frame(frame_num: int) -> Any:
-                    frame_path = sequence.get_file_path(frame_num)
-                    resources = _get_thread_resources(frame_path)
-                    return self._prepare_frame_buf(
-                        frame_num,
-                        output_width,
-                        output_height,
-                        width,
-                        height,
-                        scaler,
-                        input_space,
-                        resources.reader,
-                        resources.color_converter,
-                        getattr(resources, "burnin_processor", None),
-                        contact_sheet_generator=getattr(resources, "contact_sheet_generator", None),
-                    )
-
-                with _FramePrefetcher(
-                    _prefetch_frame, frame_numbers, prefetch_workers
-                ) as prefetcher:
-                    for i, frame_num in enumerate(all_frames):
-                        _tick_progress(i)
-                        if frame_num in existing_frames:
-                            future = prefetcher.get_future(frame_num)
-                            result = future.result()
-                            last_valid_buf = result
-                            self._write_frame_buf(frame_num, result)
-                            success_count += 1
-                        else:
-                            if self._write_freeze_frame(frame_num, last_valid_buf, i):
-                                success_count += 1
+            if self._should_prefetch_frames():
+                success_count = self._process_prefetched_frame_plan(
+                    plan,
+                    frame_numbers,
+                    output_width,
+                    output_height,
+                    width,
+                    height,
+                    scaler,
+                    input_space,
+                    file_info,
+                    contact_sheet_config if contact_sheet_enabled else None,
+                    _tick_progress,
+                )
             else:
-                for i, frame_num in enumerate(all_frames):
-                    _tick_progress(i)
-                    if frame_num in existing_frames:
-                        result = self._process_single_frame_buf(
-                            frame_num,
-                            output_width,
-                            output_height,
-                            width,
-                            height,
-                            scaler,
-                            input_space,
-                            self.contact_sheet_generator if contact_sheet_enabled else None,
-                        )
-                        last_valid_buf = result
-                        success_count += 1
-                    else:
-                        if self._write_freeze_frame(frame_num, last_valid_buf, i):
-                            success_count += 1
+                success_count = self._process_sequential_frame_plan(
+                    plan,
+                    output_width,
+                    output_height,
+                    width,
+                    height,
+                    scaler,
+                    input_space,
+                    self.contact_sheet_generator if contact_sheet_enabled else None,
+                    _tick_progress,
+                )
 
             if progress_callback:
-                progress_callback(total_frames, total_frames)
+                progress_callback(plan.total_frames, plan.total_frames)
 
             if success_count == 0:
                 raise VideoEncodingError(
@@ -451,6 +395,198 @@ class SequenceConverter:
                         self.encoder.close()
                     except VideoEncodingError:
                         logger.exception("Video encoder finalization failed during cleanup.")
+
+    def _build_frame_processing_plan(self, frame_numbers: list[int]) -> _FrameProcessingPlan:
+        """Resolve conversion frame range metadata for processing."""
+        all_frames, existing_frames, start_frame, end_frame, total_frames = self._build_frame_range(
+            frame_numbers
+        )
+        return _FrameProcessingPlan(
+            all_frames=tuple(all_frames),
+            existing_frames=frozenset(existing_frames),
+            start_frame=start_frame,
+            end_frame=end_frame,
+            total_frames=total_frames,
+        )
+
+    def _log_missing_frame_policy(self, plan: _FrameProcessingPlan) -> None:
+        """Log freeze-frame policy when the resolved frame range has holes."""
+        missing_count = plan.total_frames - len(plan.existing_frames)
+        if missing_count <= 0:
+            return
+
+        logger.warning(
+            f"Detected {missing_count} missing frames in range "
+            f"{plan.start_frame}-{plan.end_frame}. "
+            f"Will use freeze-frame (hold last valid frame) for missing frames."
+        )
+
+    def _should_prefetch_frames(self) -> bool:
+        """Return whether frame preparation should use the threaded prefetch path."""
+        return max(1, self.config.prefetch_workers) > 1
+
+    def _process_prefetched_frame_plan(
+        self,
+        plan: _FrameProcessingPlan,
+        frame_numbers: list[int],
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+        file_info: FileInfo,
+        contact_sheet_config: Optional[ContactSheetConfig],
+        tick_progress: Callable[[int], None],
+    ) -> int:
+        """Process a frame plan using worker-thread preparation and main-thread writes."""
+        prefetch_frame = self._create_prefetch_frame_fn(
+            output_width,
+            output_height,
+            width,
+            height,
+            scaler,
+            input_space,
+            file_info,
+            contact_sheet_config,
+        )
+
+        prefetch_workers = max(1, self.config.prefetch_workers)
+        with _FramePrefetcher(prefetch_frame, frame_numbers, prefetch_workers) as prefetcher:
+            return self._write_prefetched_frame_plan(plan, prefetcher, tick_progress)
+
+    def _create_prefetch_frame_fn(
+        self,
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+        file_info: FileInfo,
+        contact_sheet_config: Optional[ContactSheetConfig],
+    ) -> Callable[[int], Any]:
+        """Create a worker-thread frame preparation callback."""
+        if self.sequence is None:
+            raise RuntimeError("Sequence must be detected before processing frames.")
+
+        sequence = self.sequence
+        thread_state = threading.local()
+        layers_for_cs = file_info.layers if contact_sheet_config is not None else None
+
+        def _prefetch_frame(frame_num: int) -> Any:
+            frame_path = sequence.get_file_path(frame_num)
+            resources = self._get_prefetch_thread_resources(
+                thread_state,
+                frame_path,
+                contact_sheet_config,
+                layers_for_cs,
+            )
+            return self._prepare_frame_buf(
+                frame_num,
+                output_width,
+                output_height,
+                width,
+                height,
+                scaler,
+                input_space,
+                resources.reader,
+                resources.color_converter,
+                getattr(resources, "burnin_processor", None),
+                contact_sheet_generator=getattr(resources, "contact_sheet_generator", None),
+            )
+
+        return _prefetch_frame
+
+    def _get_prefetch_thread_resources(
+        self,
+        thread_state: Any,
+        frame_path: Path,
+        contact_sheet_config: Optional[ContactSheetConfig],
+        layers_for_cs: Optional[list[str]],
+    ) -> Any:
+        """Return reusable frame-processing resources for the active prefetch thread."""
+        reader = getattr(thread_state, "reader", None)
+        if reader is None:
+            reader = ImageReaderFactory.create_reader(
+                frame_path, image_cache=get_shared_image_cache()
+            )
+            thread_state.reader = reader
+
+        if not hasattr(thread_state, "color_converter"):
+            thread_state.color_converter = ColorSpaceConverter(self.config.color_space_preset)
+
+        if self.config.burnin_config and not hasattr(thread_state, "burnin_processor"):
+            thread_state.burnin_processor = BurnInProcessor()
+
+        if contact_sheet_config is not None and not hasattr(
+            thread_state, "contact_sheet_generator"
+        ):
+            thread_state.contact_sheet_generator = ContactSheetGenerator(
+                contact_sheet_config,
+                reader=reader,
+                layers=layers_for_cs,
+                layer_map=self._layer_map,
+            )
+
+        return thread_state
+
+    def _write_prefetched_frame_plan(
+        self,
+        plan: _FrameProcessingPlan,
+        prefetcher: _FramePrefetcher,
+        tick_progress: Callable[[int], None],
+    ) -> int:
+        """Write prefetched frames and freeze-frames in presentation order."""
+        success_count = 0
+        last_valid_buf: Any = None
+        for index, frame_num in enumerate(plan.all_frames):
+            tick_progress(index)
+            if frame_num in plan.existing_frames:
+                future = prefetcher.get_future(frame_num)
+                result = future.result()
+                last_valid_buf = result
+                self._write_frame_buf(frame_num, result)
+                success_count += 1
+            elif self._write_freeze_frame(frame_num, last_valid_buf, index):
+                success_count += 1
+
+        return success_count
+
+    def _process_sequential_frame_plan(
+        self,
+        plan: _FrameProcessingPlan,
+        output_width: int,
+        output_height: int,
+        width: int,
+        height: int,
+        scaler: "ImageScaler",
+        input_space: Optional[str],
+        contact_sheet_generator: Optional[ContactSheetGenerator],
+        tick_progress: Callable[[int], None],
+    ) -> int:
+        """Process a frame plan in frame order on the current thread."""
+        success_count = 0
+        last_valid_buf: Any = None
+        for index, frame_num in enumerate(plan.all_frames):
+            tick_progress(index)
+            if frame_num in plan.existing_frames:
+                result = self._process_single_frame_buf(
+                    frame_num,
+                    output_width,
+                    output_height,
+                    width,
+                    height,
+                    scaler,
+                    input_space,
+                    contact_sheet_generator,
+                )
+                last_valid_buf = result
+                success_count += 1
+            elif self._write_freeze_frame(frame_num, last_valid_buf, index):
+                success_count += 1
+
+        return success_count
 
     def _prepare_frame_buf(
         self,

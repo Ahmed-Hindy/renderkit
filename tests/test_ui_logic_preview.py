@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
 from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.processing.video_encoder import EncoderProbeResult
 from renderkit.ui import main_window_logic
 
 
@@ -23,11 +26,25 @@ class _DummyCheck:
 
 
 class _DummyCombo:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, index: int = 0) -> None:
         self._text = text
+        self._index = index
 
     def currentText(self) -> str:
         return self._text
+
+    def current_index(self) -> int:
+        return self._index
+
+    def set_current_index(self, index: int) -> None:
+        self._index = index
+
+    def __getattr__(self, name: str):
+        if name == "currentIndex":
+            return self.current_index
+        if name == "setCurrentIndex":
+            return self.set_current_index
+        raise AttributeError(name)
 
 
 class _DummyPreviewWidget:
@@ -51,6 +68,13 @@ class _DummyWindow(main_window_logic.MainWindowLogicMixin):
         self.layer_combo = _DummyCombo("RGBA")
         self.color_space_combo = _DummyCombo("Linear")
         self.fps_spin = _DummyValue(24)
+        self.input_pattern_combo = _DummyCombo("render.%04d.exr")
+        self.quality_slider = _DummyValue(8)
+        self.start_frame_spin = _DummyValue(1001)
+        self.end_frame_spin = _DummyValue(1010)
+        self.prefetch_workers_spin = _DummyValue(3)
+        self.codec_combo = _DummyCombo("H.264", index=0)
+        self._codec_map = {0: "libx264", 1: "libx265"}
         self.burnin_enable_check = _DummyCheck(burnin_enabled)
         self.burnin_frame_check = _DummyCheck(True)
         self.burnin_layer_check = _DummyCheck(True)
@@ -116,3 +140,102 @@ def test_load_preview_from_path_builds_burnin_config(tmp_path: Path) -> None:
     assert metadata is not None
     assert metadata["frame"] == 100
     assert metadata["file"] == "render.0100.exr"
+
+
+def test_build_conversion_config_from_ui_is_worker_free(tmp_path: Path) -> None:
+    """Ensure UI config assembly can be tested without starting a worker."""
+    output_path = tmp_path / "out.mp4"
+    window = _DummyWindow(cs_enabled=True, burnin_enabled=True)
+    window.keep_resolution_check = _DummyCheck(False)
+
+    config = window._build_conversion_config_from_ui(output_path, "libx265")
+
+    assert config.input_pattern == "render.%04d.exr"
+    assert config.output_path == str(output_path)
+    assert config.codec == "libx265"
+    assert config.fps == pytest.approx(24.0)
+    assert config.quality == 8
+    assert config.prefetch_workers == 3
+    assert config.start_frame == 1001
+    assert config.end_frame == 1010
+    assert config.width == 1920
+    assert config.height == 1080
+    assert config.explicit_input_color_space == "Linear"
+
+    assert config.contact_sheet_mode is True
+    assert config.contact_sheet_config is not None
+    assert config.contact_sheet_config.columns == 4
+    assert config.contact_sheet_config.layer_width == 1920
+    assert config.contact_sheet_config.layer_height == 1080
+    assert config.contact_sheet_config.show_labels is True
+
+    assert config.burnin_config is not None
+    templates = [element.text_template for element in config.burnin_config.elements]
+    assert templates == ["Frame: {frame}", "FPS: {fps:.2f}"]
+
+
+def test_resolve_encoder_for_conversion_falls_back(monkeypatch) -> None:
+    """Ensure encoder fallback is handled without starting conversion."""
+    warnings = []
+    window = _DummyWindow(cs_enabled=False)
+
+    monkeypatch.setattr(
+        main_window_logic,
+        "get_encoder_probe_result",
+        lambda: EncoderProbeResult(frozenset({"libx265"})),
+    )
+    monkeypatch.setattr(
+        main_window_logic.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: warnings.append(args),
+    )
+
+    resolved_codec = window._resolve_encoder_for_conversion("libx264")
+
+    assert resolved_codec == "libx265"
+    assert window.codec_combo.currentIndex() == 1
+    assert warnings
+
+
+def test_resolve_encoder_for_conversion_rejects_unavailable_codec(monkeypatch) -> None:
+    """Ensure confirmed encoder absence aborts before building config."""
+    critical_messages = []
+    window = _DummyWindow(cs_enabled=False)
+
+    monkeypatch.setattr(
+        main_window_logic,
+        "get_encoder_probe_result",
+        lambda: EncoderProbeResult(frozenset({"vp9"})),
+    )
+    monkeypatch.setattr(
+        main_window_logic.QMessageBox,
+        "critical",
+        lambda *args, **kwargs: critical_messages.append(args),
+    )
+
+    resolved_codec = window._resolve_encoder_for_conversion("libx264")
+
+    assert resolved_codec is None
+    assert critical_messages
+
+
+def test_resolve_encoder_for_conversion_allows_probe_failure(monkeypatch) -> None:
+    """Ensure probe failures remain warning-only for conversion startup."""
+    warnings = []
+    window = _DummyWindow(cs_enabled=False)
+
+    monkeypatch.setattr(
+        main_window_logic,
+        "get_encoder_probe_result",
+        lambda: EncoderProbeResult(frozenset(), error="ffmpeg missing"),
+    )
+    monkeypatch.setattr(
+        main_window_logic.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: warnings.append(args),
+    )
+
+    resolved_codec = window._resolve_encoder_for_conversion("libx264")
+
+    assert resolved_codec == "libx264"
+    assert warnings

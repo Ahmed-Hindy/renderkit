@@ -363,6 +363,46 @@ class TestSequenceConverterFailures:
 
         assert encoder.closed
 
+    def test_process_sequential_frame_plan_uses_freeze_frame_policy(self) -> None:
+        """Sequential frame-plan processing should write missing frames from the last valid frame."""
+
+        class RecordingEncoder:
+            def __init__(self) -> None:
+                self.frames = []
+
+            def write_frame(self, buf) -> None:
+                self.frames.append(buf.name)
+
+        class NamedBuf:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+        converter = self._converter()
+        converter.encoder = RecordingEncoder()
+        plan = converter._build_frame_processing_plan([1, 3])
+
+        def process_frame(frame_num, *args, **kwargs):
+            buf = NamedBuf(str(frame_num))
+            converter._write_frame_buf(frame_num, buf)
+            return buf
+
+        converter._process_single_frame_buf = process_frame
+
+        success_count = converter._process_sequential_frame_plan(
+            plan,
+            output_width=100,
+            output_height=100,
+            width=100,
+            height=100,
+            scaler=object(),
+            input_space=None,
+            contact_sheet_generator=None,
+            tick_progress=lambda _index: None,
+        )
+
+        assert success_count == 3
+        assert converter.encoder.frames == ["1", "1", "3"]
+
 
 class TestSequenceConverterProgress:
     """Tests for CLI progress-bar behavior."""
