@@ -6,7 +6,6 @@ from renderkit.ui.main_window_settings import load_settings, reset_settings, sav
 class _Settings:
     def __init__(self) -> None:
         self.values = {}
-        self.setValue = self.set_value
 
     def set_value(self, key, value) -> None:
         self.values[key] = value
@@ -17,11 +16,15 @@ class _Settings:
             return value
         return type(value)
 
+    def __getattr__(self, name: str):
+        if name == "setValue":
+            return self.set_value
+        raise AttributeError(name)
+
 
 class _ValueWidget:
     def __init__(self, value) -> None:
         self._value = value
-        self.setValue = self.set_value
 
     def value(self):
         return self._value
@@ -29,12 +32,15 @@ class _ValueWidget:
     def set_value(self, value) -> None:
         self._value = value
 
+    def __getattr__(self, name: str):
+        if name == "setValue":
+            return self.set_value
+        raise AttributeError(name)
+
 
 class _CheckWidget:
     def __init__(self, checked: bool) -> None:
         self._checked = checked
-        self.isChecked = self.is_checked
-        self.setChecked = self.set_checked
 
     def is_checked(self) -> bool:
         return self._checked
@@ -42,15 +48,18 @@ class _CheckWidget:
     def set_checked(self, checked: bool) -> None:
         self._checked = checked
 
+    def __getattr__(self, name: str):
+        if name == "isChecked":
+            return self.is_checked
+        if name == "setChecked":
+            return self.set_checked
+        raise AttributeError(name)
+
 
 class _ComboWidget:
     def __init__(self, text: str) -> None:
         self._text = text
         self._index = 1
-        self.currentText = self.current_text
-        self.currentIndex = self.current_index
-        self.setCurrentText = self.set_current_text
-        self.setCurrentIndex = self.set_current_index
 
     def current_text(self) -> str:
         return self._text
@@ -65,6 +74,17 @@ class _ComboWidget:
 
     def current_index(self) -> int:
         return self._index
+
+    def __getattr__(self, name: str):
+        if name == "currentText":
+            return self.current_text
+        if name == "setCurrentText":
+            return self.set_current_text
+        if name == "setCurrentIndex":
+            return self.set_current_index
+        if name == "currentIndex":
+            return self.current_index
+        raise AttributeError(name)
 
 
 class _DummyWindow:

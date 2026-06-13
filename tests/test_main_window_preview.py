@@ -19,19 +19,27 @@ class _DummyValue:
 class _DummyCheck:
     def __init__(self, checked: bool) -> None:
         self._checked = checked
-        self.isChecked = self.is_checked
 
     def is_checked(self) -> bool:
         return self._checked
+
+    def __getattr__(self, name: str):
+        if name == "isChecked":
+            return self.is_checked
+        raise AttributeError(name)
 
 
 class _DummyCombo:
     def __init__(self, text: str) -> None:
         self._text = text
-        self.currentText = self.current_text
 
     def current_text(self) -> str:
         return self._text
+
+    def __getattr__(self, name: str):
+        if name == "currentText":
+            return self.current_text
+        raise AttributeError(name)
 
 
 class _DummyWindow:
