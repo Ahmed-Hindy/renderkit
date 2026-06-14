@@ -370,3 +370,57 @@ def test_no_wheel_combo_popup_hover_updates_current_row(qtbot, qapp) -> None:
 
     qtbot.waitUntil(lambda: view.currentIndex().row() == 1, timeout=1000)
     combo.hidePopup()
+
+
+def test_preview_image_to_qimage_rejects_invalid_dimensions() -> None:
+    """Reject pixels with dimensions other than 3."""
+    # 2D array
+    data_2d = PreviewImageData(
+        pixels=np.zeros((10, 10), dtype=np.uint8),
+        width=10,
+        height=10,
+        channels=1,
+    )
+    with pytest.raises(ValueError, match="must be 3-dimensional"):
+        preview_image_to_qimage(data_2d)
+
+    # 4D array
+    data_4d = PreviewImageData(
+        pixels=np.zeros((10, 10, 3, 1), dtype=np.uint8),
+        width=10,
+        height=10,
+        channels=3,
+    )
+    with pytest.raises(ValueError, match="must be 3-dimensional"):
+        preview_image_to_qimage(data_4d)
+
+
+def test_preview_widget_active_worker_cleanup(qtbot, tmp_path) -> None:
+    """Ensure that starting a new preview places the old worker in active list and disconnects signals."""
+    from renderkit.ui.widgets import PreviewWidget
+
+    widget = PreviewWidget()
+    qtbot.addWidget(widget)
+
+    file1 = tmp_path / "img1.png"
+    file2 = tmp_path / "img2.png"
+    file1.touch()
+    file2.touch()
+
+    # Load first preview
+    widget.load_preview(file1, ColorSpacePreset.LINEAR_TO_SRGB)
+    w1 = widget.worker
+    assert w1 is not None
+    assert w1.isRunning()
+
+    # Load second preview
+    widget.load_preview(file2, ColorSpacePreset.LINEAR_TO_SRGB)
+    w2 = widget.worker
+    assert w2 is not None
+    assert w2 is not w1
+
+    # w1 should be disconnected and in active workers
+    assert w1 in widget._active_workers
+
+    # Wait for workers to clean up
+    qtbot.waitUntil(lambda: len(widget._active_workers) == 0, timeout=5000)

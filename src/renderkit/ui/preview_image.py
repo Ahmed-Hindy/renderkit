@@ -61,6 +61,12 @@ def preview_image_to_qimage(data: PreviewImageData) -> QImage:
     Finally, it returns a deep copy of the QImage to prevent a use-after-free bug
     when the Python PreviewImageData goes out of scope and gets garbage collected.
     """
+    if data.pixels.ndim != 3:
+        raise ValueError(
+            f"Preview image pixels must be 3-dimensional (height, width, channels), "
+            f"but got ndim: {data.pixels.ndim}"
+        )
+
     if data.pixels.dtype != np.uint8:
         raise ValueError(f"Preview image pixels must be uint8, but got dtype: {data.pixels.dtype}")
 
@@ -77,6 +83,9 @@ def preview_image_to_qimage(data: PreviewImageData) -> QImage:
         bytes_per_line,
         q_format,
     )
+    # Pin underlying NumPy array reference to QImage to guarantee it is not
+    # garbage collected before the deep copy is completed.
+    image._numpy_ref = pixels
     return image.copy()
 
 
