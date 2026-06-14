@@ -511,9 +511,6 @@ class PreviewWidget(QWidget):
             if self.worker not in self._active_workers:
                 self._active_workers.append(self.worker)
 
-            self.worker.finished.connect(self._on_worker_finished)
-            self.worker.finished.connect(self.worker.deleteLater)
-
         self._original_pixmap = None
         self.preview_label.setText("Loading preview...")
         self.preview_label.setStyleSheet("""
