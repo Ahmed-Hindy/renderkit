@@ -12,6 +12,12 @@ from renderkit.processing.frame_pipeline import (
     PreparedFrameBuffer,
     prepare_frame_buffer,
 )
+from renderkit.ui.preview_image import (
+    PreviewImageData,
+    imagebuf_to_preview_image,
+    preview_image_to_pixmap,
+)
+from renderkit.ui.qt_compat import QPixmap
 from renderkit.ui.widgets import (
     PreviewWorker,
     _prepare_buf_for_preview_display,
@@ -92,6 +98,100 @@ def test_prepare_buf_for_preview_display_expands_data_channels(channels: int) ->
     np.testing.assert_allclose(result_pixels[:, :, 2], pixels[:, :, 0])
 
 
+def test_imagebuf_to_preview_image_converts_rgb_float_to_uint8() -> None:
+    """RGB float preview buffers should become contiguous uint8 payloads."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    pixels = np.array(
+        [
+            [[0.0, 0.5, 1.0], [1.5, -0.5, 0.25]],
+            [[0.2, 0.4, 0.6], [0.8, 1.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+    spec = oiio.ImageSpec(2, 2, 3, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), pixels)
+
+    result = imagebuf_to_preview_image(buf)
+
+    assert result.width == 2
+    assert result.height == 2
+    assert result.channels == 3
+    assert result.pixels.dtype == np.uint8
+    assert result.pixels.flags.c_contiguous
+    np.testing.assert_array_equal(
+        result.pixels,
+        np.array(
+            [
+                [[0, 127, 255], [255, 0, 63]],
+                [[51, 102, 153], [204, 255, 0]],
+            ],
+            dtype=np.uint8,
+        ),
+    )
+
+
+def test_imagebuf_to_preview_image_preserves_rgba_channels() -> None:
+    """RGBA preview buffers should preserve the alpha channel."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    pixels = np.array([[[0.0, 0.25, 0.5, 1.0]]], dtype=np.float32)
+    spec = oiio.ImageSpec(1, 1, 4, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), pixels)
+
+    result = imagebuf_to_preview_image(buf)
+
+    assert result.channels == 4
+    np.testing.assert_array_equal(
+        result.pixels,
+        np.array([[[0, 63, 127, 255]]], dtype=np.uint8),
+    )
+
+
+def test_imagebuf_to_preview_image_rejects_empty_pixels() -> None:
+    """Empty OIIO pixel extraction should fail clearly."""
+
+    class EmptyBuf:
+        def get_pixels(self, pixel_type):
+            return None
+
+    with pytest.raises(ValueError, match="Failed to extract preview pixels"):
+        imagebuf_to_preview_image(EmptyBuf())
+
+
+def test_imagebuf_to_preview_image_rejects_unsupported_channels() -> None:
+    """Only RGB/RGBA buffers should reach Qt preview marshaling."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    pixels = np.ones((1, 1, 5), dtype=np.float32)
+    spec = oiio.ImageSpec(1, 1, 5, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), pixels)
+
+    with pytest.raises(ValueError, match="Unsupported image channels: 5"):
+        imagebuf_to_preview_image(buf)
+
+
+def test_preview_image_to_pixmap_returns_pixmap(qapp) -> None:
+    """Preview image data should become a valid GUI-thread pixmap."""
+    data = PreviewImageData(
+        pixels=np.full((1, 1, 3), 255, dtype=np.uint8),
+        width=1,
+        height=1,
+        channels=3,
+    )
+
+    pixmap = preview_image_to_pixmap(data)
+
+    assert isinstance(pixmap, QPixmap)
+    assert not pixmap.isNull()
+
+
 def test_prepare_frame_buffer_expands_data_channels_without_color_conversion() -> None:
     """Shared frame prep should keep data-channel buffers preview/render safe."""
     if oiio is None:
@@ -169,6 +269,8 @@ def test_preview_worker_delegates_imagebuf_processing(monkeypatch, qapp) -> None
     worker.run()
 
     assert emitted
+    assert isinstance(emitted[0], PreviewImageData)
+    assert not isinstance(emitted[0], QPixmap)
     assert calls
     call = calls[0]
     assert call.frame_path == "render.0001.exr"

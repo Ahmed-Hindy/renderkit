@@ -5,7 +5,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
@@ -18,11 +17,15 @@ from renderkit.processing.frame_pipeline import (
 )
 from renderkit.processing.scaler import ImageScaler
 from renderkit.ui.icons import icon_manager
+from renderkit.ui.preview_image import (
+    PreviewImageData,
+    imagebuf_to_preview_image,
+    preview_image_to_pixmap,
+)
 from renderkit.ui.qt_compat import (
     QApplication,
     QFrame,
     QHBoxLayout,
-    QImage,
     QLabel,
     QPixmap,
     QPoint,
@@ -97,7 +100,7 @@ def _prepare_buf_for_preview_display(
 class PreviewWorker(QThread):
     """Worker thread for loading preview image."""
 
-    preview_ready = Signal(QPixmap)
+    preview_ready = Signal(object)
     error = Signal(str)
 
     def __init__(
@@ -167,60 +170,7 @@ class PreviewWorker(QThread):
                 ColorSpacePreset.NO_CONVERSION,
                 input_space=None,
             )
-
-            image = buf.get_pixels(oiio.FLOAT)
-            if image is None or image.size == 0:
-                raise ValueError("Failed to extract preview pixels.")
-            spec = buf.spec()
-            if image.ndim == 1:
-                image = image.reshape((spec.height, spec.width, spec.nchannels))
-
-            # Convert to uint8
-            if image.dtype != np.uint8:
-                image_f32 = image.astype(np.float32, copy=False)
-                image = np.clip(image_f32, 0.0, 1.0)
-                image = (image * np.float32(255.0)).astype(np.uint8)
-
-            # Convert to QImage
-            height, width = image.shape[:2]
-            # Handle different Qt versions - format access differs
-            # PySide6/PyQt6: QImage.Format.Format_RGB888
-            # PySide2/PyQt5: QImage.Format_RGB888
-            try:
-                # Try PySide6/PyQt6 style
-                rgb_format = getattr(QImage.Format, "Format_RGB888", None)
-                rgba_format = getattr(QImage.Format, "Format_RGBA8888", None)
-            except (AttributeError, TypeError):
-                # Try PySide2/PyQt5 style
-                rgb_format = getattr(QImage, "Format_RGB888", None)
-                rgba_format = getattr(QImage, "Format_RGBA8888", None)
-
-            # Fallback to direct attribute access if getattr failed
-            if rgb_format is None:
-                try:
-                    rgb_format = QImage.Format.Format_RGB888
-                except AttributeError:
-                    rgb_format = QImage.Format_RGB888
-
-            if rgba_format is None:
-                try:
-                    rgba_format = QImage.Format.Format_RGBA8888
-                except AttributeError:
-                    rgba_format = QImage.Format_RGBA8888
-
-            if image.shape[2] == 3:
-                # RGB
-                q_image = QImage(image.data, width, height, width * 3, rgb_format)
-            elif image.shape[2] == 4:
-                # RGBA
-                q_image = QImage(image.data, width, height, width * 4, rgba_format)
-            else:
-                raise ValueError(f"Unsupported image channels: {image.shape[2]}")
-
-            # Create pixmap
-            pixmap = QPixmap.fromImage(q_image)
-
-            self.preview_ready.emit(pixmap)
+            self.preview_ready.emit(imagebuf_to_preview_image(buf))
         except (RenderKitError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.exception(
                 "Preview worker failed. file=%s color_space=%s input_space=%s layer=%s "
@@ -599,9 +549,9 @@ class PreviewWidget(QWidget):
         if worker == self.worker:
             self.worker = None
 
-    def _on_preview_ready(self, pixmap: QPixmap) -> None:
+    def _on_preview_ready(self, preview_image: PreviewImageData) -> None:
         """Handle preview ready."""
-        self._original_pixmap = pixmap
+        self._original_pixmap = preview_image_to_pixmap(preview_image)
         self.preview_label.setText("")
         self._update_scaled_pixmap()
         self.expand_btn.show()
