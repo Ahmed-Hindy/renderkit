@@ -51,11 +51,27 @@ def imagebuf_to_preview_image(buf: oiio.ImageBuf) -> PreviewImageData:
 
 
 def preview_image_to_qimage(data: PreviewImageData) -> QImage:
-    """Create a QImage from preview image data."""
+    """Create a QImage from preview image data.
+
+    This function performs safety checks and returns a deep copy of the image.
+    Crucially, it checks that the array is C-contiguous (copying if necessary to
+    avoid garbled textures or segfaults) and that the dtype is uint8 (preventing
+    memory footprint/row stride mismatch corruption).
+
+    Finally, it returns a deep copy of the QImage to prevent a use-after-free bug
+    when the Python PreviewImageData goes out of scope and gets garbage collected.
+    """
+    if data.pixels.dtype != np.uint8:
+        raise ValueError(f"Preview image pixels must be uint8, but got dtype: {data.pixels.dtype}")
+
+    pixels = data.pixels
+    if not pixels.flags.c_contiguous:
+        pixels = np.ascontiguousarray(pixels)
+
     q_format = _qimage_format(data.channels)
     bytes_per_line = data.width * data.channels
     image = QImage(
-        data.pixels.data,
+        pixels.data,
         data.width,
         data.height,
         bytes_per_line,

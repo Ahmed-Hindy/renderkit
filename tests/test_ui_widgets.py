@@ -16,6 +16,7 @@ from renderkit.ui.preview_image import (
     PreviewImageData,
     imagebuf_to_preview_image,
     preview_image_to_pixmap,
+    preview_image_to_qimage,
 )
 from renderkit.ui.qt_compat import QPixmap
 from renderkit.ui.widgets import (
@@ -190,6 +191,51 @@ def test_preview_image_to_pixmap_returns_pixmap(qapp) -> None:
 
     assert isinstance(pixmap, QPixmap)
     assert not pixmap.isNull()
+
+
+def test_preview_image_to_qimage_rejects_non_uint8_dtype() -> None:
+    """Reject pixels with non-uint8 dtypes to prevent memory layout corruption."""
+    data = PreviewImageData(
+        pixels=np.full((2, 2, 3), 1.0, dtype=np.float32),
+        width=2,
+        height=2,
+        channels=3,
+    )
+    with pytest.raises(ValueError, match="Preview image pixels must be uint8"):
+        preview_image_to_qimage(data)
+
+
+def test_preview_image_to_qimage_handles_non_contiguous_array(qapp) -> None:
+    """Automatically convert non-contiguous NumPy arrays to C-contiguous for QImage safety."""
+    # 1. Fortran-contiguous array
+    f_pixels = np.asfortranarray(np.full((2, 2, 3), 128, dtype=np.uint8))
+    assert not f_pixels.flags.c_contiguous
+
+    data_f = PreviewImageData(
+        pixels=f_pixels,
+        width=2,
+        height=2,
+        channels=3,
+    )
+    qimage_f = preview_image_to_qimage(data_f)
+    assert qimage_f.width() == 2
+    assert qimage_f.height() == 2
+
+    # 2. Sliced/strided array view
+    large_pixels = np.zeros((4, 4, 3), dtype=np.uint8)
+    large_pixels[::2, ::2] = 255
+    sliced_pixels = large_pixels[::2, ::2]
+    assert not sliced_pixels.flags.c_contiguous
+
+    data_sliced = PreviewImageData(
+        pixels=sliced_pixels,
+        width=2,
+        height=2,
+        channels=3,
+    )
+    qimage_sliced = preview_image_to_qimage(data_sliced)
+    assert qimage_sliced.width() == 2
+    assert qimage_sliced.height() == 2
 
 
 def test_prepare_frame_buffer_expands_data_channels_without_color_conversion() -> None:
