@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Batch EXR → MP4 CLI** — new `renderkit batch convert` sub-command converts an entire directory tree of EXR sequences in one shot, with dry-run support that validates replacement MP4s before committing any writes.
 - **Sequence replacement & cleanup** — `renderkit replace-sequence-with-mp4` and `renderkit batch-replace` for safe, audited replacement of EXR frame sequences with verified MP4s. JSONL audit records capture dry-run, verification, copy, deletion, and reclaimed-byte details.
 - **Contact-sheet CLI** promoted to a proper `renderkit contact-sheet` sub-command via a new dedicated `cli/conversion.py` module.
-- **`--no-progress` / `--progress` flags** for suppressing the live progress bar in headless / CI pipelines without losing log output.
+- **`--no-progress` flag** for suppressing the live progress bar in headless / CI pipelines without losing log output.
 - **Nuitka standalone packaging** — new `nuitka-standalone-zip.yml` CI workflow produces self-contained zips for Windows, macOS, and Linux, backed by `scripts/build_nuitka.ps1` and `scripts/stage_portable_ffmpeg.py` for portable FFmpeg bundling.
 - `src/renderkit/processing/frame_pipeline.py` — shared frame-preparation pipeline used by both the single-frame preview and the video encoder.
 - `src/renderkit/core/sequence_replacement.py` — new module handling sequence audit, replacement, and cleanup workflows.
