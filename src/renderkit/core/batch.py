@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from renderkit.core.sequence_names import split_numbered_frame_name
+
 
 @dataclass(frozen=True)
 class BatchSequence:
@@ -69,7 +71,7 @@ def discover_frame_sequences(root: Path, extension: str) -> list[BatchSequence]:
         if not frame_path.is_file() or frame_path.suffix.lower() != normalized_ext:
             continue
 
-        parsed_name = _split_frame_name(frame_path)
+        parsed_name = split_numbered_frame_name(frame_path)
         if parsed_name is None:
             continue
 
@@ -150,19 +152,6 @@ def _normalize_extension(extension: str) -> str:
     if not ext:
         raise ValueError("Extension cannot be empty")
     return ext if ext.startswith(".") else f".{ext}"
-
-
-def _split_frame_name(frame_path: Path) -> Optional[tuple[str, str, str]]:
-    suffix = frame_path.suffix
-    stem = frame_path.name[: -len(suffix)]
-    frame_start = len(stem)
-    while frame_start > 0 and stem[frame_start - 1].isdigit():
-        frame_start -= 1
-
-    if frame_start == len(stem):
-        return None
-
-    return stem[:frame_start], stem[frame_start:], suffix
 
 
 def _safe_filename_part(value: str) -> str:

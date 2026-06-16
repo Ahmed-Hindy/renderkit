@@ -6,7 +6,8 @@ from typing import Any
 import numpy as np
 import OpenImageIO as oiio
 
-from renderkit.ui.qt_compat import QImage, QPixmap
+from renderkit.processing.pixels import float_pixels_to_uint8
+from renderkit.ui.qt_compat import QImage, QPixmap, resolve_enum_member
 
 
 @dataclass(frozen=True)
@@ -37,9 +38,7 @@ def imagebuf_to_preview_image(buf: oiio.ImageBuf) -> PreviewImageData:
         raise ValueError(f"Unsupported image channels: {channels}")
 
     if image.dtype != np.uint8:
-        image_f32 = image.astype(np.float32, copy=False)
-        image = np.clip(image_f32, 0.0, 1.0)
-        image = (image * np.float32(255.0)).astype(np.uint8)
+        image = float_pixels_to_uint8(image)
 
     image = np.ascontiguousarray(image)
     return PreviewImageData(
@@ -102,13 +101,7 @@ def _qimage_format(channels: int) -> Any:
     else:
         raise ValueError(f"Unsupported image channels: {channels}")
 
-    enum = getattr(QImage, "Format", None)
-    if enum is not None:
-        value = getattr(enum, name, None)
-        if value is not None:
-            return value
-
-    value = getattr(QImage, name, None)
-    if value is None:
-        raise ValueError(f"Qt image format is unavailable: {name}")
-    return value
+    try:
+        return resolve_enum_member(QImage, "Format", name)
+    except AttributeError as exc:
+        raise ValueError(f"Qt image format is unavailable: {name}") from exc

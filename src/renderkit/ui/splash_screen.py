@@ -12,10 +12,14 @@ from renderkit.ui.qt_compat import (
     QPainter,
     QPixmap,
     QSplashScreen,
-    Qt,
+    qt_enum,
 )
 
 SPLASH_MIN_DURATION_MS = 1200
+_QT_ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
+_QT_ALIGN_VCENTER = qt_enum("AlignmentFlag", "AlignVCenter")
+_QT_FRAMELESS_WINDOW_HINT = qt_enum("WindowType", "FramelessWindowHint")
+_QT_NO_PEN = qt_enum("PenStyle", "NoPen")
 
 
 def compute_remaining_splash_ms(
@@ -75,7 +79,7 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
     card_width = width - (card_margin * 2)
     card_height = height - (card_margin * 2)
 
-    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setPen(_QT_NO_PEN)
     painter.setBrush(QColor(0, 0, 0, 90))
     painter.drawRoundedRect(card_x + 3, card_y + 5, card_width, card_height, 18, 18)
     painter.setBrush(QColor("#111923"))
@@ -102,7 +106,7 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
         text_x = icon_x + icon_size + 18
 
     text_width = card_x + card_width - text_x - 30
-    align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    align = _QT_ALIGN_LEFT | _QT_ALIGN_VCENTER
 
     title_font = QFont("Segoe UI", 30)
     title_font.setBold(True)
@@ -146,10 +150,9 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
 def create_splash_screen(version: str) -> QSplashScreen:
     """Create and configure the application splash screen."""
     splash = QSplashScreen(build_splash_pixmap(version))
-    window_type = getattr(Qt, "WindowType", None)
-    if window_type is not None:
-        splash.setWindowFlag(window_type.FramelessWindowHint, True)
+    if hasattr(splash, "setWindowFlag"):
+        splash.setWindowFlag(_QT_FRAMELESS_WINDOW_HINT, True)
     else:
-        splash.setWindowFlags(Qt.FramelessWindowHint)
+        splash.setWindowFlags(_QT_FRAMELESS_WINDOW_HINT)
     splash.setEnabled(False)
     return splash

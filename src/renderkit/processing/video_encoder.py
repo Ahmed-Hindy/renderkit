@@ -15,6 +15,7 @@ import OpenImageIO as oiio
 
 from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
 from renderkit.exceptions import ConfigurationError, VideoEncodingError
+from renderkit.processing.pixels import float_pixels_to_uint8
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger(__name__)
@@ -476,9 +477,7 @@ class VideoEncoder:
         else:
             frame = pixels
 
-        frame_f32 = frame.astype(np.float32, copy=False)
-        frame = np.clip(frame_f32, 0.0, 1.0)
-        frame = (frame * np.float32(255.0)).astype(np.uint8)
+        frame = float_pixels_to_uint8(frame)
 
         # FFmpeg rawvideo expects RGB (standard)
         # If RGBA, drop alpha channel

@@ -12,6 +12,7 @@ from renderkit.exceptions import ImageReadError
 from renderkit.io.file_info import FileInfo
 from renderkit.io.file_utils import FileUtils
 from renderkit.io.oiio_cache import get_shared_image_cache
+from renderkit.io.oiio_utils import ensure_float_imagebuf, require_oiio
 
 logger = logging.getLogger(__name__)
 
@@ -221,10 +222,7 @@ class OIIOReader(ImageReader):
             logger.debug(f"Using cached file info for {path}")
             return self._file_info_cache[cache_key]
 
-        try:
-            import OpenImageIO as oiio
-        except ImportError as e:
-            raise ImageReadError("OpenImageIO library not available.") from e
+        oiio = require_oiio(ImageReadError)
 
         if not path.exists():
             raise ImageReadError(f"File does not exist: {path}")
@@ -301,10 +299,7 @@ class OIIOReader(ImageReader):
         if cached is not None:
             return cached
 
-        try:
-            import OpenImageIO as oiio
-        except ImportError as e:
-            raise ImageReadError("OpenImageIO library not available.") from e
+        oiio = require_oiio(ImageReadError)
 
         if not path.exists():
             raise ImageReadError(f"File does not exist: {path}")
@@ -354,10 +349,7 @@ class OIIOReader(ImageReader):
         layer_map: Optional[dict[str, LayerMapEntry]] = None,
     ):
         """Read an image using OIIO ImageBuf and return the ImageBuf."""
-        try:
-            import OpenImageIO as oiio
-        except ImportError as e:
-            raise ImageReadError("OpenImageIO library not available.") from e
+        oiio = require_oiio(ImageReadError)
 
         if not path.exists():
             raise ImageReadError(f"File does not exist: {path}")
@@ -383,21 +375,12 @@ class OIIOReader(ImageReader):
                 path,
             )
 
-            # Ensure float32 for downstream processing
-            spec = buf.spec()
-            if spec.format != oiio.FLOAT:
-                float_spec = oiio.ImageSpec(
-                    spec.width,
-                    spec.height,
-                    spec.nchannels,
-                    oiio.FLOAT,
-                )
-                float_buf = oiio.ImageBuf(float_spec)
-                if not oiio.ImageBufAlgo.copy(float_buf, buf):
-                    raise ImageReadError(f"Failed to convert {path} to float32: {buf.geterror()}")
-                buf = float_buf
-
-            return buf
+            return ensure_float_imagebuf(
+                oiio,
+                buf,
+                error_type=ImageReadError,
+                error_message=f"Failed to convert {path} to float32",
+            )
 
         except ImageReadError:
             raise
@@ -490,10 +473,7 @@ class OIIOReader(ImageReader):
 
     def read_subimagebuf(self, path: Path, subimage_index: int):
         """Read a specific subimage as an OIIO ImageBuf."""
-        try:
-            import OpenImageIO as oiio
-        except ImportError as e:
-            raise ImageReadError("OpenImageIO library not available.") from e
+        oiio = require_oiio(ImageReadError)
 
         if not path.exists():
             raise ImageReadError(f"File does not exist: {path}")
@@ -530,20 +510,12 @@ class OIIOReader(ImageReader):
                     f"OIIO failed to read {path} (part {subimage_index}): {buf.geterror()}"
                 )
 
-            spec = buf.spec()
-            if spec.format != oiio.FLOAT:
-                float_spec = oiio.ImageSpec(
-                    spec.width,
-                    spec.height,
-                    spec.nchannels,
-                    oiio.FLOAT,
-                )
-                float_buf = oiio.ImageBuf(float_spec)
-                if not oiio.ImageBufAlgo.copy(float_buf, buf):
-                    raise ImageReadError(f"Failed to convert {path} to float32: {buf.geterror()}")
-                buf = float_buf
-
-            return buf
+            return ensure_float_imagebuf(
+                oiio,
+                buf,
+                error_type=ImageReadError,
+                error_message=f"Failed to convert {path} to float32",
+            )
 
         except ImageReadError:
             raise

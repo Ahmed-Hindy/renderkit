@@ -33,15 +33,38 @@ from renderkit.ui.qt_compat import (
     QScrollArea,
     QSize,
     QSizePolicy,
-    Qt,
     QThread,
     QTimer,
     QVBoxLayout,
     QWidget,
     Signal,
+    qt_enum,
 )
 
 logger = logging.getLogger(__name__)
+
+_PREVIEW_LABEL_COLOR = "#888"
+_PREVIEW_LABEL_ERROR_COLOR = "#f44336"
+_QT_ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
+_QT_KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
+_QT_SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
+_QT_MIDDLE_BUTTON = qt_enum("MouseButton", "MiddleButton")
+_QT_CLOSED_HAND_CURSOR = qt_enum("CursorShape", "ClosedHandCursor")
+_QT_POINTING_HAND_CURSOR = qt_enum("CursorShape", "PointingHandCursor")
+_QT_KEY_ESCAPE = qt_enum("Key", "Key_Escape")
+_QT_KEY_F = qt_enum("Key", "Key_F")
+_QT_NON_MODAL = qt_enum("WindowModality", "NonModal")
+
+
+def _preview_label_stylesheet(color: str = _PREVIEW_LABEL_COLOR) -> str:
+    return f"""
+            QLabel {{
+                background-color: #2b2b2b;
+                color: {color};
+                border: 1px solid #444;
+                border-radius: 4px;
+            }}
+        """
 
 
 def _scaled_burnin_config_for_preview(
@@ -222,11 +245,11 @@ class FullscreenPreviewWindow(QWidget):
         # Scroll area for zooming and panning
         self.scroll_area = ZoomableScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.scroll_area.setAlignment(_QT_ALIGN_CENTER)
         self.scroll_area.setStyleSheet("background-color: #111; border: none;")
 
         self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setAlignment(_QT_ALIGN_CENTER)
         self.scroll_area.setWidget(self.image_label)
 
         layout.addWidget(self.scroll_area, 1)
@@ -301,8 +324,8 @@ class FullscreenPreviewWindow(QWidget):
         scaled = self._pixmap.scaled(
             new_width,
             new_height,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            _QT_KEEP_ASPECT_RATIO,
+            _QT_SMOOTH_TRANSFORMATION,
         )
         self.image_label.setPixmap(scaled)
 
@@ -349,10 +372,10 @@ class FullscreenPreviewWindow(QWidget):
 
     def mousePressEvent(self, event) -> None:
         """Start panning on middle click."""
-        if event.button() == Qt.MouseButton.MiddleButton:
+        if event.button() == _QT_MIDDLE_BUTTON:
             self._is_panning = True
             self._last_mouse_pos = event.pos()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self.setCursor(_QT_CLOSED_HAND_CURSOR)
             event.accept()
         super().mousePressEvent(event)
 
@@ -371,7 +394,7 @@ class FullscreenPreviewWindow(QWidget):
 
     def mouseReleaseEvent(self, event) -> None:
         """Stop panning."""
-        if event.button() == Qt.MouseButton.MiddleButton:
+        if event.button() == _QT_MIDDLE_BUTTON:
             self._is_panning = False
             self.unsetCursor()
             event.accept()
@@ -379,9 +402,9 @@ class FullscreenPreviewWindow(QWidget):
 
     def keyPressEvent(self, event) -> None:
         """Handle key press events."""
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == _QT_KEY_ESCAPE:
             self.close()
-        elif event.key() == Qt.Key.Key_F:  # 'F' key to re-fit
+        elif event.key() == _QT_KEY_F:  # 'F' key to re-fit
             self._fit_to_window()
         super().keyPressEvent(event)
 
@@ -417,17 +440,10 @@ class PreviewWidget(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
 
         self.preview_label = QLabel("No preview")
-        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setAlignment(_QT_ALIGN_CENTER)
         self.preview_label.setMinimumSize(240, 180)
         self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #2b2b2b;
-                color: #888;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-        """)
+        self._set_preview_label_style()
         self.preview_label.setScaledContents(False)
         container_layout.addWidget(self.preview_label)
 
@@ -436,7 +452,7 @@ class PreviewWidget(QWidget):
         self.expand_btn.setIcon(icon_manager.get_icon("scan"))
         self.expand_btn.setFixedSize(30, 30)
         self.expand_btn.setToolTip("Fullscreen Preview")
-        self.expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.expand_btn.setCursor(_QT_POINTING_HAND_CURSOR)
         self.expand_btn.setStyleSheet("""
             QPushButton {
                 background-color: rgba(45, 45, 45, 0.7);
@@ -456,7 +472,7 @@ class PreviewWidget(QWidget):
         self.export_btn.setIcon(icon_manager.get_icon("file_image"))
         self.export_btn.setFixedSize(30, 30)
         self.export_btn.setToolTip("Export JPEG thumbnail")
-        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.setCursor(_QT_POINTING_HAND_CURSOR)
         self.export_btn.clicked.connect(self._request_thumbnail_export)
         self.export_btn.hide()
 
@@ -513,14 +529,7 @@ class PreviewWidget(QWidget):
 
         self._original_pixmap = None
         self.preview_label.setText("Loading preview...")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #2b2b2b;
-                color: #888;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-        """)
+        self._set_preview_label_style()
 
         self.worker = PreviewWorker(
             file_path,
@@ -560,7 +569,7 @@ class PreviewWidget(QWidget):
             return
 
         self.fullscreen_win = FullscreenPreviewWindow(self._original_pixmap, "RenderKit - Preview")
-        self.fullscreen_win.setWindowModality(Qt.WindowModality.NonModal)
+        self.fullscreen_win.setWindowModality(_QT_NON_MODAL)
         self.fullscreen_win.show()
 
     def _on_preview_error(self, error: str) -> None:
@@ -569,14 +578,7 @@ class PreviewWidget(QWidget):
         self.preview_label.setText(f"Preview error:\n{error}")
         self.expand_btn.hide()
         self.export_btn.hide()
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #2b2b2b;
-                color: #f44336;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-        """)
+        self._set_preview_label_style(error=True)
 
     def clear_preview(self) -> None:
         """Clear the preview."""
@@ -585,14 +587,7 @@ class PreviewWidget(QWidget):
         self.preview_label.setText("No preview")
         self.expand_btn.hide()
         self.export_btn.hide()
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #2b2b2b;
-                color: #888;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-        """)
+        self._set_preview_label_style()
 
     def _request_thumbnail_export(self) -> None:
         """Emit request to export a preview thumbnail."""
@@ -611,7 +606,11 @@ class PreviewWidget(QWidget):
 
         scaled = self._original_pixmap.scaled(
             target_size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            _QT_KEEP_ASPECT_RATIO,
+            _QT_SMOOTH_TRANSFORMATION,
         )
         self.preview_label.setPixmap(scaled)
+
+    def _set_preview_label_style(self, *, error: bool = False) -> None:
+        color = _PREVIEW_LABEL_ERROR_COLOR if error else _PREVIEW_LABEL_COLOR
+        self.preview_label.setStyleSheet(_preview_label_stylesheet(color))

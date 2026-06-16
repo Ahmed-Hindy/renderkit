@@ -41,10 +41,15 @@ from renderkit.ui.qt_compat import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    qt_enum,
 )
 from renderkit.ui.widgets import PreviewWidget
 
 logger = logging.getLogger("renderkit.ui.main_window")
+
+_QT_ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
+_QT_ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
+_QT_ALIGN_RIGHT = qt_enum("AlignmentFlag", "AlignRight")
 
 
 class MainWindowUiMixin:
@@ -93,7 +98,7 @@ class MainWindowUiMixin:
 
         self.drop_overlay = QLabel("Drop file or folder anywhere", central_widget)
         self.drop_overlay.setObjectName("DropOverlay")
-        self.drop_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_overlay.setAlignment(_QT_ALIGN_CENTER)
         self.drop_overlay.setVisible(False)
         self.drop_overlay.setAcceptDrops(True)
         self.drop_overlay.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -381,7 +386,7 @@ class MainWindowUiMixin:
             layout.setSpacing(spacing)
             return layout
 
-        align_left = Qt.AlignmentFlag.AlignLeft
+        align_left = _QT_ALIGN_LEFT
 
         # Output path
         output_path_layout = QHBoxLayout()
@@ -554,7 +559,7 @@ class MainWindowUiMixin:
         progress_header = QHBoxLayout()
         self.progress_status_icon = QLabel()
         self.progress_status_icon.setFixedSize(16, 16)
-        self.progress_status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_status_icon.setAlignment(_QT_ALIGN_CENTER)
         progress_title = QLabel("Progress")
         progress_title.setStyleSheet("font-weight: 600;")
         progress_header.addWidget(self.progress_status_icon)
@@ -569,7 +574,7 @@ class MainWindowUiMixin:
         progress_layout.addWidget(self.progress_bar)
 
         self.progress_label = QLabel("Ready")
-        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_label.setAlignment(_QT_ALIGN_CENTER)
         self.progress_play_btn = QPushButton()
         self.progress_play_btn.setFixedSize(22, 22)
         self.progress_play_btn.setIcon(icon_manager.get_icon("play"))
@@ -648,10 +653,10 @@ class MainWindowUiMixin:
         timeline_row.setSpacing(6)
         self.timeline_start_label = QLabel("--")
         self.timeline_start_label.setObjectName("TimelineLabel")
-        self.timeline_start_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.timeline_start_label.setAlignment(_QT_ALIGN_LEFT)
         self.timeline_end_label = QLabel("--")
         self.timeline_end_label.setObjectName("TimelineLabel")
-        self.timeline_end_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.timeline_end_label.setAlignment(_QT_ALIGN_RIGHT)
         self.timeline_slider = JumpToClickSlider(Qt.Orientation.Horizontal)
         self.timeline_slider.setObjectName("TimelineSlider")
         self.timeline_slider.setTracking(True)
@@ -667,7 +672,7 @@ class MainWindowUiMixin:
 
         self.timeline_current_label = QLabel("Frame: -")
         self.timeline_current_label.setObjectName("TimelineCurrentLabel")
-        self.timeline_current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.timeline_current_label.setAlignment(_QT_ALIGN_CENTER)
         self.timeline_current_label.setFixedHeight(18)
         timeline_layout.addWidget(self.timeline_current_label)
 

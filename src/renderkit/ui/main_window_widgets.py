@@ -13,9 +13,11 @@ from renderkit.ui.qt_compat import (
     QStyleOptionSlider,
     Qt,
     Signal,
+    qt_enum,
 )
 
 COMBO_POPUP_OBJECT_NAME = "ComboBoxPopup"
+_QT_LEFT_BUTTON = qt_enum("MouseButton", "LeftButton")
 try:
     MOUSE_MOVE_EVENT = QEvent.Type.MouseMove
 except AttributeError:
@@ -130,7 +132,7 @@ class JumpToClickSlider(NoWheelSlider):
     """Slider that jumps to the clicked position."""
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == _QT_LEFT_BUTTON:
             option = QStyleOptionSlider()
             self.initStyleOption(option)
             position = event.position().toPoint() if hasattr(event, "position") else event.pos()
