@@ -233,6 +233,8 @@ __all__ = [
     "QWidget",
     # Backend info
     "QT_BACKEND_NAME",
+    "resolve_enum_member",
+    "qt_enum",
 ]
 
 
@@ -243,3 +245,22 @@ def get_qt_backend() -> str:
         Backend name: 'pyside6', 'pyside2', 'pyqt6', or 'pyqt5'
     """
     return QT_BACKEND_NAME
+
+
+def resolve_enum_member(owner, enum_name: str, member_name: str):
+    """Resolve Qt6 nested enum members with a Qt5 flat-attribute fallback."""
+    enum = getattr(owner, enum_name, None)
+    if enum is not None:
+        value = getattr(enum, member_name, None)
+        if value is not None:
+            return value
+
+    value = getattr(owner, member_name, None)
+    if value is None:
+        raise AttributeError(f"{owner!r} has no enum member {enum_name}.{member_name}")
+    return value
+
+
+def qt_enum(enum_name: str, member_name: str):
+    """Resolve a Qt enum member across supported Qt bindings."""
+    return resolve_enum_member(Qt, enum_name, member_name)

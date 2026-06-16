@@ -32,6 +32,7 @@ from renderkit.core.sequence_replacement import (
 from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
+from renderkit.io.oiio_utils import require_oiio
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.scaler import ImageScaler
 
@@ -85,10 +86,7 @@ def _write_sequence_contact_sheet(
     end_frame: Optional[int],
 ) -> None:
     """Write a still contact sheet made from frames in a sequence."""
-    try:
-        import OpenImageIO as oiio
-    except ImportError as exc:
-        raise RuntimeError("OpenImageIO library not available.") from exc
+    oiio = require_oiio()
 
     sequence = SequenceDetector.detect_sequence(input_pattern)
     frame_numbers = sequence.frame_numbers

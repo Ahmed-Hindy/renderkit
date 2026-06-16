@@ -4,10 +4,12 @@ from renderkit.ui.qt_compat import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    Qt,
     QVBoxLayout,
     QWidget,
+    qt_enum,
 )
+
+_QT_POINTING_HAND_CURSOR = qt_enum("CursorShape", "PointingHandCursor")
 
 
 class CollapsibleGroupBox(QWidget):
@@ -35,7 +37,7 @@ class CollapsibleGroupBox(QWidget):
         # Header
         self.header = QFrame()
         self.header.setObjectName("CollapsibleHeader")
-        self.header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.header.setCursor(_QT_POINTING_HAND_CURSOR)
         header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(12, 8, 12, 8)
 

@@ -9,6 +9,7 @@ from typing import Any, Optional, Protocol
 
 from renderkit import constants
 from renderkit.exceptions import ColorSpaceError
+from renderkit.io.oiio_utils import require_oiio
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,11 @@ _OIIO_REC709_CANDIDATES = [
 ]
 _OIIO_COLOR_SPACE_CACHE: Optional[dict[str, str]] = None
 _BUNDLED_OCIO_CONFIG_CACHE: Optional[Path] = None
+_OIIO_COLOR_CONVERSION_ERROR = "OpenImageIO not available for color conversion."
+
+
+def _require_oiio_for_color_conversion():
+    return require_oiio(ColorSpaceError, _OIIO_COLOR_CONVERSION_ERROR)
 
 
 def get_bundled_ocio_config_path() -> Path:
@@ -515,10 +521,7 @@ class OCIOColorSpaceStrategy:
         if not input_space:
             raise ColorSpaceError("OCIO input color space is required.")
 
-        try:
-            import OpenImageIO as oiio
-        except ImportError as err:
-            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        oiio = _require_oiio_for_color_conversion()
 
         requested_input_space = input_space
         resolved_input_space: Optional[str] = input_space
@@ -552,10 +555,7 @@ class LinearToSRGBStrategy:
     """Strategy for converting linear to sRGB color space."""
 
     def convert_buf(self, buf: Any, input_space: Optional[str] = None):
-        try:
-            import OpenImageIO as oiio
-        except ImportError as err:
-            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        oiio = _require_oiio_for_color_conversion()
 
         tone_mapped = _oiio_tone_map_reinhard(oiio, buf)
         oiio_result = _oiio_colorconvert_buf(
@@ -571,10 +571,7 @@ class LinearToRec709Strategy:
     """Strategy for converting linear to Rec.709 color space."""
 
     def convert_buf(self, buf: Any, input_space: Optional[str] = None):
-        try:
-            import OpenImageIO as oiio
-        except ImportError as err:
-            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        oiio = _require_oiio_for_color_conversion()
 
         tone_mapped = _oiio_tone_map_reinhard(oiio, buf)
         oiio_result = _oiio_colorconvert_buf(
@@ -590,10 +587,7 @@ class SRGBToLinearStrategy:
     """Strategy for converting sRGB to linear color space."""
 
     def convert_buf(self, buf: Any, input_space: Optional[str] = None):
-        try:
-            import OpenImageIO as oiio
-        except ImportError as err:
-            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        oiio = _require_oiio_for_color_conversion()
 
         srgb = _oiio_clamp_buf(oiio, buf, 0.0, 1.0)
         return _oiio_colorconvert_buf(
@@ -608,10 +602,7 @@ class NoConversionStrategy:
     """Strategy for no color space conversion (passthrough)."""
 
     def convert_buf(self, buf: Any, input_space: Optional[str] = None):
-        try:
-            import OpenImageIO as oiio
-        except ImportError as err:
-            raise ColorSpaceError("OpenImageIO not available for color conversion.") from err
+        oiio = _require_oiio_for_color_conversion()
         return _ensure_float_buf(oiio, buf)
 
 

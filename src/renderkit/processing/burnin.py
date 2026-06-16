@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from renderkit.io.oiio_utils import require_oiio
+
 logger = logging.getLogger(__name__)
 
 
@@ -9,12 +11,7 @@ class BurnInProcessor:
 
     def __init__(self) -> None:
         """Initialize the processor."""
-        try:
-            import OpenImageIO as oiio
-
-            self.oiio = oiio
-        except ImportError as e:
-            raise RuntimeError("OpenImageIO library not available.") from e
+        self.oiio = require_oiio()
 
     def apply_burnins(
         self,

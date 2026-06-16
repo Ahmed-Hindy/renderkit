@@ -50,6 +50,7 @@ from renderkit.ui.qt_compat import (
     QSystemTrayIcon,
     Qt,
     QUrl,
+    qt_enum,
 )
 
 logger = logging.getLogger("renderkit.ui.main_window")
@@ -57,6 +58,9 @@ logger = logging.getLogger("renderkit.ui.main_window")
 RECENT_PATTERNS_LIMIT = 10
 RECENT_PATTERNS_KEY = "recent_patterns"
 RECENT_PATTERNS_CLEAR_LABEL = "Clear recent patterns"
+_QT_KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
+_QT_SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
+_QT_KEY_ESCAPE = qt_enum("Key", "Key_Escape")
 
 
 class MainWindowLogicMixin:
@@ -74,13 +78,7 @@ class MainWindowLogicMixin:
 
     def keyPressEvent(self, event) -> None:
         """Handle global key presses for the main window."""
-        escape_key = getattr(Qt, "Key_Escape", None)
-        if escape_key is None:
-            key_enum = getattr(Qt, "Key", None)
-            if key_enum is not None:
-                escape_key = getattr(key_enum, "Key_Escape", None)
-
-        if escape_key is not None and event.key() == escape_key:
+        if event.key() == _QT_KEY_ESCAPE:
             if self.worker and self.worker.isRunning():
                 self._cancel_conversion()
                 event.accept()
@@ -676,8 +674,8 @@ class MainWindowLogicMixin:
         target = QSize(max(1, int(width * scale)), max(1, int(height * scale)))
         return pixmap.scaled(
             target,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            _QT_KEEP_ASPECT_RATIO,
+            _QT_SMOOTH_TRANSFORMATION,
         )
 
     def _export_preview_thumbnail(self, pixmap) -> None:
