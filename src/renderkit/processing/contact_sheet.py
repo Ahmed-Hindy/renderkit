@@ -12,7 +12,20 @@ from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapE
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.scaler import ImageScaler
 
+_CS_LABEL_GAP_MULTIPLIER = 0.01
+_CS_LABEL_MIN_GAP = 4
+_CS_LINE_HEIGHT_MULTIPLIER = 1.4
+
 logger = logging.getLogger(__name__)
+
+
+def compute_contact_sheet_label_metrics(config: ContactSheetConfig) -> tuple[int, int]:
+    """Return label gap and label height for a contact sheet config."""
+    if not config.show_labels:
+        return 0, 0
+    label_gap = max(_CS_LABEL_MIN_GAP, int(config.font_size * _CS_LABEL_GAP_MULTIPLIER))
+    label_h = label_gap + int(config.font_size * _CS_LINE_HEIGHT_MULTIPLIER)
+    return label_gap, label_h
 
 
 class ContactSheetGenerator:
@@ -172,11 +185,7 @@ class ContactSheetGenerator:
         }
 
     def _compute_label_metrics(self) -> tuple[int, int]:
-        if not self.config.show_labels:
-            return 0, 0
-        label_gap = max(4, int(self.config.font_size * 0.01))
-        label_h = label_gap + int(self.config.font_size * 1.4)
-        return label_gap, label_h
+        return compute_contact_sheet_label_metrics(self.config)
 
     def _build_subimage_buffers(
         self,

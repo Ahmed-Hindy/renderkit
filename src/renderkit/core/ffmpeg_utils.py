@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+_FFMPEG_ENV_VAR = "IMAGEIO_FFMPEG_EXE"
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,7 @@ def _get_vendor_ffmpeg_candidates(root: Path) -> list[Path]:
 
 def ensure_ffmpeg_env() -> None:
     """Set IMAGEIO_FFMPEG_EXE if a bundled FFmpeg binary is available."""
-    if os.environ.get("IMAGEIO_FFMPEG_EXE"):
+    if os.environ.get(_FFMPEG_ENV_VAR):
         return
 
     candidates: list[Path] = []
@@ -73,7 +75,7 @@ def ensure_ffmpeg_env() -> None:
 
     for candidate in candidates:
         if candidate.is_file():
-            os.environ["IMAGEIO_FFMPEG_EXE"] = str(candidate)
+            os.environ[_FFMPEG_ENV_VAR] = str(candidate)
             logger.info("Using bundled ffmpeg: %s", candidate)
             return
 
@@ -82,12 +84,12 @@ def ensure_ffmpeg_env() -> None:
 
 def get_ffmpeg_exe() -> str:
     """Return the best FFmpeg executable path for the current environment."""
-    env_exe = os.environ.get("IMAGEIO_FFMPEG_EXE")
+    env_exe = os.environ.get(_FFMPEG_ENV_VAR)
     if env_exe:
         return env_exe
 
     ensure_ffmpeg_env()
-    env_exe = os.environ.get("IMAGEIO_FFMPEG_EXE")
+    env_exe = os.environ.get(_FFMPEG_ENV_VAR)
     if env_exe:
         return env_exe
 

@@ -34,6 +34,7 @@ from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.io.oiio_utils import require_oiio
 from renderkit.logging_utils import setup_logging
+from renderkit.processing.contact_sheet import compute_contact_sheet_label_metrics
 from renderkit.processing.scaler import ImageScaler
 
 logger = logging.getLogger("renderkit.cli.main")
@@ -53,13 +54,6 @@ def _launch_ui() -> None:
     from renderkit.ui.main_window import run_ui
 
     run_ui()
-
-
-def _label_height(config: ContactSheetConfig) -> int:
-    if not config.show_labels:
-        return 0
-    label_gap = max(4, int(config.font_size * 0.01))
-    return label_gap + int(config.font_size * 1.4)
 
 
 def _to_rgb_buf(oiio: Any, buf: Any) -> Any:
@@ -103,8 +97,7 @@ def _write_sequence_contact_sheet(
     first_spec = first_buf.spec()
     thumb_w, thumb_h = config.resolve_layer_size(first_spec.width, first_spec.height)
     padding = config.padding
-    label_h = _label_height(config)
-    label_gap = max(4, int(config.font_size * 0.01)) if config.show_labels else 0
+    label_gap, label_h = compute_contact_sheet_label_metrics(config)
     cell_w = thumb_w + (padding * 2)
     cell_h = thumb_h + (padding * 2) + label_h
     rows = (len(frame_numbers) + config.columns - 1) // config.columns

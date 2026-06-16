@@ -18,6 +18,22 @@ from renderkit.exceptions import ConfigurationError, VideoEncodingError
 from renderkit.processing.pixels import float_pixels_to_uint8
 from renderkit.processing.scaler import ImageScaler
 
+_FFREPORT_ENV_VAR = "FFREPORT"
+_FFMPEG_REPORT_VERBOSITY_LEVEL = 48
+_FFMPEG_REPORT_MAX_TAIL_LINES = 80
+_QUALITY_MAX = 10
+_X26X_CRF_BEST = 18
+_X26X_CRF_STEP = 1.7
+_X26X_CRF_DEFAULT = 23
+_AV1_CRF_BEST = 20
+_AV1_CRF_STEP = 3
+_AV1_CRF_DEFAULT = 32
+_AV1_CPU_USED = "6"
+_AV1_CRF_BITRATE = "0"
+_MPEG4_QV_BEST = 2
+_MPEG4_QV_STEP = 2.9
+_MPEG4_QV_DEFAULT = 4
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,7 +240,7 @@ class VideoEncoder:
             macro_block_size: Macro block size for codec compatibility (default: 16)
                              Frame dimensions will be rounded up to multiples of this value
         """
-        if quality is not None and not 0 <= quality <= 10:
+        if quality is not None and not 0 <= quality <= _QUALITY_MAX:
             raise ConfigurationError("Quality must be between 0 and 10")
 
         self.output_path = output_path.absolute()
@@ -254,12 +270,14 @@ class VideoEncoder:
             path = Path(value).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        if "FFREPORT" in os.environ:
-            self._ffreport_prev = os.environ["FFREPORT"]
+        if _FFREPORT_ENV_VAR in os.environ:
+            self._ffreport_prev = os.environ[_FFREPORT_ENV_VAR]
         else:
             self._ffreport_prev = None
         escaped_path = _escape_ffreport_path(path)
-        os.environ["FFREPORT"] = f"file={escaped_path}:level=48"
+        os.environ[_FFREPORT_ENV_VAR] = (
+            f"file={escaped_path}:level={_FFMPEG_REPORT_VERBOSITY_LEVEL}"
+        )
         self._ffreport_set = True
         return path
 
@@ -267,12 +285,14 @@ class VideoEncoder:
         if not self._ffreport_set:
             return
         if self._ffreport_prev is None:
-            os.environ.pop("FFREPORT", None)
+            os.environ.pop(_FFREPORT_ENV_VAR, None)
         else:
-            os.environ["FFREPORT"] = self._ffreport_prev
+            os.environ[_FFREPORT_ENV_VAR] = self._ffreport_prev
         self._ffreport_set = False
 
-    def _read_ffmpeg_report_tail(self, max_lines: int = 80) -> Optional[str]:
+    def _read_ffmpeg_report_tail(
+        self, max_lines: int = _FFMPEG_REPORT_MAX_TAIL_LINES
+    ) -> Optional[str]:
         """Best-effort FFmpeg report tail for error messages."""
         if self._ffmpeg_report_path is None:
             return None
@@ -394,30 +414,42 @@ class VideoEncoder:
         if self.bitrate is not None:
             bitrate = f"{self.bitrate}k"
             if ffmpeg_codec == "libaom-av1":
-                ffmpeg_params.extend(["-cpu-used", "6"])
+                ffmpeg_params.extend(["-cpu-used", _AV1_CPU_USED])
             logger.debug("%s tuning: bitrate=%s", ffmpeg_codec, bitrate)
         # Codec-specific tuning and quality mapping (used only when bitrate is not provided).
         elif ffmpeg_codec in ["libx264", "libx265"]:
             # Map quality (0-10) to CRF (35-18)
             # 10 -> 18 (Excellent), 0 -> 35 (Low quality)
             # Default to 23 if not specified
-            crf = 18 + (10 - self.quality) * 1.7 if self.quality is not None else 23
+            crf = (
+                _X26X_CRF_BEST + (_QUALITY_MAX - self.quality) * _X26X_CRF_STEP
+                if self.quality is not None
+                else _X26X_CRF_DEFAULT
+            )
             ffmpeg_params.extend(["-crf", f"{int(crf)}"])
             logger.debug(f"{ffmpeg_codec} tuning: crf={int(crf)}")
 
         elif ffmpeg_codec == "libaom-av1":
             # AV1 is extremely slow by default. Use -cpu-used 6 for better speed.
             # Map 0-10 quality to CRF 50-20 (lower is better)
-            crf = 20 + (10 - self.quality) * 3 if self.quality is not None else 32
-            ffmpeg_params.extend(["-crf", f"{int(crf)}", "-cpu-used", "6"])
+            crf = (
+                _AV1_CRF_BEST + (_QUALITY_MAX - self.quality) * _AV1_CRF_STEP
+                if self.quality is not None
+                else _AV1_CRF_DEFAULT
+            )
+            ffmpeg_params.extend(["-crf", f"{int(crf)}", "-cpu-used", _AV1_CPU_USED])
             # libaom-av1 needs bitrate=0 to enable CRF mode in FFmpeg
-            bitrate = "0"
+            bitrate = _AV1_CRF_BITRATE
             logger.debug(f"AV1 tuning: crf={int(crf)}, cpu-used=6")
 
         elif ffmpeg_codec == "mpeg4":
             # Map quality (0-10) to -q:v (31-2)
             # Higher -q:v is lower quality.
-            qv = 2 + (10 - self.quality) * 2.9 if self.quality is not None else 4
+            qv = (
+                _MPEG4_QV_BEST + (_QUALITY_MAX - self.quality) * _MPEG4_QV_STEP
+                if self.quality is not None
+                else _MPEG4_QV_DEFAULT
+            )
             ffmpeg_params.extend(["-q:v", f"{int(qv)}"])
             logger.debug(f"MPEG-4 tuning: q:v={int(qv)}")
 

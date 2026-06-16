@@ -10,6 +10,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _LOGGER_NAME = "renderkit"
+_QT_DELETED_SIGNAL_ERROR_MSG = "SignalInstance object was already deleted"
+_LOG_FILE_MAX_BYTES = 5 * 1024 * 1024
+_LOG_FILE_BACKUP_COUNT = 3
 
 
 class CallbackHandler(logging.Handler):
@@ -27,7 +30,7 @@ class CallbackHandler(logging.Handler):
         try:
             self._callback(msg)
         except RuntimeError as exc:
-            if "SignalInstance object was already deleted" in str(exc):
+            if _QT_DELETED_SIGNAL_ERROR_MSG in str(exc):
                 return
             self.handleError(record)
         except Exception:
@@ -103,8 +106,8 @@ def setup_logging(
     if file_handler is None:
         file_handler = RotatingFileHandler(
             log_path,
-            maxBytes=5 * 1024 * 1024,
-            backupCount=3,
+            maxBytes=_LOG_FILE_MAX_BYTES,
+            backupCount=_LOG_FILE_BACKUP_COUNT,
             encoding="utf-8",
         )
         file_handler.renderkit_handler = "file"
