@@ -7,17 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-16
+
 ### Added
-- `renderkit replace-sequence-with-mp4` for safe replacement of detected source frame sequences with approved MP4s.
-- `renderkit batch-replace` for scanning EXR sequence trees and applying the same verified replacement workflow in bulk.
-- JSONL audit records for sequence replacement cleanup, including dry-run, verification, copy, deletion, and reclaimed-byte details.
+- **Batch EXR → MP4 CLI** — new `renderkit batch convert` sub-command converts an entire directory tree of EXR sequences in one shot, with dry-run support that validates replacement MP4s before committing any writes.
+- **Sequence replacement & cleanup** — `renderkit replace-sequence-with-mp4` and `renderkit batch-replace` for safe, audited replacement of EXR frame sequences with verified MP4s. JSONL audit records capture dry-run, verification, copy, deletion, and reclaimed-byte details.
+- **Contact-sheet CLI** promoted to a proper `renderkit contact-sheet` sub-command via a new dedicated `cli/conversion.py` module.
+- **`--no-progress` flag** for suppressing the live progress bar in headless / CI pipelines without losing log output.
+- **Nuitka standalone packaging** — new `nuitka-standalone-zip.yml` CI workflow produces self-contained zips for Windows, macOS, and Linux, backed by `scripts/build_nuitka.ps1` and `scripts/stage_portable_ffmpeg.py` for portable FFmpeg bundling.
+- `src/renderkit/processing/frame_pipeline.py` — shared frame-preparation pipeline used by both the single-frame preview and the video encoder.
+- `src/renderkit/core/sequence_replacement.py` — new module handling sequence audit, replacement, and cleanup workflows.
+- `src/renderkit/core/batch.py` and `src/renderkit/cli/batch.py` backing the batch-convert feature end-to-end.
+- `src/renderkit/core/sequence_names.py` extracted from the sequence module to isolate name-normalisation helpers.
+- `src/renderkit/ui/qt_compat.py` to centralise Qt version shims.
+- `src/renderkit/processing/pixels.py` and `src/renderkit/io/oiio_utils.py` for shared pixel and OIIO helpers.
+- mypy baseline established; incremental type-annotation enforcement begins.
+- New tests covering batch conversion, CLI, sequence replacement, video encoder, UI helper modules, and logging (+~2 200 lines).
 
 ### Changed
+- **Main window decomposed** — `main_window_logic.py` split into four focused helper modules: `main_window_preview.py`, `main_window_sequence.py`, `main_window_settings.py`, and `main_window_ui.py`.
+- **Preview pipeline thread safety** — QPixmap creation moved to the UI thread; worker threads now pass raw `bytes`/`numpy` arrays instead of Qt objects. `QImage` buffer lifetimes explicitly managed so the underlying array outlives the `QImage`.
+- **Shared frame-prep pipeline** — preview and video-encoder paths now share `frame_pipeline.py`, eliminating the previous code duplication.
+- **Conversion orchestration** — conversion kickoff logic extracted from `main_window_logic.py` into a clean orchestration layer, reducing UI/core coupling.
+- **OCIO config simplified** — removed the `OCIO` environment-variable override; the bundled config is now always used for deterministic behaviour across environments.
+- **Duplicate render helpers consolidated** — colour-conversion and scaling helpers that were duplicated across `converter.py`, `video_encoder.py`, and `image_reader.py` moved into `oiio_utils.py` and `pixels.py`.
+- **Magic literals extracted** — numeric and string magic literals replaced with named constants throughout the codebase.
 - Batch conversion output planning now deduplicates colliding MP4 paths within a run.
-- Batch CLI implementation is split into dedicated command and shared conversion modules.
+- Batch CLI implementation split into dedicated command and shared conversion modules.
+- Regex-based batch sequence grouping replaced with deterministic glob-based grouping.
+- Pre-compiled regex patterns introduced in sequence helpers to avoid hotspot recompilation.
+- Debug-level log entries now correctly route to the file handler when file logging is enabled.
+- FFmpeg finalisation failures (e.g. missing `moov` atom) now propagate as hard errors instead of silent no-ops.
+- FFmpeg encoder probe handling tightened; unexpected codec outputs no longer cause silent fallbacks.
+- FFmpeg verification in CI now has timeouts to prevent hangs.
+- `Always use bundled OCIO config` closes the gap between developer and production runtimes.
+- SonarCloud findings addressed: camelCase dummy fields, test helper warnings, batch-conversion findings.
+- PyInstaller archive layout preserved in Nuitka artifacts; macOS executable-data collision fixed.
+- PowerShell null comparisons in CI corrected to `$null -eq $x` ordering for strict mode.
 
 ### Fixed
-- Sequence replacement validates replacement MP4 existence during dry runs and preflights audit report writability before copy/delete work.
+- Data AOVs (normals, depth, motion vectors) with values outside `[0, 1]` now display correctly in the preview instead of clamping to black/white.
+- `%04d` / `%d` printf-style frame patterns in sequence paths now resolved correctly before FFmpeg invocation.
+- Sequence replacement validates replacement MP4 existence during dry runs and preflights audit-report writability before copy/delete work.
+- Sequence replacement audit preflight now validates sequence completeness before proceeding.
+- Nested review-name lookup in batch-replace now resolves deeply-nested shot directories correctly.
+- CLI one-sided range and resolution options now parsed correctly.
 - FPS metadata probing and OCIO conversion diagnostics now log expected failure details instead of silently dropping them.
 
 ## [1.0.0] - 2026-06-06
