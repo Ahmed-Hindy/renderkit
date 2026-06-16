@@ -21,7 +21,10 @@ from renderkit.io.image_reader import ImageReader, ImageReaderFactory, LayerMapE
 from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.burnin import BurnInProcessor
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
-from renderkit.processing.contact_sheet import ContactSheetGenerator
+from renderkit.processing.contact_sheet import (
+    ContactSheetGenerator,
+    compute_contact_sheet_label_metrics,
+)
 from renderkit.processing.frame_pipeline import FramePreparationOptions, prepare_frame_buffer
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
@@ -257,9 +260,7 @@ class SequenceConverter:
                 thumb_w, thumb_h = cs_config.resolve_layer_size(width, height)
 
                 padding = cs_config.padding
-                label_h = 0
-                if cs_config.show_labels:
-                    label_h = int(cs_config.font_size * 2.5)
+                _, label_h = compute_contact_sheet_label_metrics(cs_config)
 
                 cell_w = thumb_w + (padding * 2)
                 cell_h = thumb_h + (padding * 2) + label_h

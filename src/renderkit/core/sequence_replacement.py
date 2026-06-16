@@ -19,6 +19,7 @@ from renderkit.core.sequence_names import split_numbered_frame_name
 from renderkit.exceptions import SequenceReplacementError
 
 Mp4Verifier = Callable[[Path], None]
+_DEFAULT_AUDIT_FILENAME = "renderkit-replacement-audit.jsonl"
 
 
 @dataclass(frozen=True)
@@ -130,7 +131,7 @@ def replace_sequence_with_mp4(
 
     source_mp4 = output_mp4.resolve()
     destination_mp4 = sequence.base_path / output_mp4.name
-    report_path = audit_report or (sequence.base_path / "renderkit-replacement-audit.jsonl")
+    report_path = audit_report or (sequence.base_path / _DEFAULT_AUDIT_FILENAME)
     _prepare_audit_report(report_path)
     verified = _verify_source_mp4_if_needed(
         source_mp4,

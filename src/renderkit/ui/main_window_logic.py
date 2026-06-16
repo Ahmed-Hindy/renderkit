@@ -53,14 +53,19 @@ from renderkit.ui.qt_compat import (
     qt_enum,
 )
 
-logger = logging.getLogger("renderkit.ui.main_window")
-
 RECENT_PATTERNS_LIMIT = 10
 RECENT_PATTERNS_KEY = "recent_patterns"
 RECENT_PATTERNS_CLEAR_LABEL = "Clear recent patterns"
+_PREVIEW_DEBOUNCE_MS = 300
+_THUMBNAIL_MAX_DIM = 512
+_THUMBNAIL_JPEG_QUALITY = 90
+_LOG_SEPARATOR_WIDTH = 50
+_CONTACT_SHEET_DEFAULT_COLUMNS = ContactSheetConfig().columns
 _QT_KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
 _QT_SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
 _QT_KEY_ESCAPE = qt_enum("Key", "Key_Escape")
+
+logger = logging.getLogger("renderkit.ui.main_window")
 
 
 class MainWindowLogicMixin:
@@ -512,7 +517,7 @@ class MainWindowLogicMixin:
     def _on_cs_setting_changed(self, *args) -> None:
         """Handle contact sheet or preview setting changes with debouncing."""
         # Trigger preview update after a short delay to avoid thread churning
-        self._cs_preview_timer.start(300)  # 300ms debounce
+        self._cs_preview_timer.start(_PREVIEW_DEBOUNCE_MS)
 
     def _on_quality_changed(self, value: int) -> None:
         """Handle quality slider change."""
@@ -663,12 +668,11 @@ class MainWindowLogicMixin:
     def _scale_thumbnail_pixmap(self, pixmap):
         if pixmap.isNull():
             return pixmap
-        max_dim = 512
         width = pixmap.width()
         height = pixmap.height()
         if width <= 0 or height <= 0:
             return pixmap
-        scale = min(1.0, max_dim / float(width), max_dim / float(height))
+        scale = min(1.0, _THUMBNAIL_MAX_DIM / float(width), _THUMBNAIL_MAX_DIM / float(height))
         if scale >= 1.0:
             return pixmap
         target = QSize(max(1, int(width * scale)), max(1, int(height * scale)))
@@ -712,7 +716,7 @@ class MainWindowLogicMixin:
 
         thumb_path = output_dir / f"{sequence_stem}_thumb.jpg"
         scaled = self._scale_thumbnail_pixmap(pixmap)
-        saved = scaled.save(str(thumb_path), "JPEG", 90)
+        saved = scaled.save(str(thumb_path), "JPEG", _THUMBNAIL_JPEG_QUALITY)
         if not saved:
             QMessageBox.warning(
                 self,
@@ -1184,7 +1188,7 @@ class MainWindowLogicMixin:
             current_cols = self.cs_columns_spin.value()
             if current_cols > max_cols:
                 self.cs_columns_spin.setValue(max_cols)
-            elif current_cols == 4:
+            elif current_cols == _CONTACT_SHEET_DEFAULT_COLUMNS:
                 self.cs_columns_spin.setValue(suggested_cols)
 
             # Update FPS if available
@@ -1249,7 +1253,7 @@ class MainWindowLogicMixin:
         self.cs_columns_spin.setMaximum(1)
         if self.cs_columns_spin.value() > 1:
             self.cs_columns_spin.setValue(1)
-        elif self.cs_columns_spin.value() == 4:
+        elif self.cs_columns_spin.value() == _CONTACT_SHEET_DEFAULT_COLUMNS:
             self.cs_columns_spin.setValue(1)
 
         # Update sequence info
@@ -1444,7 +1448,7 @@ class MainWindowLogicMixin:
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.progress_label.setText("Starting conversion...")
         self.statusBar().showMessage("Starting conversion...")
-        logger.info("=" * 50)
+        logger.info("=" * _LOG_SEPARATOR_WIDTH)
         logger.info("Starting conversion...")
         logger.info(f"Input: {config.input_pattern}")
         logger.info(f"Output: {config.output_path}")

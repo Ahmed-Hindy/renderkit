@@ -9,6 +9,8 @@ from typing import Optional
 from renderkit.core.sequence import FrameSequence
 from renderkit.ui.qt_compat import QLabel, QSlider, QTimer, QWidget
 
+_SCRUB_DEBOUNCE_MS = 40
+
 PreviewLoader = Callable[[Path, bool], None]
 
 
@@ -41,7 +43,7 @@ class TimelineController:
 
         self._timer = QTimer(parent or container)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(40)
+        self._timer.setInterval(_SCRUB_DEBOUNCE_MS)
         self._timer.timeout.connect(self._apply_scrub)
 
         self._slider.valueChanged.connect(self._on_slider_changed)

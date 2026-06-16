@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from renderkit.core import converter as converter_module
-from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
 from renderkit.core.converter import SequenceConverter
 from renderkit.exceptions import (
     ColorSpaceError,
@@ -15,6 +15,7 @@ from renderkit.exceptions import (
     VideoEncodingError,
 )
 from renderkit.io.file_info import FileInfo
+from renderkit.processing.contact_sheet import compute_contact_sheet_label_metrics
 from renderkit.processing.video_encoder import VideoEncoder
 
 
@@ -184,6 +185,35 @@ class _FakeBuf:
 class _PassThroughColorConverter:
     def convert_buf(self, buf, input_space=None):
         return buf
+
+
+class TestSequenceConverterLayout:
+    """Tests for converter output layout calculations."""
+
+    def test_contact_sheet_resolution_uses_shared_label_metrics(self) -> None:
+        """Contact sheet output dimensions should match renderer label metrics."""
+        cs_config = ContactSheetConfig(
+            columns=2,
+            thumbnail_width=40,
+            padding=5,
+            show_labels=True,
+            font_size=8,
+        )
+        converter = SequenceConverter.__new__(SequenceConverter)
+        converter.config = ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="output.mp4",
+            contact_sheet_mode=True,
+            contact_sheet_config=cs_config,
+        )
+        converter.contact_sheet_generator = object()
+        file_info = FileInfo(width=100, height=50, channels=3, layers=["beauty", "diffuse", "z"])
+
+        output_width, output_height = converter._resolve_output_resolution(file_info, 100, 50)
+
+        _, label_h = compute_contact_sheet_label_metrics(cs_config)
+        assert output_width == (40 + (5 * 2)) * 2
+        assert output_height == (20 + (5 * 2) + label_h) * 2
 
 
 class TestSequenceConverterFailures:

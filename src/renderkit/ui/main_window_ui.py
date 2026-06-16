@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from renderkit import __version__
+from renderkit.core.config import ContactSheetConfig
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.main_window_widgets import (
     JumpToClickSlider,
@@ -45,11 +46,21 @@ from renderkit.ui.qt_compat import (
 )
 from renderkit.ui.widgets import PreviewWidget
 
-logger = logging.getLogger("renderkit.ui.main_window")
-
+_MIN_WINDOW_WIDTH = 500
+_MIN_WINDOW_HEIGHT = 450
+_DEFAULT_WINDOW_WIDTH = 1400
+_DEFAULT_WINDOW_HEIGHT = 950
+_COMPACT_HEIGHT_THRESHOLD = 900
+_COMFORTABLE_HEIGHT_THRESHOLD = 1100
+_LOG_MAX_BLOCK_COUNT = 1000
+_TIMELINE_MAX_HEIGHT = 54
+_CONTACT_SHEET_DEFAULT_COLUMNS = ContactSheetConfig().columns
+_CONTACT_SHEET_DEFAULT_PADDING = ContactSheetConfig().padding
 _QT_ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
 _QT_ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
 _QT_ALIGN_RIGHT = qt_enum("AlignmentFlag", "AlignRight")
+
+logger = logging.getLogger("renderkit.ui.main_window")
 
 
 class MainWindowUiMixin:
@@ -75,8 +86,8 @@ class MainWindowUiMixin:
     def _setup_ui(self) -> None:
         """Set up the user interface."""
         self.setWindowTitle(f"RenderKit v{__version__}")
-        self.setMinimumSize(500, 450)
-        self.resize(1400, 950)
+        self.setMinimumSize(_MIN_WINDOW_WIDTH, _MIN_WINDOW_HEIGHT)
+        self.resize(_DEFAULT_WINDOW_WIDTH, _DEFAULT_WINDOW_HEIGHT)
         self._last_preview_path: Optional[Path] = None
 
         # Central widget with splitter
@@ -177,9 +188,9 @@ class MainWindowUiMixin:
         height = event.size().height()
 
         # Determine layout mode based on height
-        if height < 900:
+        if height < _COMPACT_HEIGHT_THRESHOLD:
             new_mode = "compact"
-        elif height < 1100:
+        elif height < _COMFORTABLE_HEIGHT_THRESHOLD:
             new_mode = "standard"
         else:
             new_mode = "comfortable"
@@ -195,7 +206,7 @@ class MainWindowUiMixin:
                 self._apply_comfortable_mode()
 
     def _apply_compact_mode(self):
-        """Apply compact layout for small windows (<900px)."""
+        """Apply compact layout for small windows."""
         if self.preview_panel:
             self.preview_panel.setVisible(False)
         # Adjust splitter to give more space to settings
@@ -203,7 +214,7 @@ class MainWindowUiMixin:
             self.main_splitter.setSizes([800, 200])
 
     def _apply_standard_mode(self):
-        """Apply standard layout (900-1100px)."""
+        """Apply standard layout."""
         if self.preview_panel:
             self.preview_panel.setVisible(True)
         # Standard splitter sizes
@@ -213,7 +224,7 @@ class MainWindowUiMixin:
             self.left_splitter.setSizes([400, 180])
 
     def _apply_comfortable_mode(self):
-        """Apply comfortable layout for large windows (>1100px)."""
+        """Apply comfortable layout for large windows."""
         if self.preview_panel:
             self.preview_panel.setVisible(True)
         # Give the right-side preview column more room while keeping logs readable.
@@ -611,7 +622,7 @@ class MainWindowUiMixin:
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
-        self.log_text.setMaximumBlockCount(1000)  # Limit log lines
+        self.log_text.setMaximumBlockCount(_LOG_MAX_BLOCK_COUNT)
         self.log_text.setObjectName("LogBox")
         log_layout.addWidget(self.log_text)
 
@@ -643,7 +654,7 @@ class MainWindowUiMixin:
         self.timeline_widget = QWidget()
         self.timeline_widget.setObjectName("TimelineWidget")
         self.timeline_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.timeline_widget.setMaximumHeight(54)
+        self.timeline_widget.setMaximumHeight(_TIMELINE_MAX_HEIGHT)
         timeline_layout = QVBoxLayout(self.timeline_widget)
         timeline_layout.setContentsMargins(6, 2, 6, 2)
         timeline_layout.setSpacing(2)
@@ -836,12 +847,12 @@ class MainWindowUiMixin:
 
         self.cs_columns_spin = NoWheelSpinBox()
         self.cs_columns_spin.setRange(1, 20)
-        self.cs_columns_spin.setValue(4)
+        self.cs_columns_spin.setValue(_CONTACT_SHEET_DEFAULT_COLUMNS)
         form_layout.addRow("Columns:", self.cs_columns_spin)
 
         self.cs_padding_spin = NoWheelSpinBox()
         self.cs_padding_spin.setRange(0, 100)
-        self.cs_padding_spin.setValue(4)
+        self.cs_padding_spin.setValue(_CONTACT_SHEET_DEFAULT_PADDING)
         self.cs_padding_spin.setSuffix(" px")
         form_layout.addRow("Padding:", self.cs_padding_spin)
 

@@ -3,6 +3,10 @@ from typing import Any
 
 from renderkit.io.oiio_utils import require_oiio
 
+_BURNIN_EDGE_MARGIN = 20
+_BURNIN_BAR_HEIGHT_MULTIPLIER = 2.0
+_BURNIN_VERTICAL_CENTER_FACTOR = 0.7
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +43,7 @@ class BurnInProcessor:
         if getattr(burnin_config, "use_background", False):
             # Bar height based on max font size (roughly)
             max_font_size = max([e.font_size for e in burnin_config.elements])
-            bar_height = int(max_font_size * 2.0)
+            bar_height = int(max_font_size * _BURNIN_BAR_HEIGHT_MULTIPLIER)
 
             # Darken the area by multiplying
             # background_opacity 30 means 30% darkening -> multiplier 0.7
@@ -59,16 +63,16 @@ class BurnInProcessor:
                 if element.alignment == "center":
                     x_pos = width // 2
                 elif element.alignment == "right":
-                    x_pos = width - 20
+                    x_pos = width - _BURNIN_EDGE_MARGIN
                 elif element.alignment == "left":
-                    x_pos = 20
+                    x_pos = _BURNIN_EDGE_MARGIN
 
             # Apply burn-in
             # Adjust Y to be within the bar if background is used
             y_pos = element.y
             if getattr(burnin_config, "use_background", False) and y_pos < bar_height:
                 # Center vertically in bar (render_text base is baseline)
-                y_pos = int(bar_height * 0.7)
+                y_pos = int(bar_height * _BURNIN_VERTICAL_CENTER_FACTOR)
 
             if not self.oiio.ImageBufAlgo.render_text(
                 buf,

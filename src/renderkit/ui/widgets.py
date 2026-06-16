@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 _PREVIEW_LABEL_COLOR = "#888"
 _PREVIEW_LABEL_ERROR_COLOR = "#f44336"
+_FULLSCREEN_MIN_WIDTH = 800
+_FULLSCREEN_MIN_HEIGHT = 600
+_ZOOM_FIT_MARGIN = 0.95
+_ZOOM_STEP_FACTOR = 1.15
+_ZOOM_MIN = 0.01
+_ZOOM_MAX = 10.0
+_COPY_BTN_RESET_DELAY_MS = 2000
 _QT_ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
 _QT_KEEP_ASPECT_RATIO = qt_enum("AspectRatioMode", "KeepAspectRatio")
 _QT_SMOOTH_TRANSFORMATION = qt_enum("TransformationMode", "SmoothTransformation")
@@ -229,7 +236,7 @@ class FullscreenPreviewWindow(QWidget):
         """
         super().__init__()
         self.setWindowTitle(title)
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(_FULLSCREEN_MIN_WIDTH, _FULLSCREEN_MIN_HEIGHT)
         self._pixmap = pixmap
         self._zoom_factor = 1.0  # 1.0 = Original size
         self._is_panning = False
@@ -301,11 +308,11 @@ class FullscreenPreviewWindow(QWidget):
 
         viewport_size = self.scroll_area.viewport().size()
         if viewport_size.width() <= 0 or viewport_size.height() <= 0:
-            viewport_size = QSize(800, 600)
+            viewport_size = QSize(_FULLSCREEN_MIN_WIDTH, _FULLSCREEN_MIN_HEIGHT)
 
         w_scale = viewport_size.width() / self._pixmap.width()
         h_scale = viewport_size.height() / self._pixmap.height()
-        self._zoom_factor = min(w_scale, h_scale) * 0.95  # Leave a small margin
+        self._zoom_factor = min(w_scale, h_scale) * _ZOOM_FIT_MARGIN
         self._update_image()
 
     def _update_image(self) -> None:
@@ -343,14 +350,13 @@ class FullscreenPreviewWindow(QWidget):
         # Zoom to mouse logic
         old_zoom = self._zoom_factor
         angle = event.angleDelta().y()
-        zoom_step = 1.15
         if angle > 0:
-            self._zoom_factor *= zoom_step
+            self._zoom_factor *= _ZOOM_STEP_FACTOR
         else:
-            self._zoom_factor /= zoom_step
+            self._zoom_factor /= _ZOOM_STEP_FACTOR
 
         # Clamp zoom: 1% to 1000%
-        self._zoom_factor = max(0.01, min(self._zoom_factor, 10.0))
+        self._zoom_factor = max(_ZOOM_MIN, min(self._zoom_factor, _ZOOM_MAX))
 
         # Update image
         self._update_image()
@@ -412,7 +418,7 @@ class FullscreenPreviewWindow(QWidget):
         """Copy current pixmap to clipboard."""
         QApplication.clipboard().setPixmap(self._pixmap)
         self.copy_btn.setText("Copied!")
-        QTimer.singleShot(2000, lambda: self.copy_btn.setText("Copy Image"))
+        QTimer.singleShot(_COPY_BTN_RESET_DELAY_MS, lambda: self.copy_btn.setText("Copy Image"))
 
 
 class PreviewWidget(QWidget):
