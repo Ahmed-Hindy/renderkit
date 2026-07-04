@@ -86,6 +86,18 @@ class TestSequenceDetector:
         assert len(sequence) == 5
         assert sequence.frame_numbers == [1, 2, 3, 4, 5]
 
+    def test_detect_numeric_pattern_uses_last_digit_group(self, tmp_path: Path) -> None:
+        """Test numeric detection uses frame digits, not version digits."""
+        for i in range(1, 4):
+            (tmp_path / f"shot_v001.{i:04d}.exr").touch()
+
+        pattern = str(tmp_path / "shot_v001.0001.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert sequence.pattern == "shot_v001.%04d.exr"
+        assert sequence.frame_numbers == [1, 2, 3]
+        assert sequence.get_file_path(3) == tmp_path / "shot_v001.0003.exr"
+
     def test_detect_sequence_not_found(self, tmp_path: Path) -> None:
         """Test error when sequence cannot be detected."""
         pattern = str(tmp_path / "nonexistent.%04d.exr")

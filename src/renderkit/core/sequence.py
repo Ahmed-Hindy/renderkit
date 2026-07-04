@@ -139,8 +139,9 @@ class SequenceDetector:
 
         # Check for numeric pattern (e.g., render.0001.exr)
         else:
-            numeric_match = re.search(r"(\d+)", filename)
-            if numeric_match:
+            numeric_matches = list(re.finditer(r"(\d+)", filename))
+            if numeric_matches:
+                numeric_match = numeric_matches[-1]
                 # Try to find sequence by replacing the number
                 frame_numbers = SequenceDetector._find_frames_by_numeric_pattern(
                     base_path, filename, numeric_match
