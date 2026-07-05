@@ -110,6 +110,39 @@ class TestSequenceDetector:
         assert sequence.frame_numbers == [1, 2, 3]
         assert sequence.get_file_path(3) == tmp_path / "render.0003.layer1.exr"
 
+    def test_detect_numeric_pattern_ignores_more_common_suffix_digits(self, tmp_path: Path) -> None:
+        """Test numeric detection does not prefer non-frame suffix variants."""
+        for i in range(1, 3):
+            (tmp_path / f"render.{i:04d}.layer1.exr").touch()
+        for i in range(2, 8):
+            (tmp_path / f"render.0001.layer{i}.exr").touch()
+
+        pattern = str(tmp_path / "render.0001.layer1.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert sequence.pattern == "render.%04d.layer1.exr"
+        assert sequence.frame_numbers == [1, 2]
+
+    def test_detect_numeric_pattern_ignores_version_variants(self, tmp_path: Path) -> None:
+        """Test numeric detection does not treat version digits as frames."""
+        for i in range(1, 6):
+            (tmp_path / f"shot001_v{i:03d}.0001.exr").touch()
+
+        pattern = str(tmp_path / "shot001_v001.0001.exr")
+        sequence = SequenceDetector.detect_sequence(pattern)
+
+        assert sequence.pattern == "shot001_v001.%04d.exr"
+        assert sequence.frame_numbers == [1]
+
+    def test_detect_numeric_pattern_requires_three_to_five_digits(self, tmp_path: Path) -> None:
+        """Test direct numeric detection ignores oversized numeric runs."""
+        (tmp_path / "shot.000001.exr").touch()
+
+        pattern = str(tmp_path / "shot.000001.exr")
+
+        with pytest.raises(SequenceDetectionError):
+            SequenceDetector.detect_sequence(pattern)
+
     def test_detect_sequence_not_found(self, tmp_path: Path) -> None:
         """Test error when sequence cannot be detected."""
         pattern = str(tmp_path / "nonexistent.%04d.exr")
@@ -160,13 +193,13 @@ class TestSequenceDetector:
     def test_numeric_pattern_get_file_path_uses_detected_padding(self, tmp_path: Path) -> None:
         """Test numeric sequence detection stores a reusable pattern."""
         for i in range(1, 4):
-            (tmp_path / f"shot.{i:06d}.exr").touch()
+            (tmp_path / f"shot.{i:05d}.exr").touch()
 
-        pattern = str(tmp_path / "shot.000001.exr")
+        pattern = str(tmp_path / "shot.00001.exr")
         sequence = SequenceDetector.detect_sequence(pattern)
 
-        assert sequence.pattern == "shot.%06d.exr"
-        assert sequence.get_file_path(3) == tmp_path / "shot.000003.exr"
+        assert sequence.pattern == "shot.%05d.exr"
+        assert sequence.get_file_path(3) == tmp_path / "shot.00003.exr"
 
     def test_auto_detect_fps_logs_metadata_read_failures(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture

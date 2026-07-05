@@ -139,12 +139,13 @@ class SequenceDetector:
 
         # Check for numeric pattern (e.g., render.0001.exr)
         else:
-            numeric_matches = list(re.finditer(r"(\d+)", filename))
-            numeric_candidate = SequenceDetector._find_best_numeric_sequence_candidate(
-                base_path, filename, numeric_matches
-            )
-            if numeric_candidate:
-                numeric_match, frame_numbers = numeric_candidate
+            numeric_matches = list(re.finditer(r"(?<=\.)(\d{3,5})(?=\.)", filename))
+            if numeric_matches:
+                numeric_match = numeric_matches[-1]
+                # Try to find sequence by replacing the frame-like number.
+                frame_numbers = SequenceDetector._find_frames_by_numeric_pattern(
+                    base_path, filename, numeric_match
+                )
                 if frame_numbers:
                     padding = len(numeric_match.group(1))
                     start_pos, end_pos = numeric_match.span()
@@ -198,39 +199,6 @@ class SequenceDetector:
                             continue
 
         return sorted(frame_numbers)
-
-    @staticmethod
-    def _find_best_numeric_sequence_candidate(
-        base_path: Path, filename: str, numeric_matches: list[re.Match[str]]
-    ) -> Optional[tuple[re.Match[str], list[int]]]:
-        """Find the numeric group most likely to be the frame number.
-
-        Args:
-            base_path: Directory to search
-            filename: Filename with one or more numeric groups
-            numeric_matches: Regex matches for numeric groups in the filename
-
-        Returns:
-            Best numeric match and its detected frame numbers, or None
-        """
-        candidates: list[tuple[re.Match[str], list[int]]] = []
-        for numeric_match in numeric_matches:
-            frame_numbers = SequenceDetector._find_frames_by_numeric_pattern(
-                base_path, filename, numeric_match
-            )
-            if frame_numbers:
-                candidates.append((numeric_match, frame_numbers))
-
-        if not candidates:
-            return None
-
-        return max(
-            candidates,
-            key=lambda candidate: (
-                len(candidate[1]),
-                candidate[0].start(),
-            ),
-        )
 
     @staticmethod
     def _find_frames_by_numeric_pattern(
