@@ -66,10 +66,10 @@ _QT_NON_MODAL = qt_enum("WindowModality", "NonModal")
 def _preview_label_stylesheet(color: str = _PREVIEW_LABEL_COLOR) -> str:
     return f"""
             QLabel {{
-                background-color: #2b2b2b;
+                background-color: #121215;
                 color: {color};
-                border: 1px solid #444;
-                border-radius: 4px;
+                border: 1px solid #27272b;
+                border-radius: 6px;
             }}
         """
 
@@ -266,8 +266,8 @@ class FullscreenPreviewWindow(QWidget):
         self.footer.setObjectName("FullscreenFooter")
         self.footer.setStyleSheet("""
             #FullscreenFooter {
-                background-color: #2b2b2b;
-                border-top: 1px solid #444;
+                background-color: #161619;
+                border-top: 1px solid #27272b;
             }
         """)
         footer_layout = QHBoxLayout(self.footer)
