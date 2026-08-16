@@ -890,3 +890,22 @@ QMenu::item {
     border: 1px solid #e2e8f0;
     color: #475569;
 }
+
+/* Custom Component Labels & Checks */
+#SequenceInfoLabel {
+    font-size: 11px;
+    color: #64748b;
+}
+
+[theme="dark"] #SequenceInfoLabel {
+    color: #a1a1aa;
+}
+
+#QualityLabel {
+    font-weight: 600;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+}
+
+#BurninEnableCheck {
+    font-weight: 600;
+}

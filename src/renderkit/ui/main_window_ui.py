@@ -350,8 +350,8 @@ class MainWindowUiMixin:
 
         # Sequence Info Badge
         self.sequence_info_label = QLabel("No sequence detected")
+        self.sequence_info_label.setObjectName("SequenceInfoLabel")
         self.sequence_info_label.setWordWrap(True)
-        self.sequence_info_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         self.sequence_info_label.setMinimumHeight(32)
         form_layout.addRow("Info:", self.sequence_info_label)
 
@@ -531,8 +531,8 @@ class MainWindowUiMixin:
         self.quality_slider.setToolTip("Visual Quality (0-10), 10 is visually lossless.")
 
         self.quality_label = QLabel("10 (Max)")
+        self.quality_label.setObjectName("QualityLabel")
         self.quality_label.setFixedWidth(70)
-        self.quality_label.setStyleSheet("font-weight: 600; font-family: monospace;")
 
         quality_layout.addWidget(self.quality_slider, 1)
         quality_layout.addWidget(self.quality_label)
@@ -549,8 +549,8 @@ class MainWindowUiMixin:
         layout.setContentsMargins(6, 6, 6, 6)
 
         self.burnin_enable_check = QCheckBox("Enable Overlays")
+        self.burnin_enable_check.setObjectName("BurninEnableCheck")
         self.burnin_enable_check.setToolTip("Enable or disable all burn-in overlays")
-        self.burnin_enable_check.setStyleSheet("font-weight: 600;")
         self.burnin_enable_check.setChecked(True)
         self.burnin_enable_check.toggled.connect(self._on_burnin_enable_toggled)
         layout.addWidget(self.burnin_enable_check)
@@ -660,63 +660,6 @@ class MainWindowUiMixin:
         layout.addWidget(self._create_log_group())
         return panel
 
-    def _create_preview_column(self) -> QWidget:
-        """Create preview column container."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        layout.addWidget(self._create_progress_group())
-
-        self.preview_panel = self._create_preview_panel(height_capped=False)
-        layout.addWidget(self.preview_panel, 1)
-        self._set_status_icons("idle")
-        return panel
-
-    def _create_progress_group(self) -> QGroupBox:
-        """Create the progress status group."""
-        progress_group = QGroupBox("Progress")
-        progress_layout = QVBoxLayout(progress_group)
-        progress_layout.setSpacing(8)
-        progress_layout.setContentsMargins(6, 6, 6, 6)
-
-        progress_header = QHBoxLayout()
-        self.progress_status_icon = QLabel()
-        self.progress_status_icon.setFixedSize(16, 16)
-        self.progress_status_icon.setAlignment(_QT_ALIGN_CENTER)
-        self.progress_label = QLabel("Ready")
-        self.progress_label.setStyleSheet("font-weight: 500;")
-        progress_header.addWidget(self.progress_status_icon)
-        progress_header.addWidget(self.progress_label)
-        progress_header.addStretch()
-        progress_layout.addLayout(progress_header)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setTextVisible(True)
-        progress_layout.addWidget(self.progress_bar)
-
-        self.progress_play_btn = QPushButton()
-        self.progress_play_btn.setFixedSize(24, 24)
-        self.progress_play_btn.setObjectName("IconButton")
-        self.progress_play_btn.setIcon(icon_manager.get_icon("play", size=14))
-        self.progress_play_btn.setIconSize(QSize(14, 14))
-        self.progress_play_btn.setToolTip("Play output")
-        self.progress_play_btn.setVisible(False)
-        self.progress_play_btn.clicked.connect(self._play_output)
-
-        self.progress_folder_btn = QPushButton()
-        self.progress_folder_btn.setFixedSize(24, 24)
-        self.progress_folder_btn.setObjectName("IconButton")
-        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder", size=14))
-        self.progress_folder_btn.setIconSize(QSize(14, 14))
-        self.progress_folder_btn.setToolTip("Open output folder")
-        self.progress_folder_btn.setVisible(False)
-        self.progress_folder_btn.clicked.connect(self._open_output_folder)
-
-        return progress_group
-
     def _create_log_group(self) -> QGroupBox:
         """Create the log output group."""
         log_group = QGroupBox("Logs")
@@ -812,39 +755,36 @@ class MainWindowUiMixin:
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
 
-        # Progress bar (compact width)
-        if not hasattr(self, "progress_bar"):
-            self.progress_bar = QProgressBar()
-            self.progress_bar.setMinimum(0)
-            self.progress_bar.setMaximum(100)
-            self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumWidth(520)
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setMinimumWidth(200)
         self.progress_bar.setMaximumWidth(1040)
         layout.addWidget(self.progress_bar)
 
         layout.addStretch(1)
 
         # Quick action icon buttons (appear after conversion completes)
-        if not hasattr(self, "progress_play_btn"):
-            self.progress_play_btn = QPushButton()
-            self.progress_play_btn.setFixedSize(26, 26)
-            self.progress_play_btn.setObjectName("IconButton")
-            self.progress_play_btn.setIcon(icon_manager.get_icon("play", size=14))
-            self.progress_play_btn.setIconSize(QSize(14, 14))
-            self.progress_play_btn.setToolTip("Play Output Video")
-            self.progress_play_btn.setVisible(False)
-            self.progress_play_btn.clicked.connect(self._play_output)
+        self.progress_play_btn = QPushButton()
+        self.progress_play_btn.setFixedSize(26, 26)
+        self.progress_play_btn.setObjectName("IconButton")
+        self.progress_play_btn.setIcon(icon_manager.get_icon("play", size=14))
+        self.progress_play_btn.setIconSize(QSize(14, 14))
+        self.progress_play_btn.setToolTip("Play Output Video")
+        self.progress_play_btn.setVisible(False)
+        self.progress_play_btn.clicked.connect(self._play_output)
         layout.addWidget(self.progress_play_btn)
 
-        if not hasattr(self, "progress_folder_btn"):
-            self.progress_folder_btn = QPushButton()
-            self.progress_folder_btn.setFixedSize(26, 26)
-            self.progress_folder_btn.setObjectName("IconButton")
-            self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder", size=14))
-            self.progress_folder_btn.setIconSize(QSize(14, 14))
-            self.progress_folder_btn.setToolTip("Open Output Folder")
-            self.progress_folder_btn.setVisible(False)
-            self.progress_folder_btn.clicked.connect(self._open_output_folder)
+        self.progress_folder_btn = QPushButton()
+        self.progress_folder_btn.setFixedSize(26, 26)
+        self.progress_folder_btn.setObjectName("IconButton")
+        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder", size=14))
+        self.progress_folder_btn.setIconSize(QSize(14, 14))
+        self.progress_folder_btn.setToolTip("Open Output Folder")
+        self.progress_folder_btn.setVisible(False)
+        self.progress_folder_btn.clicked.connect(self._open_output_folder)
         layout.addWidget(self.progress_folder_btn)
 
         # Aliases so logic calling play_btn/open_output_btn controls these buttons directly
@@ -863,11 +803,8 @@ class MainWindowUiMixin:
         self.progress_status_icon.setVisible(False)
         self.progress_label = QLabel("Ready")
         self.progress_label.setVisible(False)
-        self.convert_hint_label = QLabel("")
-        self.convert_hint_label.setVisible(False)
         self.cancel_btn = QPushButton("Quit")
         self.cancel_btn.setVisible(False)
-        self.cancel_btn.clicked.connect(self.close)
 
         self._set_status_icons("idle")
         return panel
@@ -903,8 +840,8 @@ class MainWindowUiMixin:
     def _populate_codecs(self) -> None:
         """Populate codec combo box with standard FFmpeg codecs."""
         codecs = [
-            ("libx264", "H.264 (AVC) - Universal"),
-            ("libx265", "H.265 (HEVC) - High Efficiency"),
+            ("libx264", "H.264 - Default"),
+            ("libx265", "H.265 - High Efficiency"),
             ("libaom-av1", "AV1 - Maximum Compression"),
         ]
 
