@@ -719,7 +719,7 @@ class MainWindowUiMixin:
 
     def _create_log_group(self) -> QGroupBox:
         """Create the log output group."""
-        log_group = QGroupBox("Activity Log")
+        log_group = QGroupBox("Logs")
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(6, 8, 6, 6)
         log_layout.setSpacing(6)
@@ -733,7 +733,7 @@ class MainWindowUiMixin:
 
         log_actions = QHBoxLayout()
         log_actions.addStretch()
-        clear_log_btn = QPushButton("Clear Log")
+        clear_log_btn = QPushButton("Clear Logs")
         clear_log_btn.clicked.connect(self.log_text.clear)
         clear_log_btn.setIcon(icon_manager.get_icon("close"))
         log_actions.addWidget(clear_log_btn)
@@ -750,7 +750,7 @@ class MainWindowUiMixin:
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        preview_group = QGroupBox("Hero Viewport Preview")
+        preview_group = QGroupBox()
         preview_layout = QVBoxLayout(preview_group)
         preview_layout.setContentsMargins(6, 6, 6, 6)
         preview_layout.setSpacing(4)
@@ -812,14 +812,17 @@ class MainWindowUiMixin:
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
 
-        # Progress bar (cleanly filling left/center space)
+        # Progress bar (compact width)
         if not hasattr(self, "progress_bar"):
             self.progress_bar = QProgressBar()
             self.progress_bar.setMinimum(0)
             self.progress_bar.setMaximum(100)
             self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumWidth(200)
-        layout.addWidget(self.progress_bar, 1)
+        self.progress_bar.setMinimumWidth(160)
+        self.progress_bar.setMaximumWidth(260)
+        layout.addWidget(self.progress_bar)
+
+        layout.addStretch(1)
 
         # Quick action icon buttons (appear after conversion completes)
         if not hasattr(self, "progress_play_btn"):
