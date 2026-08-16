@@ -59,14 +59,14 @@ def _interpolate_color(start: QColor, end: QColor, ratio: float) -> QColor:
 def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QPixmap:
     """Build a branded dark splash pixmap."""
     pixmap = QPixmap(width, height)
-    pixmap.fill(QColor("#0b1117"))
+    pixmap.fill(QColor("#121215"))
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-    top = QColor("#0b1117")
-    bottom = QColor("#161b22")
+    top = QColor("#121215")
+    bottom = QColor("#18181c")
     denominator = max(height - 1, 1)
     for y in range(height):
         ratio = y / denominator
@@ -82,13 +82,13 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
     painter.setPen(_QT_NO_PEN)
     painter.setBrush(QColor(0, 0, 0, 90))
     painter.drawRoundedRect(card_x + 3, card_y + 5, card_width, card_height, 18, 18)
-    painter.setBrush(QColor("#111923"))
+    painter.setBrush(QColor("#1a1a1f"))
     painter.drawRoundedRect(card_x, card_y, card_width, card_height, 18, 18)
 
     accent_height = 4
     accent_top = card_y + 10
-    accent_start = QColor("#1f6feb")
-    accent_end = QColor("#58a6ff")
+    accent_start = QColor("#2563eb")
+    accent_end = QColor("#3b82f6")
     for x in range(card_x + 28, card_x + card_width - 28):
         ratio = (x - (card_x + 28)) / max(card_width - 56, 1)
         painter.setPen(_interpolate_color(accent_start, accent_end, ratio))
@@ -99,7 +99,7 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
     icon_y = card_y + 74
     text_x = card_x + 30
 
-    icon = icon_manager.get_icon("loader", color="#58a6ff", size=icon_size)
+    icon = icon_manager.get_icon("loader", color="#3b82f6", size=icon_size)
     icon_pixmap = icon.pixmap(icon_size, icon_size)
     if not icon_pixmap.isNull():
         painter.drawPixmap(icon_x, icon_y, icon_pixmap)
@@ -111,12 +111,12 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
     title_font = QFont("Segoe UI", 30)
     title_font.setBold(True)
     painter.setFont(title_font)
-    painter.setPen(QColor("#e6edf3"))
+    painter.setPen(QColor("#f4f4f5"))
     painter.drawText(text_x, card_y + 66, text_width, 52, align, "RenderKit")
 
     subtitle_font = QFont("Segoe UI", 12)
     painter.setFont(subtitle_font)
-    painter.setPen(QColor("#9fb2c8"))
+    painter.setPen(QColor("#a1a1aa"))
     painter.drawText(
         text_x,
         card_y + 120,
@@ -128,12 +128,12 @@ def build_splash_pixmap(version: str, width: int = 620, height: int = 320) -> QP
 
     version_font = QFont("Consolas", 10)
     painter.setFont(version_font)
-    painter.setPen(QColor("#7d8590"))
+    painter.setPen(QColor("#71717a"))
     painter.drawText(text_x, card_y + card_height - 74, text_width, 20, align, f"v{version}")
 
     footer_font = QFont("Segoe UI", 10)
     painter.setFont(footer_font)
-    painter.setPen(QColor("#58a6ff"))
+    painter.setPen(QColor("#3b82f6"))
     painter.drawText(
         text_x,
         card_y + card_height - 44,

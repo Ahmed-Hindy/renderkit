@@ -318,31 +318,12 @@ class MainWindowLogicMixin:
 
         if self._convert_btn_handler == "cancel":
             self.convert_btn.setEnabled(True)
-            if hasattr(self, "convert_hint_label"):
-                self.convert_hint_label.setVisible(False)
             return
 
         input_valid = self._input_pattern_valid
         output_valid = self._is_output_path_valid()
         enabled = input_valid and output_valid
         self.convert_btn.setEnabled(enabled)
-
-        if not hasattr(self, "convert_hint_label"):
-            return
-
-        if enabled:
-            self.convert_hint_label.setVisible(False)
-            self.convert_hint_label.setText("")
-            return
-
-        missing = []
-        if not output_valid:
-            missing.append("output path")
-        if self._input_pattern_validated and not input_valid:
-            missing.append("input pattern")
-        hint = "Enter a valid " + " and ".join(missing) + " to enable Convert."
-        self.convert_hint_label.setText(hint)
-        self.convert_hint_label.setVisible(bool(missing))
 
     def _reset_settings_to_defaults(self) -> None:
         reply = QMessageBox.question(
@@ -1159,7 +1140,8 @@ class MainWindowLogicMixin:
                 if index >= 0:
                     self.color_space_combo.setCurrentIndex(index)
                 else:
-                    self.color_space_combo.setEditText(detected_color_space)
+                    self.color_space_combo.addItem(detected_color_space)
+                    self.color_space_combo.setCurrentIndex(self.color_space_combo.count() - 1)
             else:
                 logger.info("No specific Color Space metadata found.")
 
