@@ -1,10 +1,10 @@
 /*
- * RenderKit Pro Theme - Sleek VFX/DCC Desktop Styling
- * Clean, calibrated dark slate palette for color-accurate media workflows
+ * RenderKit Unified Design System & QSS Stylesheet
+ * Single consolidated theme definitions for Light and Dark modes.
  */
 
 /* ============================================================================
-   SHARED BASE STYLES
+   1. GLOBAL & BASE STYLES
    ============================================================================ */
 
 QWidget {
@@ -29,6 +29,15 @@ QPushButton {
     font-size: 12px;
 }
 
+QPushButton#PrimaryButton {
+    font-weight: 600;
+}
+
+QPushButton#IconButton {
+    padding: 3px;
+    border-radius: 4px;
+}
+
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
     padding: 5px 8px;
     border-radius: 5px;
@@ -43,7 +52,7 @@ QTabWidget::pane {
 }
 
 QTabBar::tab {
-    padding: 7px 14px;
+    padding: 7px 16px;
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
     margin-right: 2px;
@@ -174,6 +183,21 @@ QProgressBar {
     font-weight: 600;
 }
 
+/* Status Bar (Hidden/Zero Height to prevent duplicate status text) */
+QStatusBar {
+    background-color: transparent;
+    border: none;
+    min-height: 0px;
+    max-height: 0px;
+    height: 0px;
+    margin: 0px;
+    padding: 0px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
 /* Tooltips */
 QToolTip {
     font-size: 11px;
@@ -181,8 +205,31 @@ QToolTip {
     border-radius: 4px;
 }
 
+/* Menu Bar & Menus */
+QMenuBar {
+    background-color: transparent;
+    font-size: 12px;
+}
+
+QMenuBar::item {
+    padding: 4px 8px;
+    background: transparent;
+    border-radius: 4px;
+}
+
+QMenu {
+    font-size: 12px;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 6px 20px 6px 10px;
+    border-radius: 4px;
+}
+
 /* ============================================================================
-   LIGHT THEME
+   2. LIGHT THEME
    ============================================================================ */
 
 [theme="light"] {
@@ -215,7 +262,6 @@ QToolTip {
     background-color: #0969da;
     border-color: #0969da;
     color: #ffffff;
-    font-weight: 600;
 }
 
 [theme="light"] QPushButton#PrimaryButton:hover {
@@ -228,6 +274,17 @@ QToolTip {
     background-color: #94a3b8;
     border-color: #94a3b8;
     color: #f8fafc;
+}
+
+[theme="light"] QPushButton#IconButton {
+    background-color: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+[theme="light"] QPushButton#IconButton:hover {
+    background-color: #e2e8f0;
+    border-color: #0969da;
 }
 
 [theme="light"] QPushButton:disabled {
@@ -262,12 +319,16 @@ QToolTip {
     opacity: 0.6;
 }
 
-[theme="light"] QComboBox[validationState="valid"] {
+[theme="light"] QComboBox[validationState="valid"], [theme="light"] QLineEdit[validationState="valid"] {
     border: 1px solid #16a34a;
 }
 
-[theme="light"] QComboBox[validationState="invalid"] {
+[theme="light"] QComboBox[validationState="invalid"], [theme="light"] QLineEdit[validationState="invalid"] {
     border: 1px solid #dc2626;
+}
+
+[theme="light"] QComboBox[validationState="warning"], [theme="light"] QLineEdit[validationState="warning"] {
+    border: 1px solid #d97706;
 }
 
 [theme="light"] QComboBox QAbstractItemView {
@@ -407,8 +468,19 @@ QToolTip {
     border: 1px solid #334155;
 }
 
+[theme="light"] QMenu {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #0f172a;
+}
+
+[theme="light"] QMenu::item:selected {
+    background-color: #0969da;
+    color: #ffffff;
+}
+
 /* ============================================================================
-   DARK THEME (Calibrated VFX Slate Palette)
+   3. DARK THEME (Calibrated VFX Slate Palette)
    ============================================================================ */
 
 [theme="dark"] {
@@ -441,7 +513,6 @@ QToolTip {
     background-color: #2563eb;
     border-color: #1d4ed8;
     color: #ffffff;
-    font-weight: 600;
 }
 
 [theme="dark"] QPushButton#PrimaryButton:hover {
@@ -454,6 +525,17 @@ QToolTip {
     background-color: #1e293b;
     border-color: #334155;
     color: #64748b;
+}
+
+[theme="dark"] QPushButton#IconButton {
+    background-color: #222226;
+    border-color: #34343a;
+    color: #f4f4f5;
+}
+
+[theme="dark"] QPushButton#IconButton:hover {
+    background-color: #2d2d33;
+    border-color: #3b82f6;
 }
 
 [theme="dark"] QPushButton:disabled {
@@ -490,12 +572,16 @@ QToolTip {
     opacity: 0.6;
 }
 
-[theme="dark"] QComboBox[validationState="valid"] {
+[theme="dark"] QComboBox[validationState="valid"], [theme="dark"] QLineEdit[validationState="valid"] {
     border: 1px solid #22c55e;
 }
 
-[theme="dark"] QComboBox[validationState="invalid"] {
+[theme="dark"] QComboBox[validationState="invalid"], [theme="dark"] QLineEdit[validationState="invalid"] {
     border: 1px solid #ef4444;
+}
+
+[theme="dark"] QComboBox[validationState="warning"], [theme="dark"] QLineEdit[validationState="warning"] {
+    border: 1px solid #f59e0b;
 }
 
 [theme="dark"] QComboBox QAbstractItemView {
@@ -641,24 +727,19 @@ QToolTip {
     border: 1px solid #38383e;
 }
 
-/* ============================================================================
-   STATUS COLORS
-   ============================================================================ */
+[theme="dark"] QMenu {
+    background-color: #18181c;
+    border: 1px solid #2e2e33;
+    color: #e4e4e7;
+}
 
-.success, [status="success"] { color: #16a34a; }
-[theme="dark"] .success, [theme="dark"] [status="success"] { color: #22c55e; }
-
-.danger, [status="danger"] { color: #dc2626; }
-[theme="dark"] .danger, [theme="dark"] [status="danger"] { color: #ef4444; }
-
-.attention, [status="attention"] { color: #d97706; }
-[theme="dark"] .attention, [theme="dark"] [status="attention"] { color: #f59e0b; }
-
-.muted { color: #64748b; }
-[theme="dark"] .muted { color: #71717a; }
+[theme="dark"] QMenu::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
 
 /* ============================================================================
-   CARDS & PANELS
+   4. COMPONENT & CARD UTILITIES
    ============================================================================ */
 
 #Card {
@@ -677,10 +758,6 @@ QToolTip {
     font-weight: 700;
 }
 
-/* ============================================================================
-   DROP OVERLAY
-   ============================================================================ */
-
 #DropOverlay {
     border: 2px dashed #0969da;
     border-radius: 8px;
@@ -698,10 +775,7 @@ QToolTip {
     color: #f4f4f5;
 }
 
-/* ============================================================================
-   TIMELINE SCRUBBER
-   ============================================================================ */
-
+/* Timeline Scrubber */
 #TimelineWidget {
     padding-top: 2px;
 }
@@ -757,10 +831,7 @@ QToolTip {
     background-color: #60a5fa;
 }
 
-/* ============================================================================
-   PREVIEW OVERLAY BUTTONS
-   ============================================================================ */
-
+/* Preview Overlays */
 #PreviewExportButton {
     background-color: rgba(26, 26, 30, 0.85);
     border: 1px solid #38383e;
@@ -772,10 +843,7 @@ QToolTip {
     border-color: #3b82f6;
 }
 
-/* ============================================================================
-   ASPECT LINK BUTTON
-   ============================================================================ */
-
+/* Aspect Link Button */
 #AspectLinkButton {
     border: 1px solid #34343a;
     border-radius: 4px;
@@ -808,10 +876,7 @@ QToolTip {
     background-color: rgba(9, 105, 218, 28);
 }
 
-/* ============================================================================
-   LOG BOX
-   ============================================================================ */
-
+/* Log Box */
 #LogBox {
     background-color: #121214;
     border: 1px solid #27272a;

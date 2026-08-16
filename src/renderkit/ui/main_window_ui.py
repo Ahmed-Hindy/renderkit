@@ -165,8 +165,8 @@ class MainWindowUiMixin:
         # Menu bar
         self._create_menu_bar()
 
-        # Status bar
-        self.statusBar().showMessage("Ready")
+        # Status bar (hidden to keep UI modern and clean)
+        self.statusBar().setVisible(False)
 
         # Flush startup logs
         if self._startup_logs:
