@@ -539,29 +539,6 @@ class MainWindowUiMixin:
         codec_form.addRow("Visual Quality:", quality_layout)
 
         layout.addLayout(codec_form)
-
-        # Result playback actions inside Transcode tab
-        if not hasattr(self, "play_btn") or self.play_btn is None:
-            self.play_btn = QPushButton("Play Result")
-            self.play_btn.setEnabled(False)
-            self.play_btn.clicked.connect(self._play_output)
-            self.play_btn.setToolTip("Open conversion result in the system media player.")
-            self.play_btn.setIcon(icon_manager.get_icon("play"))
-        if not hasattr(self, "open_output_btn") or self.open_output_btn is None:
-            self.open_output_btn = QPushButton("Open Output Folder")
-            self.open_output_btn.setEnabled(False)
-            self.open_output_btn.clicked.connect(self._open_output_folder)
-            self.open_output_btn.setToolTip("Open output directory in file explorer.")
-            self.open_output_btn.setIcon(icon_manager.get_icon("file_folder"))
-
-        output_actions_layout = QHBoxLayout()
-        output_actions_layout.setContentsMargins(0, 4, 0, 0)
-        output_actions_layout.setSpacing(8)
-        output_actions_layout.addWidget(self.play_btn)
-        output_actions_layout.addWidget(self.open_output_btn)
-        output_actions_layout.addStretch()
-        layout.addLayout(output_actions_layout)
-
         layout.addStretch()
         return layout
 
@@ -835,41 +812,16 @@ class MainWindowUiMixin:
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
 
-        # Status indicator
-        status_box = QHBoxLayout()
-        status_box.setSpacing(6)
-        if not hasattr(self, "progress_status_icon"):
-            self.progress_status_icon = QLabel()
-            self.progress_status_icon.setFixedSize(16, 16)
-            self.progress_status_icon.setAlignment(_QT_ALIGN_CENTER)
-        if not hasattr(self, "progress_label"):
-            self.progress_label = QLabel("Ready")
-            self.progress_label.setStyleSheet("font-weight: 500;")
-
-        status_box.addWidget(self.progress_status_icon)
-        status_box.addWidget(self.progress_label)
-        layout.addLayout(status_box)
-
-        # Progress bar
+        # Progress bar (cleanly filling left/center space)
         if not hasattr(self, "progress_bar"):
             self.progress_bar = QProgressBar()
             self.progress_bar.setMinimum(0)
             self.progress_bar.setMaximum(100)
             self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumWidth(160)
-        self.progress_bar.setMaximumWidth(280)
-        layout.addWidget(self.progress_bar)
+        self.progress_bar.setMinimumWidth(200)
+        layout.addWidget(self.progress_bar, 1)
 
-        # Inline hint
-        self.convert_hint_label = QLabel("")
-        self.convert_hint_label.setObjectName("InlineHint")
-        self.convert_hint_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
-        self.convert_hint_label.setVisible(False)
-        layout.addWidget(self.convert_hint_label)
-
-        layout.addStretch(1)
-
-        # Mini icon-only quick actions (visible on conversion finish)
+        # Quick action icon buttons (appear after conversion completes)
         if not hasattr(self, "progress_play_btn"):
             self.progress_play_btn = QPushButton()
             self.progress_play_btn.setFixedSize(26, 26)
@@ -892,6 +844,10 @@ class MainWindowUiMixin:
             self.progress_folder_btn.clicked.connect(self._open_output_folder)
         layout.addWidget(self.progress_folder_btn)
 
+        # Aliases so logic calling play_btn/open_output_btn controls these buttons directly
+        self.play_btn = self.progress_play_btn
+        self.open_output_btn = self.progress_folder_btn
+
         # Primary Convert CTA
         self.convert_btn = QPushButton("Convert")
         self.convert_btn.setMinimumWidth(110)
@@ -899,7 +855,13 @@ class MainWindowUiMixin:
         self.convert_btn.setIcon(icon_manager.get_icon("convert"))
         layout.addWidget(self.convert_btn)
 
-        # Retain cancel_btn object for backward compatibility (hidden from bottom bar)
+        # Retain hidden helper objects for logic compatibility
+        self.progress_status_icon = QLabel()
+        self.progress_status_icon.setVisible(False)
+        self.progress_label = QLabel("Ready")
+        self.progress_label.setVisible(False)
+        self.convert_hint_label = QLabel("")
+        self.convert_hint_label.setVisible(False)
         self.cancel_btn = QPushButton("Quit")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self.close)

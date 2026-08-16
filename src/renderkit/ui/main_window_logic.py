@@ -327,22 +327,9 @@ class MainWindowLogicMixin:
         enabled = input_valid and output_valid
         self.convert_btn.setEnabled(enabled)
 
-        if not hasattr(self, "convert_hint_label"):
-            return
-
-        if enabled:
+        if hasattr(self, "convert_hint_label"):
             self.convert_hint_label.setVisible(False)
             self.convert_hint_label.setText("")
-            return
-
-        missing = []
-        if not output_valid:
-            missing.append("output path")
-        if self._input_pattern_validated and not input_valid:
-            missing.append("input pattern")
-        hint = "Enter a valid " + " and ".join(missing) + " to enable Convert."
-        self.convert_hint_label.setText(hint)
-        self.convert_hint_label.setVisible(bool(missing))
 
     def _reset_settings_to_defaults(self) -> None:
         reply = QMessageBox.question(
