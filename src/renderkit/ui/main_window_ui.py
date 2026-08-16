@@ -540,21 +540,27 @@ class MainWindowUiMixin:
 
         layout.addLayout(codec_form)
 
-        # Quick action buttons for result playback
+        # Result playback actions inside Transcode tab
         if not hasattr(self, "play_btn") or self.play_btn is None:
-            self.play_btn = QPushButton("Flipbook Output")
+            self.play_btn = QPushButton("Play Result")
             self.play_btn.setEnabled(False)
             self.play_btn.clicked.connect(self._play_output)
-            self.play_btn.setToolTip("Open the conversion result in the system media player.")
-            self.play_btn.setObjectName("IconButton")
+            self.play_btn.setToolTip("Open conversion result in the system media player.")
             self.play_btn.setIcon(icon_manager.get_icon("play"))
         if not hasattr(self, "open_output_btn") or self.open_output_btn is None:
-            self.open_output_btn = QPushButton("Open Folder")
+            self.open_output_btn = QPushButton("Open Output Folder")
             self.open_output_btn.setEnabled(False)
             self.open_output_btn.clicked.connect(self._open_output_folder)
-            self.open_output_btn.setToolTip("Open the output directory in file explorer.")
-            self.open_output_btn.setObjectName("IconButton")
+            self.open_output_btn.setToolTip("Open output directory in file explorer.")
             self.open_output_btn.setIcon(icon_manager.get_icon("file_folder"))
+
+        output_actions_layout = QHBoxLayout()
+        output_actions_layout.setContentsMargins(0, 4, 0, 0)
+        output_actions_layout.setSpacing(8)
+        output_actions_layout.addWidget(self.play_btn)
+        output_actions_layout.addWidget(self.open_output_btn)
+        output_actions_layout.addStretch()
+        layout.addLayout(output_actions_layout)
 
         layout.addStretch()
         return layout
@@ -715,16 +721,18 @@ class MainWindowUiMixin:
         progress_layout.addWidget(self.progress_bar)
 
         self.progress_play_btn = QPushButton()
-        self.progress_play_btn.setFixedSize(22, 22)
-        self.progress_play_btn.setIcon(icon_manager.get_icon("play"))
+        self.progress_play_btn.setFixedSize(24, 24)
+        self.progress_play_btn.setObjectName("IconButton")
+        self.progress_play_btn.setIcon(icon_manager.get_icon("play", size=14))
         self.progress_play_btn.setIconSize(QSize(14, 14))
         self.progress_play_btn.setToolTip("Play output")
         self.progress_play_btn.setVisible(False)
         self.progress_play_btn.clicked.connect(self._play_output)
 
         self.progress_folder_btn = QPushButton()
-        self.progress_folder_btn.setFixedSize(22, 22)
-        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder"))
+        self.progress_folder_btn.setFixedSize(24, 24)
+        self.progress_folder_btn.setObjectName("IconButton")
+        self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder", size=14))
         self.progress_folder_btn.setIconSize(QSize(14, 14))
         self.progress_folder_btn.setToolTip("Open output folder")
         self.progress_folder_btn.setVisible(False)
@@ -821,7 +829,7 @@ class MainWindowUiMixin:
         return panel
 
     def _create_action_panel(self) -> QWidget:
-        """Create unified bottom render & status deck."""
+        """Create minimal bottom render & status deck."""
         panel = QWidget()
         layout = QHBoxLayout(panel)
         layout.setContentsMargins(10, 6, 10, 6)
@@ -861,46 +869,40 @@ class MainWindowUiMixin:
 
         layout.addStretch(1)
 
-        # Hidden sync buttons for compatibility
+        # Mini icon-only quick actions (visible on conversion finish)
         if not hasattr(self, "progress_play_btn"):
             self.progress_play_btn = QPushButton()
+            self.progress_play_btn.setFixedSize(26, 26)
+            self.progress_play_btn.setObjectName("IconButton")
+            self.progress_play_btn.setIcon(icon_manager.get_icon("play", size=14))
+            self.progress_play_btn.setIconSize(QSize(14, 14))
+            self.progress_play_btn.setToolTip("Play Output Video")
             self.progress_play_btn.setVisible(False)
             self.progress_play_btn.clicked.connect(self._play_output)
+        layout.addWidget(self.progress_play_btn)
+
         if not hasattr(self, "progress_folder_btn"):
             self.progress_folder_btn = QPushButton()
+            self.progress_folder_btn.setFixedSize(26, 26)
+            self.progress_folder_btn.setObjectName("IconButton")
+            self.progress_folder_btn.setIcon(icon_manager.get_icon("file_folder", size=14))
+            self.progress_folder_btn.setIconSize(QSize(14, 14))
+            self.progress_folder_btn.setToolTip("Open Output Folder")
             self.progress_folder_btn.setVisible(False)
             self.progress_folder_btn.clicked.connect(self._open_output_folder)
+        layout.addWidget(self.progress_folder_btn)
 
-        # Action buttons
-        if not hasattr(self, "play_btn") or self.play_btn is None:
-            self.play_btn = QPushButton("Flipbook")
-            self.play_btn.setEnabled(False)
-            self.play_btn.clicked.connect(self._play_output)
-            self.play_btn.setToolTip("Open output in external media player.")
-            self.play_btn.setIcon(icon_manager.get_icon("play"))
-        layout.addWidget(self.play_btn)
-
-        if not hasattr(self, "open_output_btn") or self.open_output_btn is None:
-            self.open_output_btn = QPushButton("Open Folder")
-            self.open_output_btn.setEnabled(False)
-            self.open_output_btn.clicked.connect(self._open_output_folder)
-            self.open_output_btn.setToolTip("Open output directory.")
-            self.open_output_btn.setIcon(icon_manager.get_icon("file_folder"))
-        layout.addWidget(self.open_output_btn)
-
-        # Convert CTA
+        # Primary Convert CTA
         self.convert_btn = QPushButton("Convert")
-        self.convert_btn.setMinimumWidth(120)
+        self.convert_btn.setMinimumWidth(110)
         self.convert_btn.setObjectName("PrimaryButton")
         self.convert_btn.setIcon(icon_manager.get_icon("convert"))
         layout.addWidget(self.convert_btn)
 
-        # Quit button
+        # Retain cancel_btn object for backward compatibility (hidden from bottom bar)
         self.cancel_btn = QPushButton("Quit")
-        self.cancel_btn.setEnabled(True)
-        self.cancel_btn.setMinimumWidth(75)
-        self.cancel_btn.setIcon(icon_manager.get_icon("close"))
-        layout.addWidget(self.cancel_btn)
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.clicked.connect(self.close)
 
         self._set_status_icons("idle")
         return panel
