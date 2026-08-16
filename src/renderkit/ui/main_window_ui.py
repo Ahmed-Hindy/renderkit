@@ -818,8 +818,8 @@ class MainWindowUiMixin:
             self.progress_bar.setMinimum(0)
             self.progress_bar.setMaximum(100)
             self.progress_bar.setTextVisible(True)
-        self.progress_bar.setMinimumWidth(160)
-        self.progress_bar.setMaximumWidth(260)
+        self.progress_bar.setMinimumWidth(520)
+        self.progress_bar.setMaximumWidth(1040)
         layout.addWidget(self.progress_bar)
 
         layout.addStretch(1)
