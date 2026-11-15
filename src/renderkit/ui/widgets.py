@@ -1,9 +1,10 @@
 """Custom widgets for the UI."""
 
 import logging
+from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import OpenImageIO as oiio
 
@@ -39,6 +40,7 @@ from renderkit.ui.qt_compat import (
     QWidget,
     Signal,
     qt_enum,
+    resolve_enum_member,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,7 +126,82 @@ def _prepare_buf_for_preview_display(
         return expand_data_channels_to_rgb(buf)
 
     converter = ColorSpaceConverter(color_space)
-    return converter.convert_buf(buf, input_space=input_space)
+    return cast(oiio.ImageBuf, converter.convert_buf(buf, input_space=input_space))
+
+
+class PreviewFrameCache:
+    """Thread-affine LRU cache for decoded preview frame payloads."""
+
+    def __init__(self, max_entries: int = 32) -> None:
+        """Initialize the LRU cache.
+
+        Args:
+            max_entries: Maximum number of cached frames to retain.
+        """
+        if max_entries <= 0:
+            raise ValueError("max_entries must be greater than 0")
+        self.max_entries = int(max_entries)
+        self._entries: OrderedDict[tuple[Any, ...], PreviewImageData] = OrderedDict()
+
+    def get(self, key: tuple[Any, ...]) -> Optional[PreviewImageData]:
+        """Return a cached preview payload and mark it as most recently used."""
+        if key not in self._entries:
+            return None
+        self._entries.move_to_end(key)
+        return self._entries[key]
+
+    def put(self, key: tuple[Any, ...], value: PreviewImageData) -> None:
+        """Insert or update a preview payload, evicting the oldest entry if full."""
+        if key in self._entries:
+            self._entries.move_to_end(key)
+        self._entries[key] = value
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        """Remove all cached preview entries."""
+        self._entries.clear()
+
+    def __len__(self) -> int:
+        """Return the number of cached entries."""
+        return len(self._entries)
+
+
+def build_preview_cache_key(
+    file_path: Path,
+    color_space: ColorSpacePreset,
+    *,
+    input_space: Optional[str] = None,
+    ocio_config_path: Optional[str] = None,
+    ocio_display: Optional[str] = None,
+    ocio_view: Optional[str] = None,
+    exposure: float = 0.0,
+    gamma: float = 1.0,
+    layer: Optional[str] = None,
+    cs_config: Optional[ContactSheetConfig] = None,
+    burnin_config: Optional[BurnInConfig] = None,
+    preview_scale: float = 1.0,
+) -> tuple[Any, ...]:
+    """Build a cache key capturing the file mtime and preview processing parameters."""
+    try:
+        mtime_ns: Optional[int] = Path(file_path).stat().st_mtime_ns
+    except (OSError, TypeError, ValueError):
+        mtime_ns = None
+    return (
+        str(file_path),
+        mtime_ns,
+        color_space,
+        input_space,
+        ocio_config_path,
+        ocio_display,
+        ocio_view,
+        round(float(exposure), 3),
+        round(float(gamma), 3),
+        layer,
+        repr(cs_config),
+        repr(burnin_config),
+        round(float(preview_scale), 3),
+    )
 
 
 class PreviewWorker(QThread):
@@ -143,6 +220,11 @@ class PreviewWorker(QThread):
         burnin_config: Optional[BurnInConfig] = None,
         burnin_metadata: Optional[dict[str, Any]] = None,
         preview_scale: float = 1.0,
+        ocio_config_path: Optional[str] = None,
+        ocio_display: Optional[str] = None,
+        ocio_view: Optional[str] = None,
+        exposure: float = 0.0,
+        gamma: float = 1.0,
     ) -> None:
         """Initialize preview worker.
 
@@ -154,6 +236,12 @@ class PreviewWorker(QThread):
             cs_config: Optional contact sheet configuration
             burnin_config: Optional burn-in configuration
             burnin_metadata: Optional burn-in metadata for token replacement
+            preview_scale: Preview scale factor
+            ocio_config_path: Optional explicit OCIO config file path
+            ocio_display: Optional OCIO display name
+            ocio_view: Optional OCIO view name
+            exposure: Exposure adjustment in stops
+            gamma: Display gamma exponent
         """
         super().__init__()
         self.file_path = file_path
@@ -164,6 +252,11 @@ class PreviewWorker(QThread):
         self.burnin_config = burnin_config
         self.burnin_metadata = burnin_metadata
         self.preview_scale = preview_scale
+        self.ocio_config_path = ocio_config_path
+        self.ocio_display = ocio_display
+        self.ocio_view = ocio_view
+        self.exposure = exposure
+        self.gamma = gamma
 
     def run(self) -> None:
         """Load and process preview image."""
@@ -175,6 +268,14 @@ class PreviewWorker(QThread):
                 if self.burnin_config is not None and self.burnin_metadata is not None
                 else None
             )
+            color_converter = ColorSpaceConverter(
+                self.color_space,
+                ocio_config_path=self.ocio_config_path,
+                ocio_display=self.ocio_display,
+                ocio_view=self.ocio_view,
+                exposure=self.exposure,
+                gamma=self.gamma,
+            )
             prepared = prepare_frame_buffer(
                 FramePreparationOptions(
                     frame_path=self.file_path,
@@ -185,7 +286,7 @@ class PreviewWorker(QThread):
                     source_height=None,
                     scaler=ImageScaler(),
                     input_space=self.input_space,
-                    color_converter=ColorSpaceConverter(self.color_space),
+                    color_converter=color_converter,
                     layer=self.layer,
                     burnin_processor=burnin_processor,
                     burnin_config=self.burnin_config if self.burnin_metadata else None,
@@ -219,7 +320,7 @@ class PreviewWorker(QThread):
 class ZoomableScrollArea(QScrollArea):
     """A scroll area that ignores wheel events so they can be handled by the parent for zooming."""
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         # Ignore wheel events to prevent scrolling, letting them bubble up to the parent window
         event.ignore()
 
@@ -340,7 +441,7 @@ class FullscreenPreviewWindow(QWidget):
         self.res_label.setText(f"Resolution: {self._pixmap.width()} x {self._pixmap.height()}")
         self.zoom_label.setText(f"Zoom: {int(self._zoom_factor * 100)}%")
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         """Handle mouse wheel for zooming."""
         # Calculate cursor position relative to the image
         pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
@@ -376,7 +477,7 @@ class FullscreenPreviewWindow(QWidget):
 
         event.accept()
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event: Any) -> None:
         """Start panning on middle click."""
         if event.button() == _QT_MIDDLE_BUTTON:
             self._is_panning = True
@@ -385,7 +486,7 @@ class FullscreenPreviewWindow(QWidget):
             event.accept()
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, event: Any) -> None:
         """Perform panning."""
         if self._is_panning:
             delta = event.pos() - self._last_mouse_pos
@@ -398,7 +499,7 @@ class FullscreenPreviewWindow(QWidget):
             event.accept()
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:
+    def mouseReleaseEvent(self, event: Any) -> None:
         """Stop panning."""
         if event.button() == _QT_MIDDLE_BUTTON:
             self._is_panning = False
@@ -406,7 +507,7 @@ class FullscreenPreviewWindow(QWidget):
             event.accept()
         super().mouseReleaseEvent(event)
 
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event: Any) -> None:
         """Handle key press events."""
         if event.key() == _QT_KEY_ESCAPE:
             self.close()
@@ -434,6 +535,8 @@ class PreviewWidget(QWidget):
         self.worker: Optional[PreviewWorker] = None
         self._active_workers: list[PreviewWorker] = []
         self.fullscreen_win: Optional[FullscreenPreviewWindow] = None
+        self._frame_cache = PreviewFrameCache(max_entries=32)
+        self._request_id = 0
 
     def _setup_ui(self) -> None:
         """Set up the preview UI."""
@@ -448,7 +551,8 @@ class PreviewWidget(QWidget):
         self.preview_label = QLabel("No preview")
         self.preview_label.setAlignment(_QT_ALIGN_CENTER)
         self.preview_label.setMinimumSize(240, 180)
-        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        policy_expanding = resolve_enum_member(QSizePolicy, "Policy", "Expanding")
+        self.preview_label.setSizePolicy(policy_expanding, policy_expanding)
         self._set_preview_label_style()
         self.preview_label.setScaledContents(False)
         container_layout.addWidget(self.preview_label)
@@ -484,7 +588,7 @@ class PreviewWidget(QWidget):
 
         layout.addWidget(self.container)
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: Any) -> None:
         """Scale preview pixmap to the current label size."""
         super().resizeEvent(event)
         self._update_scaled_pixmap()
@@ -496,6 +600,29 @@ class PreviewWidget(QWidget):
         export_x = btn_x - self.export_btn.width() - 6
         self.export_btn.move(export_x, btn_y)
 
+    def clear_frame_cache(self) -> None:
+        """Clear the in-memory preview frame cache."""
+        self._frame_cache.clear()
+
+    def _retire_active_worker(self) -> None:
+        """Detach signals from any running worker and track it until finished."""
+        if self.worker is None:
+            return
+        if self.worker.isRunning():
+            try:
+                self.worker.preview_ready.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            try:
+                self.worker.error.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+
+            # Keep a reference alive until it finishes to avoid "QThread: Destroyed while still running"
+            if self.worker not in self._active_workers:
+                self._active_workers.append(self.worker)
+        self.worker = None
+
     def load_preview(
         self,
         file_path: Path,
@@ -506,6 +633,11 @@ class PreviewWidget(QWidget):
         burnin_config: Optional[BurnInConfig] = None,
         burnin_metadata: Optional[dict[str, Any]] = None,
         preview_scale: float = 1.0,
+        ocio_config_path: Optional[str] = None,
+        ocio_display: Optional[str] = None,
+        ocio_view: Optional[str] = None,
+        exposure: float = 0.0,
+        gamma: float = 1.0,
     ) -> None:
         """Load preview from file.
 
@@ -518,26 +650,42 @@ class PreviewWidget(QWidget):
             burnin_config: Optional burn-in configuration
             burnin_metadata: Optional burn-in metadata for token replacement
             preview_scale: Scaling factor for preview performance
+            ocio_config_path: Optional explicit OCIO config path
+            ocio_display: Optional OCIO display name
+            ocio_view: Optional OCIO view name
+            exposure: Exposure adjustment in stops
+            gamma: Display gamma exponent
         """
         # Safety: Never terminate() a thread busy with I/O (like OIIO).
         # Instead, disconnect signals so its results are ignored, and let it finish.
-        if self.worker and self.worker.isRunning():
-            try:
-                self.worker.preview_ready.disconnect(self._on_preview_ready)
-                self.worker.error.disconnect(self._on_preview_error)
-            except (RuntimeError, TypeError):
-                # Signals might already be disconnected or worker deleted
-                pass
+        self._retire_active_worker()
+        self._request_id += 1
+        request_id = self._request_id
 
-            # Keep a reference alive until it finishes to avoid "QThread: Destroyed while still running"
-            if self.worker not in self._active_workers:
-                self._active_workers.append(self.worker)
+        cache_key = build_preview_cache_key(
+            file_path=file_path,
+            color_space=color_space,
+            input_space=input_space,
+            ocio_config_path=ocio_config_path,
+            ocio_display=ocio_display,
+            ocio_view=ocio_view,
+            exposure=exposure,
+            gamma=gamma,
+            layer=layer,
+            cs_config=cs_config,
+            burnin_config=burnin_config,
+            preview_scale=preview_scale,
+        )
+        cached = self._frame_cache.get(cache_key)
+        if cached is not None:
+            self._on_image_loaded(cached, request_id)
+            return
 
         self._original_pixmap = None
         self.preview_label.setText("Loading preview...")
         self._set_preview_label_style()
 
-        self.worker = PreviewWorker(
+        worker = PreviewWorker(
             file_path,
             color_space,
             input_space=input_space,
@@ -546,12 +694,27 @@ class PreviewWidget(QWidget):
             burnin_config=burnin_config,
             burnin_metadata=burnin_metadata,
             preview_scale=preview_scale,
+            ocio_config_path=ocio_config_path,
+            ocio_display=ocio_display,
+            ocio_view=ocio_view,
+            exposure=exposure,
+            gamma=gamma,
         )
-        self.worker.preview_ready.connect(self._on_preview_ready)
-        self.worker.error.connect(self._on_preview_error)
-        self.worker.finished.connect(self._on_worker_finished)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.start()
+        self.worker = worker
+
+        def _on_ready(preview_image: PreviewImageData) -> None:
+            self._frame_cache.put(cache_key, preview_image)
+            self._on_image_loaded(preview_image, request_id)
+
+        def _on_error(error_msg: str) -> None:
+            if request_id == self._request_id:
+                self._on_preview_error(error_msg)
+
+        worker.preview_ready.connect(_on_ready)
+        worker.error.connect(_on_error)
+        worker.finished.connect(self._on_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
 
     def _on_worker_finished(self) -> None:
         """Cleanup worker reference when finished."""
@@ -560,6 +723,12 @@ class PreviewWidget(QWidget):
             self._active_workers.remove(worker)
         if worker == self.worker:
             self.worker = None
+
+    def _on_image_loaded(self, preview_image: PreviewImageData, request_id: int) -> None:
+        """Apply a loaded preview image if it matches the latest request id."""
+        if request_id != self._request_id:
+            return
+        self._on_preview_ready(preview_image)
 
     def _on_preview_ready(self, preview_image: PreviewImageData) -> None:
         """Handle preview ready."""
@@ -588,6 +757,7 @@ class PreviewWidget(QWidget):
 
     def clear_preview(self) -> None:
         """Clear the preview."""
+        self._request_id += 1
         self._original_pixmap = None
         self.preview_label.clear()
         self.preview_label.setText("No preview")

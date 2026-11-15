@@ -1,6 +1,8 @@
 """Worker thread for conversion to avoid blocking UI."""
 
 import logging
+from collections.abc import Callable
+from typing import cast
 
 from renderkit.core.config import ConversionConfig
 from renderkit.exceptions import ConversionCancelledError, RenderKitError
@@ -40,14 +42,16 @@ class ConversionWorker(QThread):
             logger.info("Starting conversion...")
             converter = SequenceConverter(self.config)
 
-            def progress_callback(current, total):
+            def progress_callback(current: int, total: int) -> bool:
                 self.progress.emit(current, total)
                 # Return True to continue, False to cancel
                 return not self._is_cancelled
 
             enabled, output_path = get_profile_env_config()
             with profile_context(enabled, output_path, label="ui-convert"):
-                converter.convert(progress_callback=progress_callback)
+                converter.convert(
+                    progress_callback=cast(Callable[[int, int], None], progress_callback)
+                )
             self.finished.emit()
         except ConversionCancelledError:
             logger.info("Conversion cancelled by user.")

@@ -1,5 +1,7 @@
 """Image scaling utilities using OpenImageIO (OIIO)."""
 
+from typing import Any
+
 from renderkit.io.oiio_utils import ensure_float_imagebuf, require_oiio
 
 
@@ -8,11 +10,11 @@ class ImageScaler:
 
     @staticmethod
     def scale_buf(
-        buf,
+        buf: Any,
         width: int,
         height: int,
         filter_name: str = "lanczos3",
-    ):
+    ) -> Any:
         """Scale an OIIO ImageBuf without converting to NumPy."""
         oiio = require_oiio()
 

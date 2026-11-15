@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from importlib import resources
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from renderkit import __version__
 from renderkit.core.config import ContactSheetConfig
@@ -30,6 +30,7 @@ from renderkit.ui.qt_compat import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -46,6 +47,7 @@ from renderkit.ui.qt_compat import (
     QVBoxLayout,
     QWidget,
     qt_enum,
+    resolve_enum_member,
 )
 from renderkit.ui.widgets import PreviewWidget
 
@@ -63,12 +65,34 @@ _QT_ALIGN_CENTER = qt_enum("AlignmentFlag", "AlignCenter")
 _QT_ALIGN_LEFT = qt_enum("AlignmentFlag", "AlignLeft")
 _QT_ALIGN_RIGHT = qt_enum("AlignmentFlag", "AlignRight")
 _QT_ALIGN_VCENTER = qt_enum("AlignmentFlag", "AlignVCenter")
+_POLICY_EXPANDING = resolve_enum_member(QSizePolicy, "Policy", "Expanding")
+_POLICY_FIXED = resolve_enum_member(QSizePolicy, "Policy", "Fixed")
+_POLICY_MAXIMUM = resolve_enum_member(QSizePolicy, "Policy", "Maximum")
+_POLICY_MINIMUM = resolve_enum_member(QSizePolicy, "Policy", "Minimum")
+_FIELD_GROWTH_ALL = resolve_enum_member(QFormLayout, "FieldGrowthPolicy", "AllNonFixedFieldsGrow")
+_COMBO_NO_INSERT = resolve_enum_member(QComboBox, "InsertPolicy", "NoInsert")
 
 logger = logging.getLogger("renderkit.ui.main_window")
 
+if TYPE_CHECKING:
+    _MixinBase = QMainWindow
+else:
+    _MixinBase = object
 
-class MainWindowUiMixin:
+
+class MainWindowUiMixin(_MixinBase):
     """UI construction and layout helpers for RenderKit."""
+
+    if TYPE_CHECKING:
+        _startup_logs: list[str]
+        _current_layout_mode: str
+        tray_icon: Optional[QSystemTrayIcon]
+        main_splitter: Optional[QSplitter]
+        left_splitter: Optional[QSplitter]
+        preview_panel: Optional[QWidget]
+        _codec_map: dict[int, str]
+
+        def __getattr__(self, name: str) -> Any: ...
 
     def _apply_theme(self) -> None:
         """Apply the calibrated dark/light theme from QSS file."""
@@ -117,7 +141,7 @@ class MainWindowUiMixin:
         self.drop_overlay.setAlignment(_QT_ALIGN_CENTER)
         self.drop_overlay.setVisible(False)
         self.drop_overlay.setAcceptDrops(True)
-        self.drop_overlay.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.drop_overlay.setSizePolicy(_POLICY_EXPANDING, _POLICY_EXPANDING)
         self.drop_overlay.setWordWrap(True)
         root_layout.addWidget(self.drop_overlay, 0, 0)
 
@@ -187,13 +211,9 @@ class MainWindowUiMixin:
         self.tray_icon = tray_icon
 
     def _set_form_growth_policy(self, form_layout: QFormLayout) -> None:
-        policy_enum = getattr(QFormLayout, "FieldGrowthPolicy", None)
-        if policy_enum is not None:
-            form_layout.setFieldGrowthPolicy(policy_enum.AllNonFixedFieldsGrow)
-        else:
-            form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form_layout.setFieldGrowthPolicy(_FIELD_GROWTH_ALL)
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: Any) -> None:
         """Handle window resize to adjust layout responsively."""
         super().resizeEvent(event)
         height = event.size().height()
@@ -214,14 +234,14 @@ class MainWindowUiMixin:
             else:
                 self._apply_comfortable_mode()
 
-    def _apply_compact_mode(self):
+    def _apply_compact_mode(self) -> None:
         """Apply compact layout for small windows."""
         if self.main_splitter:
             self.main_splitter.setSizes([600, 400])
         if self.left_splitter:
             self.left_splitter.setSizes([420, 120])
 
-    def _apply_standard_mode(self):
+    def _apply_standard_mode(self) -> None:
         """Apply standard layout."""
         if self.preview_panel:
             self.preview_panel.setVisible(True)
@@ -230,7 +250,7 @@ class MainWindowUiMixin:
         if self.left_splitter:
             self.left_splitter.setSizes([540, 160])
 
-    def _apply_comfortable_mode(self):
+    def _apply_comfortable_mode(self) -> None:
         """Apply comfortable layout for large windows."""
         if self.preview_panel:
             self.preview_panel.setVisible(True)
@@ -287,6 +307,18 @@ class MainWindowUiMixin:
         self.cs_section.set_content_layout(self._create_contact_sheet_content())
         self.cs_section.set_collapsed(True)
         overlay_layout.addWidget(self.cs_section)
+
+        # Intro Slate section
+        self.slate_section = CollapsibleGroupBox("Intro Slate")
+        self.slate_section.set_content_layout(self._create_slate_content())
+        self.slate_section.set_collapsed(True)
+        overlay_layout.addWidget(self.slate_section)
+
+        # Watermark section
+        self.watermark_section = CollapsibleGroupBox("Watermark")
+        self.watermark_section.set_content_layout(self._create_watermark_content())
+        self.watermark_section.set_collapsed(True)
+        overlay_layout.addWidget(self.watermark_section)
         overlay_layout.addStretch()
 
         overlay_scroll.setWidget(overlay_container)
@@ -303,9 +335,15 @@ class MainWindowUiMixin:
 
         panel_layout.addWidget(self.settings_tabs, 1)
 
-        # Reset button footer
+        # Reset & preset button footer
         reset_layout = QHBoxLayout()
         reset_layout.setContentsMargins(4, 2, 4, 2)
+        self.load_preset_btn = QPushButton("Load Preset")
+        self.load_preset_btn.setToolTip("Load conversion settings from a JSON preset file.")
+        reset_layout.addWidget(self.load_preset_btn)
+        self.save_preset_btn = QPushButton("Save Preset")
+        self.save_preset_btn.setToolTip("Save current conversion settings to a JSON preset file.")
+        reset_layout.addWidget(self.save_preset_btn)
         reset_layout.addStretch()
         self.reset_settings_btn = QPushButton("Reset to defaults")
         self.reset_settings_btn.setToolTip("Reset all settings to default values.")
@@ -329,16 +367,12 @@ class MainWindowUiMixin:
         input_pattern_layout.setSpacing(6)
         self.input_pattern_combo = NoWheelComboBox()
         self.input_pattern_combo.setEditable(True)
-        insert_policy = getattr(QComboBox, "InsertPolicy", None)
-        if insert_policy is not None:
-            self.input_pattern_combo.setInsertPolicy(insert_policy.NoInsert)
-        else:
-            self.input_pattern_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.input_pattern_combo.setInsertPolicy(_COMBO_NO_INSERT)
         line_edit = self.input_pattern_combo.lineEdit()
         if line_edit is not None:
             line_edit.setPlaceholderText("e.g. render.%04d.exr or render.####.exr")
         self.input_pattern_combo.setToolTip("Enter a sequence pattern or select a recent one.")
-        self.input_pattern_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.input_pattern_combo.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.input_pattern_combo.setMinimumWidth(0)
         input_pattern_layout.addWidget(self.input_pattern_combo, 1)
 
@@ -360,7 +394,7 @@ class MainWindowUiMixin:
         layer_layout.setSpacing(8)
         self.layer_combo = NoWheelComboBox()
         self.layer_combo.addItems(["RGBA"])
-        self.layer_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.layer_combo.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.layer_combo.setMinimumWidth(0)
         self.layer_combo.setEnabled(False)
         self.layer_combo.setToolTip("Select EXR layer (AOV) to process.")
@@ -376,7 +410,7 @@ class MainWindowUiMixin:
 
         # Color Space
         self.color_space_combo = NoWheelComboBox()
-        self.color_space_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.color_space_combo.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.color_space_combo.setMinimumWidth(0)
         self.color_space_combo.setEditable(False)
         self._populate_color_space_combo(self.color_space_combo)
@@ -384,6 +418,61 @@ class MainWindowUiMixin:
             "Select input color space (OCIO/Standard). Output is always sRGB."
         )
         form_layout.addRow("Color Space:", self.color_space_combo)
+
+        # OCIO Config
+        ocio_config_layout = QHBoxLayout()
+        ocio_config_layout.setSpacing(6)
+        self.ocio_config_edit = QLineEdit()
+        self.ocio_config_edit.setPlaceholderText("Default (bundled or $OCIO)")
+        self.ocio_config_edit.setToolTip("Optional custom OpenColorIO config.ocio path.")
+        self.ocio_config_edit.setClearButtonEnabled(True)
+        ocio_config_layout.addWidget(self.ocio_config_edit, 1)
+
+        self.browse_ocio_btn = QPushButton("Browse")
+        self.browse_ocio_btn.setMaximumWidth(90)
+        self.browse_ocio_btn.setIcon(icon_manager.get_icon("browse"))
+        ocio_config_layout.addWidget(self.browse_ocio_btn)
+        form_layout.addRow("OCIO Config:", ocio_config_layout)
+
+        # OCIO Display / View
+        display_view_layout = QHBoxLayout()
+        display_view_layout.setSpacing(6)
+        self.ocio_display_combo = NoWheelComboBox()
+        self.ocio_display_combo.setToolTip("Optional OCIO Display transform.")
+        display_view_layout.addWidget(self.ocio_display_combo, 1)
+        display_view_layout.addWidget(QLabel("View:"))
+        self.ocio_view_combo = NoWheelComboBox()
+        self.ocio_view_combo.setToolTip("Optional OCIO View transform.")
+        display_view_layout.addWidget(self.ocio_view_combo, 1)
+        form_layout.addRow("OCIO Display:", display_view_layout)
+
+        from renderkit.ui.main_window_ocio import populate_ocio_displays
+
+        populate_ocio_displays(self)
+
+        # Exposure & Gamma Grade
+        grade_layout = QHBoxLayout()
+        grade_layout.setSpacing(8)
+        self.exposure_spin = NoWheelDoubleSpinBox()
+        self.exposure_spin.setRange(-10.0, 10.0)
+        self.exposure_spin.setSingleStep(0.25)
+        self.exposure_spin.setDecimals(2)
+        self.exposure_spin.setValue(0.0)
+        self.exposure_spin.setSuffix(" EV")
+        self.exposure_spin.setToolTip("Scene-linear exposure adjustment in stops.")
+        grade_layout.addWidget(QLabel("Exposure:"))
+        grade_layout.addWidget(self.exposure_spin)
+
+        self.gamma_spin = NoWheelDoubleSpinBox()
+        self.gamma_spin.setRange(0.1, 4.0)
+        self.gamma_spin.setSingleStep(0.05)
+        self.gamma_spin.setDecimals(2)
+        self.gamma_spin.setValue(1.0)
+        self.gamma_spin.setToolTip("Display gamma adjustment (default 1.0).")
+        grade_layout.addWidget(QLabel("Gamma:"))
+        grade_layout.addWidget(self.gamma_spin)
+        grade_layout.addStretch()
+        form_layout.addRow("Grade:", grade_layout)
 
         layout.addLayout(form_layout)
         layout.addStretch()
@@ -414,7 +503,7 @@ class MainWindowUiMixin:
         output_path_layout.setSpacing(6)
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setPlaceholderText("Select output destination (.mp4)...")
-        self.output_path_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.output_path_edit.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.output_path_edit.setMinimumWidth(0)
         output_path_layout.addWidget(self.output_path_edit, 1)
 
@@ -428,7 +517,7 @@ class MainWindowUiMixin:
         # Frame Range
         frame_range_layout = _row_layout()
         self.start_frame_spin = NoWheelSpinBox()
-        self.start_frame_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.start_frame_spin.setSizePolicy(_POLICY_MAXIMUM, _POLICY_FIXED)
         self.start_frame_spin.setMinimum(1)
         self.start_frame_spin.setMaximum(999999)
         self.start_frame_spin.setValue(1)
@@ -436,7 +525,7 @@ class MainWindowUiMixin:
         frame_range_layout.addWidget(self.start_frame_spin)
 
         self.end_frame_spin = NoWheelSpinBox()
-        self.end_frame_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.end_frame_spin.setSizePolicy(_POLICY_MAXIMUM, _POLICY_FIXED)
         self.end_frame_spin.setMinimum(1)
         self.end_frame_spin.setMaximum(999999)
         self.end_frame_spin.setValue(1)
@@ -452,12 +541,12 @@ class MainWindowUiMixin:
         grid_layout.addWidget(self.keep_source_frame_range_check, 1, 2, alignment=align_left)
 
         stretch_spacer = QWidget()
-        stretch_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        stretch_spacer.setSizePolicy(_POLICY_EXPANDING, _POLICY_MINIMUM)
         grid_layout.addWidget(stretch_spacer, 1, 3, 3, 1)
 
         # Frame Rate
         self.fps_spin = NoWheelDoubleSpinBox()
-        self.fps_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.fps_spin.setSizePolicy(_POLICY_MAXIMUM, _POLICY_FIXED)
         self.fps_spin.setRange(0.01, 120.0)
         self.fps_spin.setDecimals(3)
         self.fps_spin.setValue(24.0)
@@ -476,7 +565,7 @@ class MainWindowUiMixin:
         # Resolution
         resolution_layout = _row_layout()
         self.width_spin = NoWheelSpinBox()
-        self.width_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.width_spin.setSizePolicy(_POLICY_MAXIMUM, _POLICY_FIXED)
         self.width_spin.setMinimum(1)
         self.width_spin.setMaximum(7680)
         self.width_spin.setValue(1920)
@@ -495,7 +584,7 @@ class MainWindowUiMixin:
         resolution_layout.addWidget(self.aspect_link_btn)
 
         self.height_spin = NoWheelSpinBox()
-        self.height_spin.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.height_spin.setSizePolicy(_POLICY_MAXIMUM, _POLICY_FIXED)
         self.height_spin.setMinimum(1)
         self.height_spin.setMaximum(4320)
         self.height_spin.setValue(1080)
@@ -617,6 +706,78 @@ class MainWindowUiMixin:
         layout.addLayout(form_layout)
         return layout
 
+    def _create_slate_content(self) -> QVBoxLayout:
+        """Create content for intro slate section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(8)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        self.slate_enable_check = QCheckBox("Enable Intro Slate")
+        self.slate_enable_check.setChecked(False)
+        self.slate_enable_check.setToolTip("Prepend an intro slate frame to the encoded video.")
+        self.slate_enable_check.toggled.connect(self._on_slate_enable_toggled)
+        layout.addWidget(self.slate_enable_check)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(8)
+        self._set_form_growth_policy(form_layout)
+
+        self.slate_title_edit = QLineEdit()
+        self.slate_title_edit.setPlaceholderText("Shot / Dailies title")
+        form_layout.addRow("Title:", self.slate_title_edit)
+
+        self.slate_show_edit = QLineEdit()
+        self.slate_show_edit.setPlaceholderText("Show or project name")
+        form_layout.addRow("Show:", self.slate_show_edit)
+
+        self.slate_shot_edit = QLineEdit()
+        self.slate_shot_edit.setPlaceholderText("Shot code")
+        form_layout.addRow("Shot:", self.slate_shot_edit)
+
+        self.slate_artist_edit = QLineEdit()
+        self.slate_artist_edit.setPlaceholderText("Artist name")
+        form_layout.addRow("Artist:", self.slate_artist_edit)
+
+        self.slate_notes_edit = QLineEdit()
+        self.slate_notes_edit.setPlaceholderText("Review notes")
+        form_layout.addRow("Notes:", self.slate_notes_edit)
+
+        layout.addLayout(form_layout)
+        return layout
+
+    def _create_watermark_content(self) -> QVBoxLayout:
+        """Create content for watermark overlay section."""
+        layout = QVBoxLayout()
+        layout.setSpacing(8)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        self.watermark_enable_check = QCheckBox("Enable Watermark")
+        self.watermark_enable_check.setChecked(False)
+        self.watermark_enable_check.setToolTip("Burn a text watermark across output frames.")
+        self.watermark_enable_check.toggled.connect(self._on_watermark_enable_toggled)
+        layout.addWidget(self.watermark_enable_check)
+
+        form_layout = QFormLayout()
+        form_layout.setSpacing(8)
+        self._set_form_growth_policy(form_layout)
+
+        self.watermark_text_edit = QLineEdit()
+        self.watermark_text_edit.setPlaceholderText("e.g. CONFIDENTIAL")
+        form_layout.addRow("Text:", self.watermark_text_edit)
+
+        self.watermark_opacity_spin = NoWheelSpinBox()
+        self.watermark_opacity_spin.setRange(0, 100)
+        self.watermark_opacity_spin.setValue(25)
+        self.watermark_opacity_spin.setSuffix("%")
+        form_layout.addRow("Opacity:", self.watermark_opacity_spin)
+
+        self.watermark_tiled_check = QCheckBox("Tile across frame")
+        self.watermark_tiled_check.setChecked(False)
+        form_layout.addRow(self.watermark_tiled_check)
+
+        layout.addLayout(form_layout)
+        return layout
+
     def _create_advanced_content(self) -> QVBoxLayout:
         """Create content for advanced options section."""
         layout = QVBoxLayout()
@@ -699,13 +860,13 @@ class MainWindowUiMixin:
         preview_layout.setSpacing(4)
 
         self.preview_widget = PreviewWidget()
-        self.preview_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.preview_widget.setSizePolicy(_POLICY_EXPANDING, _POLICY_EXPANDING)
         preview_layout.addWidget(self.preview_widget, 1)
 
         # Timeline Scrubber Bar
         self.timeline_widget = QWidget()
         self.timeline_widget.setObjectName("TimelineWidget")
-        self.timeline_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.timeline_widget.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.timeline_widget.setMaximumHeight(_TIMELINE_MAX_HEIGHT)
         timeline_layout = QVBoxLayout(self.timeline_widget)
         timeline_layout.setContentsMargins(4, 2, 4, 2)
@@ -838,11 +999,18 @@ class MainWindowUiMixin:
         msg.exec()
 
     def _populate_codecs(self) -> None:
-        """Populate codec combo box with standard FFmpeg codecs."""
+        """Populate codec combo box with supported FFmpeg and VFX codecs."""
         codecs = [
             ("libx264", "H.264 - Default"),
             ("libx265", "H.265 - High Efficiency"),
+            ("hevc_10bit", "H.265 10-bit (HEVC)"),
             ("libaom-av1", "AV1 - Maximum Compression"),
+            ("mpeg4", "MPEG-4"),
+            ("prores_422", "Apple ProRes 422 (.mov)"),
+            ("prores_hq", "Apple ProRes 422 HQ (.mov)"),
+            ("prores_4444", "Apple ProRes 4444 (.mov)"),
+            ("dnxhr_hq", "Avid DNxHR HQ (.mov)"),
+            ("dnxhr_hqx", "Avid DNxHR HQX 10-bit (.mov)"),
         ]
 
         available_codecs = []

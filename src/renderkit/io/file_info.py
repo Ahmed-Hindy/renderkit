@@ -1,6 +1,6 @@
 """Dataclass for consolidated file information."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -33,3 +33,15 @@ class FileInfo:
 
     subimages: int = 1
     """Number of subimages/parts in the file."""
+
+    pixel_aspect: float = 1.0
+    """Pixel aspect ratio from metadata, defaulting to 1.0."""
+
+    display_window: Optional[tuple[int, int, int, int]] = None
+    """Display window (x, y, width, height) in pixels, if available."""
+
+    data_window: Optional[tuple[int, int, int, int]] = None
+    """Data window (x, y, width, height) in pixels, if available."""
+
+    attributes: dict[str, object] = field(default_factory=dict)
+    """Scalar extra attributes extracted from the image specification."""

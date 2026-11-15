@@ -108,9 +108,7 @@ omit = [
 [tool.mypy]
 python_version = "3.13"
 files = [
-    "src/renderkit/api",
-    "src/renderkit/cli",
-    "src/renderkit/core",
+    "src/renderkit",
 ]
 warn_return_any = true
 warn_unused_configs = true
@@ -125,7 +123,7 @@ warn_no_return = true
 [[tool.mypy.overrides]]
 module = [
     "OpenImageIO.*",
-    "opencolorio.*",
+    "PyOpenColorIO.*",
     "tqdm.*",
 ]
 ignore_missing_imports = true

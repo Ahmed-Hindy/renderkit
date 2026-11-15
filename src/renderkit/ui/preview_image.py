@@ -1,13 +1,14 @@
 """Preview image marshaling helpers for Qt display."""
 
+import math
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import OpenImageIO as oiio
 
 from renderkit.processing.pixels import float_pixels_to_uint8
-from renderkit.ui.qt_compat import QImage, QPixmap, resolve_enum_member
+from renderkit.ui.qt_compat import QImage, QPixmap, qt_enum, resolve_enum_member
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,19 @@ class PreviewImageData:
     width: int
     height: int
     channels: int
+    pixel_aspect: float = 1.0
+
+
+def _extract_pixel_aspect(spec: Any) -> float:
+    """Extract a positive finite PixelAspectRatio from an OIIO ImageSpec."""
+    try:
+        raw_aspect = spec.get_float_attribute("PixelAspectRatio", 1.0)
+        pixel_aspect = float(raw_aspect)
+    except (AttributeError, TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(pixel_aspect) or pixel_aspect <= 0.0:
+        return 1.0
+    return pixel_aspect
 
 
 def imagebuf_to_preview_image(buf: oiio.ImageBuf) -> PreviewImageData:
@@ -46,6 +60,7 @@ def imagebuf_to_preview_image(buf: oiio.ImageBuf) -> PreviewImageData:
         width=width,
         height=height,
         channels=channels,
+        pixel_aspect=_extract_pixel_aspect(spec),
     )
 
 
@@ -84,13 +99,22 @@ def preview_image_to_qimage(data: PreviewImageData) -> QImage:
     )
     # Pin underlying NumPy array reference to QImage to guarantee it is not
     # garbage collected before the deep copy is completed.
-    image._numpy_ref = pixels
+    cast(Any, image)._numpy_ref = pixels
     return image.copy()
 
 
 def preview_image_to_pixmap(data: PreviewImageData) -> QPixmap:
-    """Create a QPixmap from preview image data."""
-    return QPixmap.fromImage(preview_image_to_qimage(data))
+    """Create a QPixmap from preview image data, applying anamorphic unsqueeze if needed."""
+    pixmap = QPixmap.fromImage(preview_image_to_qimage(data))
+    if data.pixel_aspect > 0.0 and abs(data.pixel_aspect - 1.0) > 1e-4:
+        target_width = max(1, int(round(data.width * data.pixel_aspect)))
+        pixmap = pixmap.scaled(
+            target_width,
+            data.height,
+            qt_enum("AspectRatioMode", "IgnoreAspectRatio"),
+            qt_enum("TransformationMode", "SmoothTransformation"),
+        )
+    return pixmap
 
 
 def _qimage_format(channels: int) -> Any:

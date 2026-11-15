@@ -12,7 +12,7 @@ ICONS_DIR = Path(__file__).parent
 class IconManager:
     """Manages icons for the application."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._icon_cache: dict[str, QIcon] = {}
         self._default_color: Optional[str] = None
         self._icon_paths = {

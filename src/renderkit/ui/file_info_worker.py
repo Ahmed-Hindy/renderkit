@@ -2,11 +2,12 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
 from renderkit.io.oiio_cache import get_shared_image_cache
-from renderkit.ui.qt_compat import QThread, Signal
+from renderkit.ui.qt_compat import QObject, QThread, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class FileInfoWorker(QThread):
     # Signal emitted on error: (file_path, error_message)
     error_occurred = Signal(str, str)
 
-    def __init__(self, file_path: Path, parent=None) -> None:
+    def __init__(self, file_path: Path, parent: Optional[QObject] = None) -> None:
         """Initialize the worker.
 
         Args:

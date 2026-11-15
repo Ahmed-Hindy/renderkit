@@ -8,6 +8,12 @@ from typing import Any, Optional
 
 from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
 from renderkit.processing.color_space import ColorSpacePreset
+from renderkit.ui.main_window_ocio import (
+    get_configured_ocio_path,
+    get_grade_values,
+    get_selected_ocio_display,
+    get_selected_ocio_view,
+)
 from renderkit.ui.main_window_sequence import extract_frame_number
 
 
@@ -23,6 +29,11 @@ class PreviewRequest:
     burnin_config: Optional[BurnInConfig]
     burnin_metadata: Optional[dict[str, Any]]
     preview_scale: float
+    ocio_config_path: Optional[str] = None
+    ocio_display: Optional[str] = None
+    ocio_view: Optional[str] = None
+    exposure: float = 0.0
+    gamma: float = 1.0
 
 
 def build_burnin_config(ui: Any, *, include_layer: bool) -> Optional[BurnInConfig]:
@@ -89,7 +100,7 @@ def build_preview_contact_sheet_config(ui: Any, *, scrubbing: bool) -> Optional[
         padding=ui.cs_padding_spin.value(),
         show_labels=show_labels,
         font_size=ui.burnin_font_size_spin.value(),
-        background_color=(0.1, 0.1, 0.1, 1.0),
+        background_color=(0.1, 0.1, 0.1),
         layer_width=layer_width,
         layer_height=layer_height,
     )
@@ -142,6 +153,7 @@ def build_preview_request(
                 input_space=input_space,
             )
 
+    exposure, gamma = get_grade_values(ui)
     return PreviewRequest(
         sample_path=sample_path,
         preset=preset,
@@ -151,4 +163,44 @@ def build_preview_request(
         burnin_config=burnin_config,
         burnin_metadata=burnin_metadata,
         preview_scale=ui.preview_scale_spin.value() / 100.0,
+        ocio_config_path=get_configured_ocio_path(ui),
+        ocio_display=get_selected_ocio_display(ui),
+        ocio_view=get_selected_ocio_view(ui),
+        exposure=exposure,
+        gamma=gamma,
     )
+
+
+def load_preview_for_frame(
+    ui: Any,
+    sample_path: Path,
+    *,
+    preset: ColorSpacePreset,
+    input_space: Optional[str],
+    scrubbing: bool = False,
+) -> PreviewRequest:
+    """Build a preview request for a frame and dispatch it to ``ui.preview_widget``."""
+    request = build_preview_request(
+        ui,
+        sample_path,
+        preset=preset,
+        input_space=input_space,
+        scrubbing=scrubbing,
+    )
+    ui._last_preview_path = sample_path
+    ui.preview_widget.load_preview(
+        request.sample_path,
+        request.preset,
+        input_space=request.input_space,
+        layer=request.layer,
+        cs_config=request.cs_config,
+        burnin_config=request.burnin_config,
+        burnin_metadata=request.burnin_metadata,
+        preview_scale=request.preview_scale,
+        ocio_config_path=request.ocio_config_path,
+        ocio_display=request.ocio_display,
+        ocio_view=request.ocio_view,
+        exposure=request.exposure,
+        gamma=request.gamma,
+    )
+    return request

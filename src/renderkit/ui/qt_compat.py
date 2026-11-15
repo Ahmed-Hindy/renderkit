@@ -2,7 +2,7 @@
 
 import importlib
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 _BACKEND_ORDER = ("pyside6", "pyside2", "pyqt6", "pyqt5")
 _BACKEND_MODULES = {
@@ -131,6 +131,7 @@ if TYPE_CHECKING:
 # Priority: Environment variable > PySide6 > PySide2 > PyQt6 > PyQt5
 QT_BACKEND: Optional[str] = os.environ.get("QT_BACKEND", "").lower()
 
+_backend: Optional[str] = None
 if QT_BACKEND:
     # User specified backend
     if QT_BACKEND in _BACKEND_MODULES:
@@ -141,7 +142,6 @@ if QT_BACKEND:
         )
 else:
     # Auto-detect: try in order of preference
-    _backend = None
     for backend in _BACKEND_ORDER:
         try:
             importlib.import_module(_BACKEND_MODULES[backend])
@@ -247,7 +247,7 @@ def get_qt_backend() -> str:
     return QT_BACKEND_NAME
 
 
-def resolve_enum_member(owner, enum_name: str, member_name: str):
+def resolve_enum_member(owner: Any, enum_name: str, member_name: str) -> Any:
     """Resolve Qt6 nested enum members with a Qt5 flat-attribute fallback."""
     enum = getattr(owner, enum_name, None)
     if enum is not None:
@@ -261,6 +261,6 @@ def resolve_enum_member(owner, enum_name: str, member_name: str):
     return value
 
 
-def qt_enum(enum_name: str, member_name: str):
+def qt_enum(enum_name: str, member_name: str) -> Any:
     """Resolve a Qt enum member across supported Qt bindings."""
     return resolve_enum_member(Qt, enum_name, member_name)

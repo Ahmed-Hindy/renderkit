@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from renderkit import constants
 from renderkit.core.config import (
@@ -13,21 +13,34 @@ from renderkit.core.config import (
     ConversionConfig,
     ConversionConfigBuilder,
 )
-from renderkit.exceptions import RenderKitError
+from renderkit.exceptions import ColorSpaceError, RenderKitError
 from renderkit.io.file_utils import FileUtils
 from renderkit.logging_utils import setup_logging
 from renderkit.processing.color_space import (
     ColorSpacePreset,
     get_bundled_ocio_config_path,
-    get_ocio_colorspace_label,
-    get_ocio_role_display_options,
     resolve_ocio_role_label_for_colorspace,
 )
 from renderkit.processing.video_encoder import get_encoder_probe_result, select_available_encoder
 from renderkit.ui.conversion_worker import ConversionWorker
 from renderkit.ui.file_info_worker import FileInfoWorker
 from renderkit.ui.icons import icon_manager
-from renderkit.ui.main_window_preview import build_burnin_config, build_preview_request
+from renderkit.ui.main_window_ocio import (
+    apply_ocio_config_path,
+    build_slate_config_from_ui,
+    build_watermark_config_from_ui,
+    container_extension_for_codec,
+    get_configured_ocio_path,
+    get_grade_values,
+    get_selected_ocio_display,
+    get_selected_ocio_view,
+    load_preset_into_ui,
+    populate_color_space_combo_for_config,
+    populate_ocio_views,
+    save_preset_from_ui,
+    set_grade_values,
+)
+from renderkit.ui.main_window_preview import build_burnin_config, load_preview_for_frame
 from renderkit.ui.main_window_sequence import (
     build_pattern_from_path,
     derive_sequence_stem,
@@ -45,12 +58,16 @@ from renderkit.ui.qt_compat import (
     QDesktopServices,
     QEvent,
     QFileDialog,
+    QMainWindow,
     QMessageBox,
+    QSettings,
     QSize,
     QSystemTrayIcon,
     Qt,
+    QTimer,
     QUrl,
     qt_enum,
+    resolve_enum_member,
 )
 
 RECENT_PATTERNS_LIMIT = 10
@@ -67,9 +84,40 @@ _QT_KEY_ESCAPE = qt_enum("Key", "Key_Escape")
 
 logger = logging.getLogger("renderkit.ui.main_window")
 
+if TYPE_CHECKING:
+    _MixinBase = QMainWindow
+else:
+    _MixinBase = object
 
-class MainWindowLogicMixin:
+
+class MainWindowLogicMixin(_MixinBase):
     """Signal handlers, validation, and worker orchestration."""
+
+    if TYPE_CHECKING:
+        settings: QSettings
+        worker: Optional[ConversionWorker]
+        _conversion_finished_flag: bool
+        _log_forwarder: Optional[UiLogForwarder]
+        tray_icon: Optional[QSystemTrayIcon]
+        _ocio_role_display_map: dict[str, str]
+        _recent_patterns: list[str]
+        _last_pattern_text: str
+        _convert_btn_handler: Optional[str]
+        _input_pattern_valid: bool
+        _input_pattern_validated: bool
+        _is_cancelling: bool
+        _startup_logs: list[str]
+        _file_info_worker: Optional[FileInfoWorker]
+        _last_detected_pattern: str
+        _auto_output_path: Optional[str]
+        _pending_layer: Optional[str]
+        _aspect_ratio: Optional[float]
+        _aspect_sync_guard: bool
+        _cs_preview_timer: QTimer
+        _last_preview_path: Optional[Path]
+        _codec_map: dict[int, str]
+
+        def __getattr__(self, name: str) -> Any: ...
 
     def _ensure_bundled_ocio_config(self) -> None:
         """Ensure RenderKit's bundled OCIO config is available."""
@@ -81,7 +129,7 @@ class MainWindowLogicMixin:
 
         logger.info("Using bundled OCIO config: %s", bundled_config)
 
-    def keyPressEvent(self, event) -> None:
+    def keyPressEvent(self, event: Any) -> None:
         """Handle global key presses for the main window."""
         if event.key() == _QT_KEY_ESCAPE:
             if self.worker and self.worker.isRunning():
@@ -110,7 +158,9 @@ class MainWindowLogicMixin:
             line_edit.textChanged.connect(self._on_pattern_changed)
             line_edit.editingFinished.connect(self._detect_sequence)
         self.input_pattern_combo.activated.connect(self._on_recent_pattern_selected)
-        self.output_path_edit.textChanged.connect(self._update_play_button_state)
+        self.output_path_edit.textChanged.connect(self._on_output_path_text_changed)
+        if hasattr(self, "codec_combo"):
+            self.codec_combo.currentIndexChanged.connect(self._on_codec_changed)
         if hasattr(self, "aspect_link_btn"):
             self.aspect_link_btn.toggled.connect(self._on_aspect_link_toggled)
         self.width_spin.valueChanged.connect(self._on_width_spin_changed)
@@ -124,6 +174,22 @@ class MainWindowLogicMixin:
         self.preview_scale_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.color_space_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
         self.layer_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "exposure_spin"):
+            self.exposure_spin.valueChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "gamma_spin"):
+            self.gamma_spin.valueChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "browse_ocio_btn"):
+            self.browse_ocio_btn.clicked.connect(self._browse_ocio_config)
+        if hasattr(self, "ocio_config_edit"):
+            self.ocio_config_edit.editingFinished.connect(self._on_ocio_config_edited)
+        if hasattr(self, "ocio_display_combo"):
+            self.ocio_display_combo.currentIndexChanged.connect(self._on_ocio_display_changed)
+        if hasattr(self, "ocio_view_combo"):
+            self.ocio_view_combo.currentIndexChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "load_preset_btn"):
+            self.load_preset_btn.clicked.connect(self._browse_and_load_preset)
+        if hasattr(self, "save_preset_btn"):
+            self.save_preset_btn.clicked.connect(self._browse_and_save_preset)
         self.burnin_enable_check.toggled.connect(self._on_cs_setting_changed)
         self.burnin_frame_check.toggled.connect(self._on_cs_setting_changed)
         self.burnin_layer_check.toggled.connect(self._on_cs_setting_changed)
@@ -170,11 +236,13 @@ class MainWindowLogicMixin:
     def _load_recent_patterns(self) -> None:
         recent = self.settings.value(RECENT_PATTERNS_KEY, [], type=list)
         if recent is None:
-            recent_list = []
+            recent_list: list[Any] = []
         elif isinstance(recent, str):
             recent_list = [recent]
-        else:
+        elif isinstance(recent, (list, tuple)):
             recent_list = list(recent)
+        else:
+            recent_list = []
 
         self._recent_patterns = [
             pattern.strip()
@@ -228,7 +296,7 @@ class MainWindowLogicMixin:
         self._refresh_recent_patterns_combo()
         self.statusBar().showMessage("Recent patterns cleared", 3000)
 
-    def _on_recent_pattern_selected(self, index_or_text) -> None:
+    def _on_recent_pattern_selected(self, index_or_text: Any) -> None:
         if isinstance(index_or_text, str):
             pattern = index_or_text.strip()
         else:
@@ -338,6 +406,31 @@ class MainWindowLogicMixin:
         reset_settings(self)
         if hasattr(self, "overwrite_check"):
             self.overwrite_check.setChecked(True)
+        set_grade_values(self, exposure=0.0, gamma=1.0)
+        if hasattr(self, "ocio_config_edit"):
+            try:
+                apply_ocio_config_path(self, None)
+            except ColorSpaceError as exc:
+                logger.warning("Failed to reset OCIO config: %s", exc)
+        if hasattr(self, "slate_enable_check"):
+            self.slate_enable_check.setChecked(False)
+        for attr in (
+            "slate_title_edit",
+            "slate_show_edit",
+            "slate_shot_edit",
+            "slate_artist_edit",
+            "slate_notes_edit",
+        ):
+            if hasattr(self, attr):
+                getattr(self, attr).setText("")
+        if hasattr(self, "watermark_enable_check"):
+            self.watermark_enable_check.setChecked(False)
+        if hasattr(self, "watermark_text_edit"):
+            self.watermark_text_edit.setText("")
+        if hasattr(self, "watermark_opacity_spin"):
+            self.watermark_opacity_spin.setValue(25)
+        if hasattr(self, "watermark_tiled_check"):
+            self.watermark_tiled_check.setChecked(False)
 
         self._save_settings()
         self.statusBar().showMessage("Settings reset to defaults", 3000)
@@ -356,7 +449,7 @@ class MainWindowLogicMixin:
     def _is_aspect_linked(self) -> bool:
         if not hasattr(self, "aspect_link_btn"):
             return False
-        return self.aspect_link_btn.isChecked()
+        return bool(self.aspect_link_btn.isChecked())
 
     def _update_aspect_ratio_from_metadata(self, width: int, height: int) -> None:
         if width > 0 and height > 0:
@@ -365,10 +458,10 @@ class MainWindowLogicMixin:
     def _get_aspect_ratio(self) -> Optional[float]:
         ratio = getattr(self, "_aspect_ratio", None)
         if ratio and ratio > 0:
-            return ratio
+            return float(ratio)
 
-        width = self.width_spin.value()
-        height = self.height_spin.value()
+        width = int(self.width_spin.value())
+        height = int(self.height_spin.value())
         if width > 0 and height > 0:
             return width / float(height)
         return None
@@ -387,10 +480,10 @@ class MainWindowLogicMixin:
     def _on_aspect_link_toggled(self, checked: bool) -> None:
         self._update_aspect_link_icon()
 
-    def _clamp_spin_value(self, spin, value: int) -> int:
-        return max(spin.minimum(), min(spin.maximum(), value))
+    def _clamp_spin_value(self, spin: Any, value: int) -> int:
+        return max(int(spin.minimum()), min(int(spin.maximum()), value))
 
-    def _set_spin_value_guarded(self, spin, value: int) -> None:
+    def _set_spin_value_guarded(self, spin: Any, value: int) -> None:
         if getattr(self, "_aspect_sync_guard", False):
             return
         clamped = self._clamp_spin_value(spin, value)
@@ -456,6 +549,32 @@ class MainWindowLogicMixin:
         self.burnin_font_size_spin.setEnabled(checked)
         self.burnin_opacity_spin.setEnabled(checked)
 
+    def _on_slate_enable_toggled(self, checked: bool) -> None:
+        """Handle intro slate enable checkbox toggle."""
+        for attr in (
+            "slate_title_edit",
+            "slate_show_edit",
+            "slate_shot_edit",
+            "slate_artist_edit",
+            "slate_notes_edit",
+        ):
+            if hasattr(self, attr):
+                getattr(self, attr).setEnabled(checked)
+        if checked and hasattr(self, "slate_section"):
+            self.slate_section.set_collapsed(False)
+
+    def _on_watermark_enable_toggled(self, checked: bool) -> None:
+        """Handle watermark enable checkbox toggle."""
+        for attr in (
+            "watermark_text_edit",
+            "watermark_opacity_spin",
+            "watermark_tiled_check",
+        ):
+            if hasattr(self, attr):
+                getattr(self, attr).setEnabled(checked)
+        if checked and hasattr(self, "watermark_section"):
+            self.watermark_section.set_collapsed(False)
+
     def _on_cs_enable_toggled(self, checked: bool) -> None:
         """Handle contact sheet enable checkbox toggle."""
         # Mutual exclusivity
@@ -495,7 +614,7 @@ class MainWindowLogicMixin:
             self.cs_columns_spin.setToolTip(reason)
             self.cs_padding_spin.setToolTip(reason)
 
-    def _on_cs_setting_changed(self, *args) -> None:
+    def _on_cs_setting_changed(self, *args: Any) -> None:
         """Handle contact sheet or preview setting changes with debouncing."""
         # Trigger preview update after a short delay to avoid thread churning
         self._cs_preview_timer.start(_PREVIEW_DEBOUNCE_MS)
@@ -532,6 +651,27 @@ class MainWindowLogicMixin:
         if hasattr(self, "progress_folder_btn"):
             self.progress_folder_btn.setVisible(visible)
 
+    def _on_output_path_text_changed(self, text: str) -> None:
+        """Track manual output path edits and refresh play/validation state."""
+        auto_path = getattr(self, "_auto_output_path", None)
+        if auto_path is not None and text.strip() != auto_path:
+            self._auto_output_path = None
+        self._update_play_button_state()
+
+    def _on_codec_changed(self, *_args: Any) -> None:
+        """Update auto-generated output path extension when codec selection changes."""
+        ext = container_extension_for_codec(self._selected_codec_id())
+        if not hasattr(self, "output_path_edit"):
+            return
+        self.output_path_edit.setPlaceholderText(f"Select output destination ({ext})...")
+        current = self.output_path_edit.text().strip()
+        auto_path = getattr(self, "_auto_output_path", None)
+        if current and auto_path is not None and current == auto_path:
+            updated = str(Path(current).with_suffix(ext))
+            self._auto_output_path = updated
+            if updated != current:
+                self.output_path_edit.setText(updated)
+
     def _update_play_button_state(self) -> None:
         """Enable or disable play button based on output file existence."""
         self._update_output_path_validation()
@@ -552,7 +692,7 @@ class MainWindowLogicMixin:
         if controller:
             controller.reset()
 
-    def _set_timeline_sequence(self, sequence) -> None:
+    def _set_timeline_sequence(self, sequence: Any) -> None:
         controller = getattr(self, "timeline_controller", None)
         if controller:
             controller.set_sequence(sequence)
@@ -619,24 +759,12 @@ class MainWindowLogicMixin:
             return
 
         preset, input_space = self._get_current_color_space_config()
-        request = build_preview_request(
+        request = load_preview_for_frame(
             self,
             sample_path,
             preset=preset,
             input_space=input_space,
             scrubbing=scrubbing,
-        )
-
-        self._last_preview_path = sample_path
-        self.preview_widget.load_preview(
-            request.sample_path,
-            request.preset,
-            input_space=request.input_space,
-            layer=request.layer,
-            cs_config=request.cs_config,
-            burnin_config=request.burnin_config,
-            burnin_metadata=request.burnin_metadata,
-            preview_scale=request.preview_scale,
         )
 
         if request.cs_config:
@@ -646,7 +774,7 @@ class MainWindowLogicMixin:
         else:
             logger.debug(f"Loading preview: {sample_path.name} (Layer: {request.layer})")
 
-    def _scale_thumbnail_pixmap(self, pixmap):
+    def _scale_thumbnail_pixmap(self, pixmap: Any) -> Any:
         if pixmap.isNull():
             return pixmap
         width = pixmap.width()
@@ -663,7 +791,7 @@ class MainWindowLogicMixin:
             _QT_SMOOTH_TRANSFORMATION,
         )
 
-    def _export_preview_thumbnail(self, pixmap) -> None:
+    def _export_preview_thumbnail(self, pixmap: Any) -> None:
         if pixmap is None or pixmap.isNull():
             QMessageBox.information(self, "Thumbnail Export", "No preview available to export.")
             return
@@ -715,13 +843,13 @@ class MainWindowLogicMixin:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select a Frame File (to detect pattern)",
-            self.settings.value("last_input_dir", ""),
+            str(self.settings.value("last_input_dir", "") or ""),
             "Image Files (*.exr *.png *.jpg *.jpeg);;All Files (*.*)",
         )
         if file_path:
             self._apply_input_path(Path(file_path))
 
-    def _should_accept_drop(self, event) -> bool:
+    def _should_accept_drop(self, event: Any) -> bool:
         if not event.mimeData().hasUrls():
             return False
         for url in event.mimeData().urls():
@@ -729,7 +857,7 @@ class MainWindowLogicMixin:
                 return True
         return False
 
-    def _paths_from_mime_data(self, mime_data) -> list[Path]:
+    def _paths_from_mime_data(self, mime_data: Any) -> list[Path]:
         paths = []
         for url in mime_data.urls():
             if not url.isLocalFile():
@@ -746,7 +874,7 @@ class MainWindowLogicMixin:
             self.drop_overlay.raise_()
         self.drop_overlay.setVisible(visible)
 
-    def dragEnterEvent(self, event) -> None:
+    def dragEnterEvent(self, event: Any) -> None:
         """Accept drag enter for local file/folder drops."""
         if self._should_accept_drop(event):
             self._set_drop_overlay_visible(True)
@@ -754,7 +882,7 @@ class MainWindowLogicMixin:
             return
         event.ignore()
 
-    def dragMoveEvent(self, event) -> None:
+    def dragMoveEvent(self, event: Any) -> None:
         """Accept drag move for local file/folder drops."""
         if self._should_accept_drop(event):
             self._set_drop_overlay_visible(True)
@@ -762,12 +890,12 @@ class MainWindowLogicMixin:
             return
         event.ignore()
 
-    def dragLeaveEvent(self, event) -> None:
+    def dragLeaveEvent(self, event: Any) -> None:
         """Hide drop overlay when drag leaves the window."""
         self._set_drop_overlay_visible(False)
         event.accept()
 
-    def dropEvent(self, event) -> None:
+    def dropEvent(self, event: Any) -> None:
         """Handle dropped files/folders onto the main window."""
         if not self._should_accept_drop(event):
             event.ignore()
@@ -778,13 +906,13 @@ class MainWindowLogicMixin:
         self._set_drop_overlay_visible(False)
         event.acceptProposedAction()
 
-    def eventFilter(self, obj, event) -> bool:
+    def eventFilter(self, obj: Any, event: Any) -> bool:
         if not hasattr(self, "drop_overlay"):
-            return super().eventFilter(obj, event)
+            return bool(super().eventFilter(obj, event))
 
         host = getattr(self, "drop_overlay_host", None)
         if obj not in (host, self.drop_overlay):
-            return super().eventFilter(obj, event)
+            return bool(super().eventFilter(obj, event))
 
         event_type = event.type()
         type_enum = getattr(QEvent, "Type", None)
@@ -820,7 +948,7 @@ class MainWindowLogicMixin:
                 event.acceptProposedAction()
                 return True
 
-        return super().eventFilter(obj, event)
+        return bool(super().eventFilter(obj, event))
 
     def _handle_drop_paths(self, paths: list[Path]) -> None:
         if not paths:
@@ -888,8 +1016,9 @@ class MainWindowLogicMixin:
             return
 
         patterns = [build_pattern_from_path(path) for path in supported]
-        if all(patterns) and len(set(patterns)) == 1:
-            self._set_input_pattern(patterns[0], supported[0].parent)
+        first_pattern = patterns[0]
+        if first_pattern is not None and all(patterns) and len(set(patterns)) == 1:
+            self._set_input_pattern(first_pattern, supported[0].parent)
             return
 
         pattern_counts: dict[str, int] = {}
@@ -958,16 +1087,21 @@ class MainWindowLogicMixin:
 
     def _browse_output_path(self) -> None:
         """Browse for output video path."""
-        default_path = self.settings.value("last_output_dir", "")
+        default_path = str(self.settings.value("last_output_dir", "") or "")
+        target_ext = container_extension_for_codec(self._selected_codec_id())
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Video As", default_path, "MP4 Files (*.mp4);;All Files (*.*)"
+            self,
+            "Save Video As",
+            default_path,
+            "Video Files (*.mp4 *.mov);;MP4 Files (*.mp4);;MOV Files (*.mov);;All Files (*.*)",
         )
         if file_path:
             path_obj = Path(file_path)
-            # Add .mp4 if no supported extension is present
+            # Add default container extension if no supported extension is present
             if path_obj.suffix.lower().lstrip(".") not in constants.SUPPORTED_VIDEO_EXTENSIONS:
-                file_path += ".mp4"
+                file_path += target_ext
 
+            self._auto_output_path = None
             self.output_path_edit.setText(file_path)
             self.settings.setValue("last_output_dir", str(Path(file_path).parent))
 
@@ -1059,7 +1193,9 @@ class MainWindowLogicMixin:
             base_name = base_name.strip("._-")  # Clean up separators
             if not base_name:
                 base_name = "output"
-            output_path = output_dir / f"{base_name}.mp4"
+            ext = container_extension_for_codec(self._selected_codec_id())
+            output_path = output_dir / f"{base_name}{ext}"
+            self._auto_output_path = str(output_path)
             self.output_path_edit.setText(str(output_path))
 
             logger.info(f"Sequence detected: {frame_count} frames")
@@ -1083,7 +1219,14 @@ class MainWindowLogicMixin:
             self._set_input_validation_state(False, error_text)
             self._update_convert_gate()
 
-    def _start_file_info_discovery(self, sample_path, sequence, frame_count, frame_range, pattern):
+    def _start_file_info_discovery(
+        self,
+        sample_path: Path,
+        sequence: Any,
+        frame_count: int,
+        frame_range: str,
+        pattern: str,
+    ) -> None:
         """Start async file info discovery to avoid blocking UI."""
         # Stop any existing worker and DISCONNECT signals to prevent stale updates
         if self._file_info_worker:
@@ -1115,8 +1258,15 @@ class MainWindowLogicMixin:
         logger.info(f"Checking metadata: {sample_path.name}")
 
     def _on_file_info_ready(
-        self, path_str, file_info, sample_path, sequence, frame_count, frame_range, pattern
-    ):
+        self,
+        path_str: str,
+        file_info: Any,
+        sample_path: Path,
+        sequence: Any,
+        frame_count: int,
+        frame_range: str,
+        pattern: str,
+    ) -> None:
         """Handle file info ready from background worker."""
         try:
             # Update color space
@@ -1150,6 +1300,19 @@ class MainWindowLogicMixin:
             self.layer_combo.blockSignals(True)
             self.layer_combo.clear()
             self.layer_combo.addItems(layers)
+
+            pending_layer = getattr(self, "_pending_layer", None)
+            if pending_layer:
+                match_idx = self.layer_combo.findText(pending_layer)
+                if match_idx < 0:
+                    lowered = pending_layer.lower()
+                    for idx_candidate, candidate_name in enumerate(layers):
+                        if candidate_name.lower() == lowered:
+                            match_idx = idx_candidate
+                            break
+                if match_idx >= 0:
+                    self.layer_combo.setCurrentIndex(match_idx)
+                self._pending_layer = None
 
             should_enable = len(layers) > 1 or layers[0] != "RGBA"
             if self.cs_enable_check.isChecked():
@@ -1218,8 +1381,15 @@ class MainWindowLogicMixin:
             self._load_preview_from_path(sample_path)
 
     def _on_file_info_error(
-        self, path_str, error, sample_path, sequence, frame_count, frame_range, pattern
-    ):
+        self,
+        path_str: str,
+        error: Any,
+        sample_path: Path,
+        sequence: Any,
+        frame_count: int,
+        frame_range: str,
+        pattern: str,
+    ) -> None:
         """Handle file info discovery error."""
         logger.warning(f"File info discovery failed: {error}")
         self._aspect_ratio = None
@@ -1257,23 +1427,124 @@ class MainWindowLogicMixin:
         return ColorSpacePreset.OCIO_CONVERSION, role_name or selected_text
 
     def _populate_color_space_combo(self, combo: QComboBox) -> None:
-        combo.clear()
-        role_options = get_ocio_role_display_options()
-        utility_linear = get_ocio_colorspace_label("Utility - Linear - sRGB")
+        self._ocio_role_display_map = populate_color_space_combo_for_config(combo)
 
-        if utility_linear:
-            combo.addItem(utility_linear)
+    def _apply_ocio_config(self, ocio_path: Optional[str]) -> bool:
+        """Validate and apply an OCIO config path, refreshing dropdowns and preview."""
+        try:
+            apply_ocio_config_path(self, ocio_path)
+        except ColorSpaceError as exc:
+            QMessageBox.warning(self, "Invalid OCIO Config", str(exc))
+            return False
 
-        if role_options:
-            combo.addItems([label for label, _ in role_options])
-            self._ocio_role_display_map = dict(role_options)
-        else:
-            self._ocio_role_display_map = {}
+        if hasattr(self, "preview_widget") and hasattr(self.preview_widget, "clear_frame_cache"):
+            self.preview_widget.clear_frame_cache()
+        if hasattr(self, "_cs_preview_timer"):
+            self._on_cs_setting_changed()
+        return True
+
+    def _browse_ocio_config(self) -> None:
+        """Browse for a custom OpenColorIO config.ocio file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select OpenColorIO Config",
+            "",
+            "OCIO Config (*.ocio);;All Files (*.*)",
+        )
+        if file_path:
+            self._apply_ocio_config(file_path)
+
+    def _on_ocio_config_edited(self) -> None:
+        """Apply OCIO config path when edited in the line edit."""
+        if not hasattr(self, "ocio_config_edit"):
+            return
+        self._apply_ocio_config(self.ocio_config_edit.text().strip() or None)
+
+    def _on_ocio_display_changed(self, *_args: Any) -> None:
+        """Refresh OCIO views when the display changes and update preview."""
+        populate_ocio_views(self)
+        if hasattr(self, "_cs_preview_timer"):
+            self._on_cs_setting_changed()
+
+    def _browse_and_load_preset(self) -> None:
+        """Browse for a JSON preset file and apply it to the UI."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Conversion Preset",
+            "",
+            "JSON Presets (*.json);;All Files (*.*)",
+        )
+        if not file_path:
+            return
+        try:
+            load_preset_into_ui(self, file_path)
+            self._on_codec_changed()
+            if hasattr(self, "_cs_preview_timer"):
+                self._on_cs_setting_changed()
+            self.statusBar().showMessage(f"Loaded preset: {Path(file_path).name}", 4000)
+        except RenderKitError as exc:
+            QMessageBox.warning(self, "Preset Load Failed", str(exc))
+
+    def _browse_and_save_preset(self) -> None:
+        """Save current UI conversion settings to a JSON preset file."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Conversion Preset",
+            "",
+            "JSON Presets (*.json);;All Files (*.*)",
+        )
+        if not file_path:
+            return
+        target = Path(file_path)
+        if target.suffix.lower() != ".json":
+            target = target.with_suffix(".json")
+        try:
+            save_preset_from_ui(self, target)
+            self.statusBar().showMessage(f"Saved preset: {target.name}", 4000)
+        except RenderKitError as exc:
+            QMessageBox.warning(self, "Preset Save Failed", str(exc))
+
+    def apply_startup_options(
+        self,
+        *,
+        open_path: Optional[str] = None,
+        layer: Optional[str] = None,
+        preset: Optional[str] = None,
+        ocio_path: Optional[str] = None,
+    ) -> None:
+        """Pre-populate main window state from startup/CLI arguments."""
+        if preset:
+            try:
+                load_preset_into_ui(self, preset)
+            except RenderKitError as exc:
+                logger.warning("Failed to load startup preset '%s': %s", preset, exc)
+
+        if ocio_path:
+            try:
+                apply_ocio_config_path(self, ocio_path)
+            except ColorSpaceError as exc:
+                logger.warning("Failed to load startup OCIO config '%s': %s", ocio_path, exc)
+
+        if layer:
+            self._pending_layer = layer
+            if hasattr(self, "layer_combo"):
+                idx = self.layer_combo.findText(layer)
+                if idx >= 0:
+                    self.layer_combo.setCurrentIndex(idx)
+
+        if open_path:
+            candidate = Path(open_path)
+            if candidate.exists() and candidate.is_dir():
+                self._apply_dropped_folder(candidate)
+            elif candidate.exists() and candidate.is_file():
+                self._apply_input_path(candidate)
+            else:
+                self._set_input_pattern(open_path)
 
     def _selected_codec_id(self) -> str:
         """Return the codec id selected in the UI."""
         codec_index = self.codec_combo.currentIndex()
-        return self._codec_map.get(codec_index, "libx264")
+        return str(self._codec_map.get(codec_index, "libx264"))
 
     def _resolve_encoder_for_conversion(self, codec_id: str) -> Optional[str]:
         """Validate and resolve the codec that should be used for conversion."""
@@ -1365,6 +1636,20 @@ class MainWindowLogicMixin:
         if input_space:
             config_builder.with_explicit_input_color_space(input_space)
 
+        exposure, gamma = get_grade_values(self)
+        config_builder.with_grade(exposure=exposure, gamma=gamma)
+
+        ocio_config_path = get_configured_ocio_path(self)
+        ocio_display = get_selected_ocio_display(self)
+        ocio_view = get_selected_ocio_view(self)
+        if any(value is not None for value in (ocio_config_path, ocio_display, ocio_view)):
+            config_builder.with_ocio(
+                config_path=ocio_config_path,
+                input_space=input_space,
+                display=ocio_display,
+                view=ocio_view,
+            )
+
         if not self.keep_resolution_check.isChecked():
             config_builder.with_resolution(self.width_spin.value(), self.height_spin.value())
 
@@ -1380,6 +1665,13 @@ class MainWindowLogicMixin:
         burnin_config = build_burnin_config(self, include_layer=cs_config is None)
         if burnin_config is not None:
             config_builder.with_burnin(burnin_config)
+
+        slate_config = build_slate_config_from_ui(self)
+        if slate_config is not None:
+            config_builder.with_slate(slate_config)
+
+        watermark_config = build_watermark_config_from_ui(self, strict=True)
+        config_builder.with_watermark(watermark_config)
 
         return config_builder.build()
 
@@ -1489,7 +1781,9 @@ class MainWindowLogicMixin:
                 self._set_status_icons("cancelled")
                 self._set_output_actions_visible(False)
         else:
-            QApplication.instance().quit()
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
 
     def _on_conversion_finished(self) -> None:
         """Handle conversion completion."""
@@ -1523,8 +1817,7 @@ class MainWindowLogicMixin:
         self._ping_user("Conversion completed", f"Output: {output_path}")
         message_box = QMessageBox(self)
         message_box.setWindowTitle("Success")
-        icon_enum = getattr(QMessageBox, "Icon", None)
-        info_icon = icon_enum.NoIcon if icon_enum is not None else QMessageBox.NoIcon
+        info_icon = resolve_enum_member(QMessageBox, "Icon", "NoIcon")
         message_box.setIcon(info_icon)
         theme = self.property("theme")
         if not isinstance(theme, str) or not theme:
@@ -1534,8 +1827,7 @@ class MainWindowLogicMixin:
         message_box.setIconPixmap(check_icon.pixmap(48, 48))
         message_box.setText("Conversion completed successfully!")
         message_box.setInformativeText(f"Output: {output_path}")
-        role_enum = getattr(QMessageBox, "ButtonRole", None)
-        action_role = role_enum.ActionRole if role_enum is not None else QMessageBox.ActionRole
+        action_role = resolve_enum_member(QMessageBox, "ButtonRole", "ActionRole")
         open_folder_btn = message_box.addButton("Open output folder", action_role)
         copy_path_btn = message_box.addButton("Copy output path", action_role)
         message_box.addButton(QMessageBox.StandardButton.Ok)
@@ -1550,10 +1842,7 @@ class MainWindowLogicMixin:
     def _ping_user(self, title: str, message: str) -> None:
         """Notify the user that the conversion finished."""
         if self.tray_icon and self.tray_icon.isVisible():
-            icon_enum = getattr(QSystemTrayIcon, "MessageIcon", None)
-            info_icon = (
-                icon_enum.Information if icon_enum is not None else QSystemTrayIcon.Information
-            )
+            info_icon = resolve_enum_member(QSystemTrayIcon, "MessageIcon", "Information")
             self.tray_icon.showMessage(title, message, info_icon, 5000)
             return
 
@@ -1672,6 +1961,10 @@ class MainWindowLogicMixin:
         self._update_play_button_state()  # Call it here
         # Initial refresh of enabled states
         self._on_burnin_enable_toggled(self.burnin_enable_check.isChecked())
+        if hasattr(self, "slate_enable_check"):
+            self._on_slate_enable_toggled(self.slate_enable_check.isChecked())
+        if hasattr(self, "watermark_enable_check"):
+            self._on_watermark_enable_toggled(self.watermark_enable_check.isChecked())
 
         # Don't auto-expand on load, respect default collapsed state unless we add persistence for it.
         # But we do need to set the state of enabled/disabled widgets

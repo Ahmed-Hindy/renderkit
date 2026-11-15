@@ -2,13 +2,23 @@
 
 import csv
 import json
+import os
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from renderkit.cli import batch as cli_batch
 from renderkit.cli import main as cli_main
-from renderkit.core.batch import build_safe_output_path, discover_frame_sequences
+from renderkit.core.batch import (
+    BatchSequence,
+    build_safe_output_path,
+    discover_frame_sequences,
+    is_sequence_settled,
+    watch_and_convert_sequences,
+)
+from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
+from renderkit.core.presets import save_preset
 
 
 def test_discover_frame_sequences_groups_nested_sparse_and_single_frames(
@@ -312,3 +322,169 @@ def test_batch_replace_deduplicates_colliding_batch_convert_output_names(
         review_dir / "render.mp4",
         review_dir / "render_2.mp4",
     ]
+
+
+def test_build_safe_output_path_supports_custom_container_ext(tmp_path: Path) -> None:
+    """build_safe_output_path normalizes container extensions and rejects invalid ones."""
+    shot_dir = tmp_path / "shot_01"
+    shot_dir.mkdir()
+    (shot_dir / "beauty.0001.exr").touch()
+
+    seq = discover_frame_sequences(tmp_path, "exr")[0]
+    output_dir = tmp_path / "out"
+
+    assert build_safe_output_path(tmp_path, output_dir, seq, container_ext="MOV") == (
+        output_dir / "shot_01_beauty.mov"
+    )
+    assert build_safe_output_path(tmp_path, output_dir, seq, container_ext=".mov") == (
+        output_dir / "shot_01_beauty.mov"
+    )
+
+    with pytest.raises(ValueError):
+        build_safe_output_path(tmp_path, output_dir, seq, container_ext="../mov")
+
+
+def test_is_sequence_settled_checks_mtime_and_missing_files(tmp_path: Path) -> None:
+    """is_sequence_settled distinguishes fresh, settled, empty, and missing sequences."""
+    f1 = tmp_path / "render.0001.exr"
+    f2 = tmp_path / "render.0002.exr"
+    f1.touch()
+    f2.touch()
+
+    os.utime(f1, (1000.0, 1000.0))
+    os.utime(f2, (1005.0, 1005.0))
+
+    seq = discover_frame_sequences(tmp_path, "exr")[0]
+    assert not is_sequence_settled(seq, settle_seconds=2.0, now=1006.0)
+    assert is_sequence_settled(seq, settle_seconds=2.0, now=1007.0)
+
+    f2.unlink()
+    assert not is_sequence_settled(seq, settle_seconds=2.0, now=1010.0)
+
+    empty_seq = BatchSequence(
+        directory=tmp_path,
+        prefix="empty.",
+        suffix=".exr",
+        padding=4,
+        frame_numbers=[],
+    )
+    assert not is_sequence_settled(empty_seq, settle_seconds=0.0, now=1010.0)
+
+
+def test_watch_and_convert_sequences_waits_for_settle_and_tracks_rerenders(
+    tmp_path: Path,
+) -> None:
+    """Watch polling ignores unsettled/unchanged sequences and reconverts updated renders."""
+    seq_dir = tmp_path / "shot"
+    seq_dir.mkdir()
+    f1 = seq_dir / "beauty.0001.exr"
+    f2 = seq_dir / "beauty.0002.exr"
+    f1.touch()
+    f2.touch()
+    os.utime(f1, (100.0, 100.0))
+    os.utime(f2, (100.0, 100.0))
+
+    out_dir = tmp_path / "out"
+    conversions: list[str] = []
+
+    class FakeConverter:
+        def __init__(self, config: ConversionConfig) -> None:
+            self._config = config
+
+        def convert(self) -> None:
+            conversions.append(self._config.input_pattern)
+            Path(self._config.output_path).write_bytes(b"mov")
+
+    def build_config(seq: BatchSequence) -> ConversionConfig:
+        out_path = build_safe_output_path(tmp_path, out_dir, seq, container_ext=".mov")
+        return (
+            ConversionConfigBuilder()
+            .with_input_pattern(str(seq.input_pattern))
+            .with_output_path(str(out_path))
+            .with_fps(24.0)
+            .with_codec("prores_422")
+            .build()
+        )
+
+    poll_counter = {"count": 0}
+
+    def on_sleep(_interval: float) -> None:
+        poll_counter["count"] += 1
+        if poll_counter["count"] == 1:
+            # Poll 2 stays unchanged -> must NOT reconvert
+            return
+        if poll_counter["count"] == 2:
+            # Poll 3 adds frame 3 -> re-rendered sequence MUST convert again
+            f3 = seq_dir / "beauty.0003.exr"
+            f3.touch()
+            os.utime(f3, (105.0, 105.0))
+
+    produced = watch_and_convert_sequences(
+        tmp_path,
+        build_config,
+        settle_seconds=1.0,
+        poll_interval=0.1,
+        max_polls=3,
+        sleep_fn=on_sleep,
+        converter_factory=FakeConverter,
+    )
+
+    assert len(conversions) == 2
+    assert produced == [out_dir / "shot_beauty.mov", out_dir / "shot_beauty.mov"]
+
+
+def test_batch_convert_preset_prores_mov_and_watch_flags(monkeypatch, tmp_path: Path) -> None:
+    """CLI batch-convert supports --preset (.mov output + overrides) and --watch --max-polls 1."""
+    shot_dir = tmp_path / "shot"
+    shot_dir.mkdir()
+    for frame in (1001, 1002):
+        frame_path = shot_dir / f"comp.{frame:04d}.exr"
+        frame_path.touch()
+        os.utime(frame_path, (100.0, 100.0))
+
+    preset_file = tmp_path / "dailies.json"
+    preset_config = (
+        ConversionConfigBuilder()
+        .with_input_pattern("placeholder.%04d.exr")
+        .with_output_path("placeholder.mov")
+        .with_fps(25.0)
+        .with_codec("prores_422")
+        .build()
+    )
+    save_preset(preset_config, preset_file)
+
+    captured_configs: list[ConversionConfig] = []
+
+    class FakeRenderKit:
+        def convert_with_config(self, config: ConversionConfig, show_progress=None) -> None:
+            captured_configs.append(config)
+            Path(config.output_path).write_bytes(b"mov")
+
+    monkeypatch.setattr(cli_main, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(cli_main, "setup_logging", lambda: None)
+    monkeypatch.setattr(cli_batch, "RenderKit", FakeRenderKit)
+
+    result = CliRunner().invoke(
+        cli_main.main,
+        [
+            "batch-convert",
+            str(tmp_path),
+            "--preset",
+            str(preset_file),
+            "--fps",
+            "30",
+            "--watch",
+            "--max-polls",
+            "1",
+            "--settle-seconds",
+            "0",
+            "--no-progress",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Watch complete: 1 sequence(s) converted." in result.output
+    assert len(captured_configs) == 1
+    assert captured_configs[0].codec == "prores_422"
+    assert captured_configs[0].fps == 30.0
+    assert captured_configs[0].output_path.endswith("shot_comp.mov")

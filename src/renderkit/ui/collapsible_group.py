@@ -1,5 +1,8 @@
 """Collapsible group box widget for accordion-style layouts."""
 
+from collections.abc import Callable
+from typing import Any, Optional
+
 from renderkit.ui.qt_compat import (
     QFrame,
     QHBoxLayout,
@@ -10,6 +13,19 @@ from renderkit.ui.qt_compat import (
 )
 
 _QT_POINTING_HAND_CURSOR = qt_enum("CursorShape", "PointingHandCursor")
+
+
+class _ClickableHeader(QFrame):
+    """Header frame that toggles its parent collapsible group on click."""
+
+    def __init__(self, on_click: Callable[[], None], parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._on_click = on_click
+
+    def mousePressEvent(self, event: Any) -> None:
+        """Invoke click callback when header is pressed."""
+        self._on_click()
+        super().mousePressEvent(event)
 
 
 class CollapsibleGroupBox(QWidget):
@@ -35,7 +51,7 @@ class CollapsibleGroupBox(QWidget):
         main_layout.setSpacing(0)
 
         # Header
-        self.header = QFrame()
+        self.header: QFrame = _ClickableHeader(self.toggle)
         self.header.setObjectName("CollapsibleHeader")
         self.header.setCursor(_QT_POINTING_HAND_CURSOR)
         header_layout = QHBoxLayout(self.header)
@@ -52,9 +68,6 @@ class CollapsibleGroupBox(QWidget):
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
-
-        # Make header clickable
-        self.header.mousePressEvent = lambda event: self.toggle()
 
         main_layout.addWidget(self.header)
 

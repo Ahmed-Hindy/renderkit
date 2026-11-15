@@ -20,9 +20,12 @@ from renderkit.ui.preview_image import (
 )
 from renderkit.ui.qt_compat import QPixmap
 from renderkit.ui.widgets import (
+    PreviewFrameCache,
+    PreviewWidget,
     PreviewWorker,
     _prepare_buf_for_preview_display,
     _scaled_burnin_config_for_preview,
+    build_preview_cache_key,
 )
 
 try:
@@ -424,3 +427,165 @@ def test_preview_widget_active_worker_cleanup(qtbot, tmp_path) -> None:
 
     # Wait for workers to clean up
     qtbot.waitUntil(lambda: len(widget._active_workers) == 0, timeout=5000)
+
+
+def test_imagebuf_to_preview_image_extracts_and_validates_pixel_aspect() -> None:
+    """Anamorphic PixelAspectRatio should be extracted and invalid values clamped to 1.0."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    spec = oiio.ImageSpec(4, 2, 3, oiio.FLOAT)
+    spec.attribute("PixelAspectRatio", 2.0)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), np.ones((2, 4, 3), dtype=np.float32))
+    assert imagebuf_to_preview_image(buf).pixel_aspect == pytest.approx(2.0)
+
+    for bad_aspect in (0.0, -1.5, float("nan")):
+        bad_spec = oiio.ImageSpec(4, 2, 3, oiio.FLOAT)
+        bad_spec.attribute("PixelAspectRatio", bad_aspect)
+        bad_buf = oiio.ImageBuf(bad_spec)
+        assert bad_buf.set_pixels(oiio.ROI(), np.ones((2, 4, 3), dtype=np.float32))
+        assert imagebuf_to_preview_image(bad_buf).pixel_aspect == pytest.approx(1.0)
+
+
+def test_preview_image_to_pixmap_unsqueezes_anamorphic_pixel_aspect(qapp) -> None:
+    """Pixmaps with pixel_aspect != 1.0 should be horizontally unsqueezed."""
+    data = PreviewImageData(
+        pixels=np.full((10, 20, 3), 128, dtype=np.uint8),
+        width=20,
+        height=10,
+        channels=3,
+        pixel_aspect=2.0,
+    )
+
+    pixmap = preview_image_to_pixmap(data)
+
+    assert pixmap.width() == 40
+    assert pixmap.height() == 10
+
+
+def test_preview_frame_cache_hit_lru_eviction_and_clear() -> None:
+    """PreviewFrameCache should support hits, LRU eviction, and explicit clear."""
+    cache = PreviewFrameCache(max_entries=2)
+    d1 = PreviewImageData(np.zeros((1, 1, 3), dtype=np.uint8), 1, 1, 3)
+    d2 = PreviewImageData(np.ones((1, 1, 3), dtype=np.uint8), 1, 1, 3)
+    d3 = PreviewImageData(np.full((1, 1, 3), 2, dtype=np.uint8), 1, 1, 3)
+
+    cache.put(("k1",), d1)
+    cache.put(("k2",), d2)
+    assert len(cache) == 2
+    assert cache.get(("k1",)) is d1  # Promotes k1 to MRU; k2 becomes LRU
+
+    cache.put(("k3",), d3)
+    assert len(cache) == 2
+    assert cache.get(("k2",)) is None
+    assert cache.get(("k1",)) is d1
+    assert cache.get(("k3",)) is d3
+
+    cache.clear()
+    assert len(cache) == 0
+    assert cache.get(("k1",)) is None
+
+
+def test_preview_worker_forwards_ocio_and_grade_to_converter(monkeypatch, qapp) -> None:
+    """PreviewWorker should wire OCIO display/view and grade args into ColorSpaceConverter."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    spec = oiio.ImageSpec(2, 2, 3, oiio.FLOAT)
+    buf = oiio.ImageBuf(spec)
+    assert buf.set_pixels(oiio.ROI(), np.ones((2, 2, 3), dtype=np.float32))
+
+    converter_calls = []
+
+    class FakeConverter:
+        def __init__(self, preset, **kwargs) -> None:
+            converter_calls.append((preset, kwargs))
+
+        def convert_buf(self, buf_in, input_space=None):
+            return buf_in
+
+    monkeypatch.setattr("renderkit.ui.widgets.ColorSpaceConverter", FakeConverter)
+    monkeypatch.setattr(
+        "renderkit.ui.widgets.prepare_frame_buffer",
+        lambda _opts: PreparedFrameBuffer(buf=buf, applied_scale=1.0),
+    )
+
+    worker = PreviewWorker(
+        file_path=Path("render.0001.exr"),
+        color_space=ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        ocio_config_path="/tmp/custom.ocio",
+        ocio_display="ACES",
+        ocio_view="sRGB",
+        exposure=1.25,
+        gamma=1.1,
+    )
+    emitted = []
+    worker.preview_ready.connect(emitted.append)
+    worker.run()
+
+    assert emitted
+    assert converter_calls[0] == (
+        ColorSpacePreset.OCIO_CONVERSION,
+        {
+            "ocio_config_path": "/tmp/custom.ocio",
+            "ocio_display": "ACES",
+            "ocio_view": "sRGB",
+            "exposure": 1.25,
+            "gamma": 1.1,
+        },
+    )
+
+
+def test_preview_widget_cache_hit_skips_worker_spawn(qtbot, tmp_path, monkeypatch) -> None:
+    """Cache hits in PreviewWidget.load_preview should apply synchronously without a worker."""
+    widget = PreviewWidget()
+    qtbot.addWidget(widget)
+
+    sample = tmp_path / "render.0001.exr"
+    sample.write_text("frame")
+    cached_data = PreviewImageData(
+        pixels=np.full((4, 6, 3), 200, dtype=np.uint8),
+        width=6,
+        height=4,
+        channels=3,
+        pixel_aspect=2.0,
+    )
+    key = build_preview_cache_key(
+        sample,
+        ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        ocio_config_path="/tmp/config.ocio",
+        ocio_display="ACES",
+        ocio_view="sRGB",
+        exposure=0.5,
+        gamma=1.2,
+        preview_scale=0.5,
+    )
+    widget._frame_cache.put(key, cached_data)
+
+    def fail_worker(*_args, **_kwargs):
+        raise AssertionError("PreviewWorker should not be spawned on a cache hit")
+
+    monkeypatch.setattr("renderkit.ui.widgets.PreviewWorker", fail_worker)
+
+    widget.load_preview(
+        sample,
+        ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        ocio_config_path="/tmp/config.ocio",
+        ocio_display="ACES",
+        ocio_view="sRGB",
+        exposure=0.5,
+        gamma=1.2,
+        preview_scale=0.5,
+    )
+
+    assert widget.worker is None
+    assert widget._original_pixmap is not None
+    assert widget._original_pixmap.width() == 12
+    assert widget._original_pixmap.height() == 4
+
+    widget.clear_frame_cache()
+    assert len(widget._frame_cache) == 0

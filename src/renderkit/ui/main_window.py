@@ -3,7 +3,8 @@
 import os
 import sys
 import time
-from typing import Optional
+from pathlib import Path
+from typing import Optional, cast
 
 from renderkit import __version__
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
@@ -73,8 +74,12 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._startup_logs: list[str] = []
         self._file_info_worker: Optional[FileInfoWorker] = None
         self._last_detected_pattern = ""
+        self._auto_output_path: Optional[str] = None
+        self._pending_layer: Optional[str] = None
         self._aspect_ratio: Optional[float] = None
         self._aspect_sync_guard = False
+        self._last_preview_path: Optional[Path] = None
+        self._codec_map: dict[int, str] = {}
         # Debounce timer for real-time contact sheet preview updates
         self._cs_preview_timer = QTimer(self)
         self._cs_preview_timer.setSingleShot(True)
@@ -108,10 +113,28 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._setup_connections()
 
 
-def run_ui() -> None:
-    """Run the UI application."""
+def run_ui(
+    open_path: Optional[str] = None,
+    layer: Optional[str] = None,
+    preset: Optional[str] = None,
+    ocio_path: Optional[str] = None,
+) -> int:
+    """Run the UI application.
+
+    Args:
+        open_path: Optional initial frame file, folder, or sequence pattern to open.
+        layer: Optional EXR layer/AOV name to select once loaded.
+        preset: Optional JSON preset path or name to apply on startup.
+        ocio_path: Optional custom OCIO config path to apply on startup.
+
+    Returns:
+        Qt application exit code.
+    """
     ensure_ffmpeg_env()
-    app = QApplication(sys.argv)
+    existing_app = QApplication.instance() if hasattr(QApplication, "instance") else None
+    app: QApplication = (
+        cast(QApplication, existing_app) if existing_app is not None else QApplication(sys.argv)
+    )
     app.setApplicationName("RenderKit")
     app.setOrganizationName("RenderKit")
 
@@ -138,6 +161,14 @@ def run_ui() -> None:
         if window is None:
             splash.close()
 
+    if any(value is not None for value in (open_path, layer, preset, ocio_path)):
+        window.apply_startup_options(
+            open_path=open_path,
+            layer=layer,
+            preset=preset,
+            ocio_path=ocio_path,
+        )
+
     wait_for_minimum_splash_duration(
         app=app,
         started_at=splash_started_at,
@@ -146,8 +177,8 @@ def run_ui() -> None:
 
     window.show()
     splash.finish(window)
-    sys.exit(app.exec())
+    return int(app.exec())
 
 
 if __name__ == "__main__":
-    run_ui()
+    sys.exit(run_ui())

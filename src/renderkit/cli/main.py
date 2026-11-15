@@ -1,9 +1,10 @@
 """CLI interface for the Render Kit."""
 
+import importlib
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import click
 
@@ -11,23 +12,28 @@ from renderkit import __version__
 from renderkit.api.processor import RenderKit
 from renderkit.cli.batch import batch_convert
 from renderkit.cli.conversion import (
-    apply_frame_range,
-    base_conversion_config_builder,
+    COLOR_SPACE_CHOICES,
+    OCIO_GRADE_OPTIONS,
+    apply_click_options,
+    build_cli_conversion_builder,
     validate_paired_resolution,
 )
 from renderkit.core.batch import deduplicate_output_path
-from renderkit.core.config import (
-    BurnInConfig,
-    BurnInElement,
-    ContactSheetConfig,
-)
+from renderkit.core.config import ContactSheetConfig, WatermarkConfig
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
+from renderkit.core.presets import resolve_preset_path, save_preset
 from renderkit.core.profiler import get_profile_env_config, profile_context
 from renderkit.core.sequence import SequenceDetector
 from renderkit.core.sequence_replacement import (
     find_exr_sequences,
     find_replacement_mp4,
     replace_sequence_with_mp4,
+)
+from renderkit.core.transcode import VideoTranscodeConfig, generate_video_proxy, transcode_video
+from renderkit.core.video_ingest import (
+    VALID_EXR_COMPRESSIONS,
+    VideoToExrConfig,
+    VideoToExrConverter,
 )
 from renderkit.exceptions import RenderKitError
 from renderkit.io.image_reader import ImageReaderFactory
@@ -49,11 +55,27 @@ def main() -> None:
     pass
 
 
-def _launch_ui() -> None:
+def _launch_ui(
+    open_path: Optional[str] = None,
+    layer: Optional[str] = None,
+    preset: Optional[str] = None,
+    ocio_path: Optional[str] = None,
+) -> Optional[int]:
     """Launch the RenderKit graphical interface."""
-    from renderkit.ui.main_window import run_ui
+    main_window = importlib.import_module("renderkit.ui.main_window")
+    run_ui = main_window.run_ui
 
-    run_ui()
+    if any(value is not None for value in (open_path, layer, preset, ocio_path)):
+        return cast(
+            Optional[int],
+            run_ui(
+                open_path=open_path,
+                layer=layer,
+                preset=preset,
+                ocio_path=ocio_path,
+            ),
+        )
+    return cast(Optional[int], run_ui())
 
 
 def _to_rgb_buf(oiio: Any, buf: Any) -> Any:
@@ -144,9 +166,55 @@ def _write_sequence_contact_sheet(
 
 
 @main.command(name="ui")
-def ui() -> None:
+@click.option(
+    "--open",
+    "open_path",
+    type=str,
+    default=None,
+    help="Initial sequence pattern or file path to open in the UI.",
+)
+@click.option(
+    "--layer",
+    type=str,
+    default=None,
+    help="Initial EXR layer/AOV name to select.",
+)
+@click.option(
+    "--preset",
+    type=str,
+    default=None,
+    help="Preset name or JSON preset path to apply on startup.",
+)
+@click.option(
+    "--ocio",
+    type=str,
+    default=None,
+    help="Path to a custom OpenColorIO config file.",
+)
+def ui(
+    open_path: Optional[str],
+    layer: Optional[str],
+    preset: Optional[str],
+    ocio: Optional[str],
+) -> None:
     """Launch the RenderKit desktop UI."""
-    _launch_ui()
+    try:
+        if any(value is not None for value in (open_path, layer, preset, ocio)):
+            resolved_preset = str(resolve_preset_path(preset)) if preset else None
+            exit_code = _launch_ui(
+                open_path=open_path,
+                layer=layer,
+                preset=resolved_preset,
+                ocio_path=ocio,
+            )
+        else:
+            exit_code = _launch_ui()
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if isinstance(exit_code, int) and exit_code != 0:
+        sys.exit(exit_code)
 
 
 @main.command(name="gui", hidden=True)
@@ -174,7 +242,7 @@ def gui() -> None:
 @click.option(
     "--color-space",
     type=click.Choice(
-        ["linear_to_srgb", "linear_to_rec709", "srgb_to_linear", "no_conversion"],
+        list(COLOR_SPACE_CHOICES),
         case_sensitive=False,
     ),
     default="linear_to_srgb",
@@ -202,6 +270,32 @@ def gui() -> None:
 )
 @click.option("--start-frame", type=int, default=None, help="Start frame number")
 @click.option("--end-frame", type=int, default=None, help="End frame number")
+@apply_click_options(OCIO_GRADE_OPTIONS)
+@click.option(
+    "--preset",
+    "preset_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Load conversion settings from a JSON preset file.",
+)
+@click.option(
+    "--save-preset",
+    "save_preset_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Save conversion settings to a JSON preset file.",
+)
+@click.option(
+    "--slate",
+    is_flag=True,
+    default=False,
+    help="Prepend an intro slate frame before sequence frames.",
+)
+@click.option("--slate-title", type=str, default="", help="Title text for the slate frame.")
+@click.option("--slate-show", type=str, default="", help="Show/project name for the slate frame.")
+@click.option("--slate-shot", type=str, default="", help="Shot name for the slate frame.")
+@click.option("--slate-artist", type=str, default="", help="Artist name for the slate frame.")
+@click.option("--slate-notes", type=str, default="", help="Notes text for the slate frame.")
 @click.option(
     "--overwrite",
     is_flag=True,
@@ -216,6 +310,25 @@ def gui() -> None:
     type=click.IntRange(0, 100),
     default=30,
     help="Opacity of the burn-in background bar (0-100, default: 30)",
+)
+@click.option(
+    "--watermark",
+    type=str,
+    default=None,
+    help="Watermark text overlay applied across the output video.",
+)
+@click.option(
+    "--watermark-opacity",
+    type=click.IntRange(0, 100),
+    default=25,
+    show_default=True,
+    help="Watermark opacity percentage (0-100).",
+)
+@click.option(
+    "--watermark-tiled",
+    is_flag=True,
+    default=False,
+    help="Tile watermark text across the frame instead of centering.",
 )
 @click.option(
     "--contact-sheet", is_flag=True, default=False, help="Enable multi-AOV contact sheet mode"
@@ -252,7 +365,9 @@ def gui() -> None:
     default=False,
     help="Disable progress bars for stable captured logs.",
 )
+@click.pass_context
 def convert_exr_sequence(
+    ctx: click.Context,
     input_pattern: str,
     output_path: str,
     prefetch_workers: int,
@@ -265,11 +380,28 @@ def convert_exr_sequence(
     layer: Optional[str],
     start_frame: Optional[int],
     end_frame: Optional[int],
+    ocio: Optional[str],
+    input_space: Optional[str],
+    display: Optional[str],
+    view: Optional[str],
+    exposure: float,
+    gamma: float,
+    preset_path: Optional[Path],
+    save_preset_path: Optional[Path],
+    slate: bool,
+    slate_title: str,
+    slate_show: str,
+    slate_shot: str,
+    slate_artist: str,
+    slate_notes: str,
     overwrite: bool,
     burnin_frame: bool,
     burnin_layer: bool,
     burnin_fps: bool,
     burnin_opacity: int,
+    watermark: Optional[str],
+    watermark_opacity: int,
+    watermark_tiled: bool,
     contact_sheet: bool,
     cs_columns: int,
     cs_thumb_width: Optional[int],
@@ -308,61 +440,51 @@ def convert_exr_sequence(
         click.echo("Use --overwrite to overwrite it.", err=True)
         sys.exit(1)
 
-    # Build configuration
-    config_builder = base_conversion_config_builder(
-        input_pattern=input_pattern,
-        output_path=output_path,
-        prefetch_workers=prefetch_workers,
-        fps=fps,
-        color_space=color_space,
-        width=width,
-        height=height,
-        codec=codec,
-        quality=quality,
-        layer=layer,
-    )
-
-    if contact_sheet:
-        from renderkit.core.config import ContactSheetConfig
-
-        cs_config = ContactSheetConfig(
-            columns=cs_columns,
-            thumbnail_width=cs_thumb_width,
-            padding=cs_padding,
-            show_labels=not cs_no_labels,
-        )
-        config_builder.with_contact_sheet(True, cs_config)
-
-    apply_frame_range(config_builder, start_frame, end_frame)
-
-    burnin_elements = []
-    font_size = 20
-    if burnin_frame:
-        burnin_elements.append(
-            BurnInElement(
-                text_template="Frame: {frame}", x=20, y=10, font_size=font_size, alignment="left"
-            )
-        )
-    if burnin_layer:
-        burnin_elements.append(
-            BurnInElement(
-                text_template="Layer: {layer}", x=0, y=10, font_size=font_size, alignment="center"
-            )
-        )
-    if burnin_fps:
-        burnin_elements.append(
-            BurnInElement(
-                text_template="FPS: {fps:.2f}", x=0, y=10, font_size=font_size, alignment="right"
-            )
-        )
-
-    if burnin_elements:
-        config_builder.with_burnin(
-            BurnInConfig(elements=burnin_elements, background_opacity=burnin_opacity)
-        )
-
     try:
+        config_builder = build_cli_conversion_builder(
+            ctx,
+            input_pattern=input_pattern,
+            output_path=output_path,
+            preset_path=preset_path,
+            prefetch_workers=prefetch_workers,
+            fps=fps,
+            color_space=color_space,
+            width=width,
+            height=height,
+            codec=codec,
+            quality=quality,
+            layer=layer,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            ocio=ocio,
+            input_space=input_space,
+            display=display,
+            view=view,
+            exposure=exposure,
+            gamma=gamma,
+            burnin_frame=burnin_frame,
+            burnin_layer=burnin_layer,
+            burnin_fps=burnin_fps,
+            burnin_opacity=burnin_opacity,
+            contact_sheet=contact_sheet,
+            cs_columns=cs_columns,
+            cs_thumb_width=cs_thumb_width,
+            cs_padding=cs_padding,
+            cs_no_labels=cs_no_labels,
+            slate=slate,
+            slate_title=slate_title,
+            slate_show=slate_show,
+            slate_shot=slate_shot,
+            slate_artist=slate_artist,
+            slate_notes=slate_notes,
+            watermark_text=watermark,
+            watermark_opacity=watermark_opacity,
+            watermark_tiled=watermark_tiled,
+        )
         config = config_builder.build()
+        if save_preset_path is not None:
+            save_preset(config, save_preset_path)
+
         processor = RenderKit()
         if profile:
             enabled = True
@@ -603,6 +725,279 @@ def batch_replace_command(
         click.echo(f"Source frames {verb}: {deleted_count}")
         click.echo(f"Reclaimed bytes: {reclaimed_bytes}")
     click.echo(f"Audit report: {report_path}")
+
+
+@main.command(name="video-to-exr")
+@click.argument("input_video", type=click.Path(path_type=Path))
+@click.argument("output_pattern", type=str)
+@click.option(
+    "--start-frame",
+    type=int,
+    default=1001,
+    show_default=True,
+    help="Starting frame number for output EXR files.",
+)
+@click.option(
+    "--source-start",
+    type=int,
+    default=None,
+    help="Optional 0-based inclusive start frame in INPUT_VIDEO.",
+)
+@click.option(
+    "--source-end",
+    type=int,
+    default=None,
+    help="Optional 0-based inclusive end frame in INPUT_VIDEO.",
+)
+@click.option(
+    "--compression",
+    type=click.Choice(list(VALID_EXR_COMPRESSIONS), case_sensitive=False),
+    default="dwaa",
+    show_default=True,
+    help="EXR compression codec.",
+)
+@click.option(
+    "--float32",
+    is_flag=True,
+    default=False,
+    help="Write 32-bit float EXR plates instead of 16-bit half float.",
+)
+@click.option(
+    "--input-space",
+    type=str,
+    default="sRGB",
+    show_default=True,
+    help="Input video color space.",
+)
+@click.option(
+    "--output-space",
+    type=str,
+    default="Linear",
+    show_default=True,
+    help="Output EXR color space.",
+)
+@click.option(
+    "--ocio",
+    type=str,
+    default=None,
+    help="Path to a custom OpenColorIO config file.",
+)
+def video_to_exr_command(
+    input_video: Path,
+    output_pattern: str,
+    start_frame: int,
+    source_start: Optional[int],
+    source_end: Optional[int],
+    compression: str,
+    float32: bool,
+    input_space: str,
+    output_space: str,
+    ocio: Optional[str],
+) -> None:
+    """Ingest a video file into an OpenEXR plate sequence."""
+    try:
+        config = VideoToExrConfig(
+            input_path=input_video,
+            output_pattern=output_pattern,
+            start_frame=start_frame,
+            source_start_frame=source_start,
+            source_end_frame=source_end,
+            compression=compression,
+            half_float=not float32,
+            input_space=input_space,
+            output_space=output_space,
+            ocio_config_path=ocio,
+        )
+        written = VideoToExrConverter(config).convert()
+        click.echo(f"Wrote {len(written)} EXR frames to {output_pattern}")
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command(name="transcode")
+@click.argument("input_video", type=click.Path(path_type=Path))
+@click.argument("output_video", type=click.Path(path_type=Path))
+@click.option(
+    "--codec",
+    type=str,
+    default="libx264",
+    show_default=True,
+    help="Target video codec or profile.",
+)
+@click.option(
+    "--fps",
+    type=float,
+    default=None,
+    help="Override output frame rate (defaults to source FPS).",
+)
+@click.option(
+    "--quality",
+    type=click.IntRange(0, 10),
+    default=10,
+    show_default=True,
+    help="Video quality (0-10, 10 is best).",
+)
+@click.option("--width", type=int, default=None, help="Target width (preserves aspect if alone).")
+@click.option("--height", type=int, default=None, help="Target height (preserves aspect if alone).")
+@click.option(
+    "--ocio",
+    type=str,
+    default=None,
+    help="Path to a custom OpenColorIO config file.",
+)
+@click.option(
+    "--input-space",
+    type=str,
+    default="sRGB",
+    show_default=True,
+    help="Input video color space.",
+)
+@click.option(
+    "--output-space",
+    type=str,
+    default="sRGB",
+    show_default=True,
+    help="Output video color space.",
+)
+@click.option("--display", type=str, default=None, help="OCIO display name.")
+@click.option("--view", type=str, default=None, help="OCIO view name.")
+@click.option(
+    "--exposure",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Exposure adjustment in stops.",
+)
+@click.option(
+    "--gamma",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Gamma adjustment (> 0).",
+)
+@click.option(
+    "--watermark",
+    type=str,
+    default=None,
+    help="Watermark text overlay applied across the transcoded video.",
+)
+@click.option(
+    "--watermark-opacity",
+    type=click.IntRange(0, 100),
+    default=25,
+    show_default=True,
+    help="Watermark opacity percentage (0-100).",
+)
+@click.option(
+    "--watermark-tiled",
+    is_flag=True,
+    default=False,
+    help="Tile watermark text across the frame instead of centering.",
+)
+def transcode_command(
+    input_video: Path,
+    output_video: Path,
+    codec: str,
+    fps: Optional[float],
+    quality: int,
+    width: Optional[int],
+    height: Optional[int],
+    ocio: Optional[str],
+    input_space: str,
+    output_space: str,
+    display: Optional[str],
+    view: Optional[str],
+    exposure: float,
+    gamma: float,
+    watermark: Optional[str],
+    watermark_opacity: int,
+    watermark_tiled: bool,
+) -> None:
+    """Transcode an editorial video file with optional scaling, grading, and watermark."""
+    try:
+        watermark_config = (
+            WatermarkConfig(
+                text=watermark,
+                opacity=watermark_opacity,
+                tiled=watermark_tiled,
+            )
+            if watermark is not None
+            else None
+        )
+        config = VideoTranscodeConfig(
+            input_path=input_video,
+            output_path=output_video,
+            codec=codec,
+            fps=fps,
+            quality=quality,
+            scale_width=width,
+            scale_height=height,
+            input_space=input_space,
+            output_space=output_space,
+            ocio_config_path=ocio,
+            ocio_display=display,
+            ocio_view=view,
+            exposure=exposure,
+            gamma=gamma,
+            watermark_config=watermark_config,
+        )
+        result = transcode_video(config)
+        click.echo(f"Successfully transcoded video to: {result}")
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command(name="proxy")
+@click.argument("input_video", type=click.Path(path_type=Path))
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Optional destination proxy path (defaults to Proxy/<stem>_proxy.mp4|.mov).",
+)
+@click.option(
+    "--scale",
+    type=float,
+    default=0.5,
+    show_default=True,
+    help="Proxy resolution scale factor in (0.0, 1.0].",
+)
+@click.option(
+    "--codec",
+    type=str,
+    default="libx264",
+    show_default=True,
+    help="Target proxy codec or profile.",
+)
+@click.option(
+    "--quality",
+    type=click.IntRange(0, 10),
+    default=10,
+    show_default=True,
+    help="Video quality (0-10, 10 is best).",
+)
+def proxy_command(
+    input_video: Path,
+    output: Optional[Path],
+    scale: float,
+    codec: str,
+    quality: int,
+) -> None:
+    """Generate a scaled editorial proxy video from INPUT_VIDEO."""
+    try:
+        result = generate_video_proxy(
+            input_video,
+            output,
+            scale_factor=scale,
+            codec=codec,
+            quality=quality,
+        )
+        click.echo(f"Successfully created proxy video: {result}")
+    except (RenderKitError, OSError, RuntimeError, ValueError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

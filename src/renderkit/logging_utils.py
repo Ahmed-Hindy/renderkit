@@ -10,6 +10,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _LOGGER_NAME = "renderkit"
+_HANDLER_ATTR = "renderkit_handler"
 _QT_DELETED_SIGNAL_ERROR_MSG = "SignalInstance object was already deleted"
 _LOG_FILE_MAX_BYTES = 5 * 1024 * 1024
 _LOG_FILE_BACKUP_COUNT = 3
@@ -45,9 +46,13 @@ def _has_handler(logger: logging.Logger, handler_key: str) -> bool:
 
 def _get_handler(logger: logging.Logger, handler_key: str) -> logging.Handler | None:
     for handler in logger.handlers:
-        if getattr(handler, "renderkit_handler", None) == handler_key:
+        if getattr(handler, _HANDLER_ATTR, None) == handler_key:
             return handler
     return None
+
+
+def _set_handler_key(handler: logging.Handler, handler_key: str) -> None:
+    setattr(handler, _HANDLER_ATTR, handler_key)
 
 
 def _log_level() -> int:
@@ -110,7 +115,7 @@ def setup_logging(
             backupCount=_LOG_FILE_BACKUP_COUNT,
             encoding="utf-8",
         )
-        file_handler.renderkit_handler = "file"
+        _set_handler_key(file_handler, "file")
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
         rk_logger.info("Logging to %s", log_path)
@@ -124,7 +129,7 @@ def setup_logging(
     if enable_console:
         if not _has_handler(root_logger, "console"):
             console_handler = logging.StreamHandler()
-            console_handler.renderkit_handler = "console"
+            _set_handler_key(console_handler, "console")
             console_handler.setLevel(log_level)
             console_handler.setFormatter(console_formatter)
             root_logger.addHandler(console_handler)
@@ -142,7 +147,7 @@ def setup_logging(
                 root_logger.removeHandler(h)
 
         ui_handler = CallbackHandler(ui_sink)
-        ui_handler.renderkit_handler = "ui"
+        _set_handler_key(ui_handler, "ui")
         ui_handler.setLevel(log_level)
         ui_handler.setFormatter(ui_formatter)
         root_logger.addHandler(ui_handler)
