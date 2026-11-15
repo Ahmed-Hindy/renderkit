@@ -595,3 +595,39 @@ class TestSequenceConverterWatermarkAndFrameRange:
             assert opts.watermark_config == wm
             assert opts.watermark_processor is not None
             assert opts.burnin_metadata == {"frame_range": "1001-1002"}
+
+
+def test_ffmpeg_capability_fallback_skips_minimal_bundled_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When bundled FFmpeg lacks an encoder or container demuxer, system FFmpeg is selected."""
+    from renderkit.core import ffmpeg_utils
+
+    bundled = "C:/repo/vendor/ffmpeg/windows/ffmpeg.exe"
+    system_full = "C:/msys64/ucrt64/bin/ffmpeg.exe"
+
+    monkeypatch.setattr(ffmpeg_utils, "_AUTO_BUNDLED_FFMPEG", bundled)
+    monkeypatch.setattr(ffmpeg_utils, "find_system_ffmpeg_executables", lambda: [system_full])
+    monkeypatch.setattr(
+        ffmpeg_utils,
+        "ffmpeg_supports_encoder",
+        lambda exe, enc: (enc == "libx264")
+        if exe == bundled
+        else (enc in {"libx264", "prores_ks"}),
+    )
+    monkeypatch.setattr(
+        ffmpeg_utils,
+        "ffmpeg_supports_video_decode",
+        lambda exe: exe == system_full,
+    )
+
+    assert ffmpeg_utils.resolve_ffmpeg_for_encoder(bundled, "libx264") == bundled
+    assert ffmpeg_utils.resolve_ffmpeg_for_encoder(bundled, "prores_ks") == system_full
+    assert ffmpeg_utils.resolve_ffmpeg_for_decoding(bundled) == system_full
+    # Explicit user override is never replaced even if it lacks capabilities
+    assert ffmpeg_utils.resolve_ffmpeg_for_encoder("C:/custom/ffmpeg.exe", "prores_ks") == (
+        "C:/custom/ffmpeg.exe"
+    )
+    assert ffmpeg_utils.resolve_ffmpeg_for_decoding("C:/custom/ffmpeg.exe") == (
+        "C:/custom/ffmpeg.exe"
+    )

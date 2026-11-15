@@ -5,7 +5,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from renderkit.core.config import BurnInConfig, BurnInElement
+from renderkit.core.config import (
+    BurnInConfig,
+    BurnInElement,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.processing.frame_pipeline import (
     FramePreparationOptions,
@@ -589,3 +594,120 @@ def test_preview_widget_cache_hit_skips_worker_spawn(qtbot, tmp_path, monkeypatc
 
     widget.clear_frame_cache()
     assert len(widget._frame_cache) == 0
+
+
+def test_build_preview_cache_key_changes_for_watermark_and_slate(tmp_path: Path) -> None:
+    """Cache keys should vary when watermark, slate config, or slate preview toggle change."""
+    sample = tmp_path / "render.0001.exr"
+    sample.write_text("frame")
+
+    base_key = build_preview_cache_key(sample, ColorSpacePreset.NO_CONVERSION)
+    wm_key = build_preview_cache_key(
+        sample,
+        ColorSpacePreset.NO_CONVERSION,
+        watermark_config=WatermarkConfig(text="CONFIDENTIAL", opacity=30),
+    )
+    slate_cfg_key = build_preview_cache_key(
+        sample,
+        ColorSpacePreset.NO_CONVERSION,
+        slate_config=SlateConfig(enabled=True, title="Shot 010"),
+    )
+    slate_preview_key = build_preview_cache_key(
+        sample,
+        ColorSpacePreset.NO_CONVERSION,
+        slate_config=SlateConfig(enabled=True, title="Shot 010"),
+        preview_slate=True,
+    )
+
+    assert len({base_key, wm_key, slate_cfg_key, slate_preview_key}) == 4
+
+
+def test_preview_worker_renders_live_watermark_on_synthetic_image(tmp_path: Path, qapp) -> None:
+    """PreviewWorker should render WatermarkConfig onto synthetic preview frames."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    sample = tmp_path / "synthetic.0001.exr"
+    spec = oiio.ImageSpec(320, 180, 3, oiio.FLOAT)
+    src_buf = oiio.ImageBuf(spec)
+    assert src_buf.set_pixels(oiio.ROI(), np.full((180, 320, 3), 0.1, dtype=np.float32))
+    assert src_buf.write(str(sample))
+
+    baseline_out: list[PreviewImageData] = []
+    base_worker = PreviewWorker(
+        file_path=sample,
+        color_space=ColorSpacePreset.NO_CONVERSION,
+        preview_scale=1.0,
+    )
+    base_worker.preview_ready.connect(baseline_out.append)
+    base_worker.run()
+    assert baseline_out
+
+    watermarked_out: list[PreviewImageData] = []
+    wm_worker = PreviewWorker(
+        file_path=sample,
+        color_space=ColorSpacePreset.NO_CONVERSION,
+        preview_scale=1.0,
+        watermark_config=WatermarkConfig(text="REVIEW", opacity=80, font_size=28, tiled=False),
+    )
+    wm_worker.preview_ready.connect(watermarked_out.append)
+    wm_worker.run()
+    assert watermarked_out
+
+    assert watermarked_out[0].width == 320
+    assert watermarked_out[0].height == 180
+    assert not np.array_equal(watermarked_out[0].pixels, baseline_out[0].pixels)
+
+
+def test_preview_worker_renders_slate_card_when_preview_slate_enabled(tmp_path: Path, qapp) -> None:
+    """PreviewWorker should generate and emit the scaled slate card when preview_slate=True."""
+    if oiio is None:
+        pytest.skip("OpenImageIO not available")
+
+    sample = tmp_path / "shot.0001.exr"
+    spec = oiio.ImageSpec(640, 360, 3, oiio.FLOAT)
+    src_buf = oiio.ImageBuf(spec)
+    assert src_buf.set_pixels(oiio.ROI(), np.full((360, 640, 3), (0.8, 0.2, 0.1), dtype=np.float32))
+    assert src_buf.write(str(sample))
+
+    emitted: list[PreviewImageData] = []
+    worker = PreviewWorker(
+        file_path=sample,
+        color_space=ColorSpacePreset.OCIO_CONVERSION,
+        preview_scale=0.5,
+        slate_config=SlateConfig(
+            enabled=True,
+            title="Smoke Slate",
+            show="SHOW",
+            shot="SH010",
+            artist="Alex",
+        ),
+        burnin_metadata={"fps": 24.0, "colorspace": "ACEScg"},
+        preview_slate=True,
+    )
+    worker.preview_ready.connect(emitted.append)
+    worker.run()
+
+    assert emitted
+    slate_img = emitted[0]
+    assert slate_img.width == 320
+    assert slate_img.height == 180
+    assert slate_img.channels in (3, 4)
+    # Corner pixel should reflect dark slate background rather than red source pixels.
+    assert slate_img.pixels[0, 0, 0] < 50
+
+    # Missing file falls back to 1280x720 scaled by preview_scale.
+    fallback_emitted: list[PreviewImageData] = []
+    fallback_worker = PreviewWorker(
+        file_path=tmp_path / "missing.exr",
+        color_space=ColorSpacePreset.NO_CONVERSION,
+        preview_scale=0.5,
+        slate_config=SlateConfig(enabled=True, title="Fallback Slate"),
+        preview_slate=True,
+    )
+    fallback_worker.preview_ready.connect(fallback_emitted.append)
+    fallback_worker.run()
+
+    assert fallback_emitted
+    assert fallback_emitted[0].width == 640
+    assert fallback_emitted[0].height == 360

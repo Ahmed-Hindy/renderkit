@@ -116,6 +116,9 @@ class MainWindowLogicMixin(_MixinBase):
         _cs_preview_timer: QTimer
         _last_preview_path: Optional[Path]
         _codec_map: dict[int, str]
+        burnin_zone_combo: Any
+        slate_preview_check: Any
+        _preset_burnin_zones: dict[str, Optional[str]]
 
         def __getattr__(self, name: str) -> Any: ...
 
@@ -196,6 +199,29 @@ class MainWindowLogicMixin(_MixinBase):
         self.burnin_fps_check.toggled.connect(self._on_cs_setting_changed)
         self.burnin_opacity_spin.valueChanged.connect(self._on_cs_setting_changed)
         self.burnin_font_size_spin.valueChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "burnin_zone_combo"):
+            self.burnin_zone_combo.currentIndexChanged.connect(self._on_burnin_zone_changed)
+        if hasattr(self, "slate_enable_check"):
+            self.slate_enable_check.toggled.connect(self._on_cs_setting_changed)
+        if hasattr(self, "slate_preview_check"):
+            self.slate_preview_check.toggled.connect(self._on_cs_setting_changed)
+        for attr in (
+            "slate_title_edit",
+            "slate_show_edit",
+            "slate_shot_edit",
+            "slate_artist_edit",
+            "slate_notes_edit",
+        ):
+            if hasattr(self, attr):
+                getattr(self, attr).textChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "watermark_enable_check"):
+            self.watermark_enable_check.toggled.connect(self._on_cs_setting_changed)
+        if hasattr(self, "watermark_text_edit"):
+            self.watermark_text_edit.textChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "watermark_opacity_spin"):
+            self.watermark_opacity_spin.valueChanged.connect(self._on_cs_setting_changed)
+        if hasattr(self, "watermark_tiled_check"):
+            self.watermark_tiled_check.toggled.connect(self._on_cs_setting_changed)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.reset_settings_btn.clicked.connect(self._reset_settings_to_defaults)
         self.convert_btn.clicked.connect(self._start_conversion)
@@ -412,8 +438,17 @@ class MainWindowLogicMixin(_MixinBase):
                 apply_ocio_config_path(self, None)
             except ColorSpaceError as exc:
                 logger.warning("Failed to reset OCIO config: %s", exc)
+        self._preset_burnin_zones = {}
+        if hasattr(self, "burnin_zone_combo"):
+            self.burnin_zone_combo.blockSignals(True)
+            try:
+                self.burnin_zone_combo.setCurrentIndex(0)
+            finally:
+                self.burnin_zone_combo.blockSignals(False)
         if hasattr(self, "slate_enable_check"):
             self.slate_enable_check.setChecked(False)
+        if hasattr(self, "slate_preview_check"):
+            self.slate_preview_check.setChecked(False)
         for attr in (
             "slate_title_edit",
             "slate_show_edit",
@@ -548,6 +583,13 @@ class MainWindowLogicMixin(_MixinBase):
         self.burnin_fps_check.setEnabled(checked)
         self.burnin_font_size_spin.setEnabled(checked)
         self.burnin_opacity_spin.setEnabled(checked)
+        if hasattr(self, "burnin_zone_combo"):
+            self.burnin_zone_combo.setEnabled(checked)
+
+    def _on_burnin_zone_changed(self, *args: Any) -> None:
+        """Clear preserved multi-zone preset overrides and refresh preview."""
+        self._preset_burnin_zones = {}
+        self._on_cs_setting_changed()
 
     def _on_slate_enable_toggled(self, checked: bool) -> None:
         """Handle intro slate enable checkbox toggle."""

@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from renderkit.core.config import ConversionConfig, SlateConfig, WatermarkConfig
+from renderkit.core.config import (
+    VALID_BURNIN_ZONES,
+    BurnInConfig,
+    BurnInElement,
+    ConversionConfig,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.core.presets import load_preset, save_preset
 from renderkit.exceptions import ConfigurationError
 from renderkit.processing.color_space import ColorSpacePreset, get_bundled_ocio_config_path
@@ -471,3 +478,144 @@ def test_slate_and_watermark_preset_round_trip_in_ui(qtbot, tmp_path: Path) -> N
     assert window.watermark_text_edit.text() == ""
     assert window.watermark_opacity_spin.value() == 25
     assert window.watermark_tiled_check.isChecked() is False
+
+
+def test_burnin_zone_combo_preset_round_trip_and_multi_zone_preservation(
+    qtbot, tmp_path: Path
+) -> None:
+    """burnin_zone_combo should round-trip single-zone presets and preserve multi-zone presets."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    combo_zones = {
+        window.burnin_zone_combo.itemData(i)
+        for i in range(window.burnin_zone_combo.count())
+        if window.burnin_zone_combo.itemData(i) is not None
+    }
+    assert window.burnin_zone_combo.itemText(0) == "(Auto)"
+    assert window.burnin_zone_combo.itemData(0) is None
+    assert combo_zones == VALID_BURNIN_ZONES
+
+    # Single-zone preset restores burnin_zone_combo and applies that zone on build.
+    single_zone_preset = tmp_path / "single_zone.json"
+    save_preset(
+        ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="out.mp4",
+            burnin_config=BurnInConfig(
+                elements=[
+                    BurnInElement("Frame: {frame}", zone="bottom_right"),
+                    BurnInElement("FPS: {fps:.2f}", zone="bottom_right"),
+                ],
+                background_opacity=40,
+            ),
+        ),
+        single_zone_preset,
+    )
+    apply_preset_data_to_ui(window, load_preset(single_zone_preset))
+    assert window.burnin_zone_combo.currentData() == "bottom_right"
+
+    built_single = build_burnin_config(window, include_layer=True)
+    assert built_single is not None
+    assert [el.zone for el in built_single.elements] == ["bottom_right", "bottom_right"]
+
+    # Multi-zone preset defaults combo to (Auto) while preserving per-element zones.
+    multi_zone_preset = tmp_path / "multi_zone.json"
+    save_preset(
+        ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="out.mp4",
+            burnin_config=BurnInConfig(
+                elements=[
+                    BurnInElement("Frame: {frame}", zone="top_left"),
+                    BurnInElement("Layer: {layer}", zone="top_center"),
+                    BurnInElement("FPS: {fps:.2f}", zone="bottom_right"),
+                ],
+                background_opacity=35,
+            ),
+        ),
+        multi_zone_preset,
+    )
+    apply_preset_data_to_ui(window, load_preset(multi_zone_preset))
+    assert window.burnin_zone_combo.currentData() is None
+
+    built_multi = window._build_conversion_config_from_ui(tmp_path / "out.mp4", "libx264")
+    assert built_multi.burnin_config is not None
+    assert [el.zone for el in built_multi.burnin_config.elements] == [
+        "top_left",
+        "top_center",
+        "bottom_right",
+    ]
+
+    # User changing burnin_zone_combo overrides preserved preset zones.
+    bottom_left_idx = window.burnin_zone_combo.findData("bottom_left")
+    assert bottom_left_idx > 0
+    window.burnin_zone_combo.setCurrentIndex(bottom_left_idx)
+    built_override = build_burnin_config(window, include_layer=True)
+    assert built_override is not None
+    assert [el.zone for el in built_override.elements] == [
+        "bottom_left",
+        "bottom_left",
+        "bottom_left",
+    ]
+
+    # Applying burnin_config=None clears zone selection back to (Auto).
+    apply_preset_data_to_ui(window, {"burnin_config": None})
+    assert window.burnin_enable_check.isChecked() is False
+    assert window.burnin_zone_combo.currentData() is None
+
+
+def test_preview_request_and_load_forward_watermark_slate_and_zone(qtbot, tmp_path: Path) -> None:
+    """ModernMainWindow preview dispatch should forward watermark, slate preview, and burn-in zone."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+    target = _DummyPreviewTarget()
+    window.preview_widget = target
+
+    window.burnin_enable_check.setChecked(True)
+    window.burnin_frame_check.setChecked(True)
+    window.burnin_layer_check.setChecked(True)
+    window.burnin_fps_check.setChecked(True)
+    window.burnin_zone_combo.setCurrentIndex(window.burnin_zone_combo.findData("top_right"))
+
+    window.watermark_enable_check.setChecked(True)
+    window.watermark_text_edit.setText("CONFIDENTIAL")
+    window.watermark_opacity_spin.setValue(45)
+    window.watermark_tiled_check.setChecked(True)
+
+    window.slate_enable_check.setChecked(True)
+    assert window.slate_preview_check.isChecked() is False
+    window.slate_preview_check.setChecked(True)
+    window.slate_title_edit.setText("Dailies Card")
+
+    sample_path = tmp_path / "shot.0001.exr"
+    request = load_preview_for_frame(
+        window,
+        sample_path,
+        preset=ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        scrubbing=False,
+    )
+
+    assert request.watermark_config == WatermarkConfig(
+        text="CONFIDENTIAL",
+        opacity=45,
+        tiled=True,
+    )
+    assert request.slate_config == SlateConfig(enabled=True, title="Dailies Card")
+    assert request.preview_slate is True
+    assert request.burnin_config is not None
+    assert [el.zone for el in request.burnin_config.elements] == [
+        "top_right",
+        "top_right",
+        "top_right",
+    ]
+
+    _, kwargs = target.calls[-1]
+    assert kwargs["watermark_config"] == request.watermark_config
+    assert kwargs["slate_config"] == request.slate_config
+    assert kwargs["preview_slate"] is True

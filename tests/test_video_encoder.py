@@ -327,6 +327,7 @@ def test_video_encoder_pixel_aspect_setsar_filter(
         "get_encoder_probe_result",
         lambda: EncoderProbeResult(frozenset({"libx264"})),
     )
+    monkeypatch.setattr(video_encoder, "ffmpeg_supports_filter", lambda _exe, _flt: True)
     monkeypatch.setattr(video_encoder.VideoEncoder, "_configure_ffmpeg_report", lambda self: None)
     monkeypatch.setattr(video_encoder, "_RawFfmpegPipeWriter", FakeWriter)
 
@@ -336,6 +337,70 @@ def test_video_encoder_pixel_aspect_setsar_filter(
     assert "-vf" in captured_params
     vf_idx = captured_params.index("-vf")
     assert captured_params[vf_idx + 1] == "setsar=2.000000"
+
+
+def test_video_encoder_pixel_aspect_aspect_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When setsar filter is unavailable, pixel_aspect != 1.0 falls back to -aspect DAR."""
+    captured_params: list[str] = []
+
+    class FakeWriter:
+        def __init__(
+            self,
+            output_path,
+            width,
+            height,
+            fps,
+            codec,
+            pix_fmt_in,
+            pix_fmt_out,
+            ffmpeg_params,
+            ffmpeg_log_level,
+            bitrate,
+        ) -> None:
+            captured_params.extend(ffmpeg_params)
+
+    monkeypatch.setattr(
+        video_encoder,
+        "get_encoder_probe_result",
+        lambda: EncoderProbeResult(frozenset({"libx264"})),
+    )
+    monkeypatch.setattr(video_encoder, "ffmpeg_supports_filter", lambda _exe, _flt: False)
+    monkeypatch.setattr(video_encoder.VideoEncoder, "_configure_ffmpeg_report", lambda self: None)
+    monkeypatch.setattr(video_encoder, "_RawFfmpegPipeWriter", FakeWriter)
+
+    encoder = VideoEncoder(output_path=tmp_path / "anamorphic.mp4", fps=24.0, pixel_aspect=2.0)
+    encoder.initialize(128, 64)
+
+    assert "-vf" not in captured_params
+    assert "-aspect" in captured_params
+    aspect_idx = captured_params.index("-aspect")
+    assert captured_params[aspect_idx + 1] == "4.000000"
+
+
+def test_probe_available_encoders_ignores_legend_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FFmpeg -encoders legend lines like 'V..... = Video' must not register '=' as an encoder."""
+    sample = (
+        "Encoders:\n"
+        " V..... = Video\n"
+        " A..... = Audio\n"
+        " ------\n"
+        " V....D libx264              libx264 H.264\n"
+        " V....D libx265              libx265 H.265\n"
+    )
+    monkeypatch.setattr(video_encoder, "get_ffmpeg_exe", lambda: "ffmpeg")
+    monkeypatch.setattr(
+        video_encoder.subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout=sample, stderr=""),
+    )
+
+    result = video_encoder._probe_available_encoders()
+
+    assert result.succeeded
+    assert result.encoders == frozenset({"libx264", "libx265"})
+    assert "=" not in result.encoders
 
 
 @pytest.mark.parametrize(

@@ -8,8 +8,16 @@ from typing import Any, Optional, cast
 
 import OpenImageIO as oiio
 
-from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
+from renderkit.core.config import (
+    BurnInConfig,
+    BurnInElement,
+    ContactSheetConfig,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.exceptions import RenderKitError
+from renderkit.io.image_reader import ImageReaderFactory
+from renderkit.io.oiio_cache import get_shared_image_cache
 from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
 from renderkit.processing.frame_pipeline import (
     FramePreparationOptions,
@@ -167,6 +175,29 @@ class PreviewFrameCache:
         return len(self._entries)
 
 
+def _probe_slate_preview_dimensions(file_path: Path, preview_scale: float) -> tuple[int, int]:
+    """Resolve target slate preview dimensions from ``file_path`` or a 720p fallback."""
+    base_width, base_height = 1280, 720
+    try:
+        cache = get_shared_image_cache()
+        spec = cache.get_imagespec(str(file_path), 0) if cache is not None else None
+        if spec is not None and getattr(spec, "width", 0) > 0 and getattr(spec, "height", 0) > 0:
+            base_width, base_height = int(spec.width), int(spec.height)
+        else:
+            reader = ImageReaderFactory.create_reader(file_path)
+            info = reader.get_file_info(file_path)
+            if info.width > 0 and info.height > 0:
+                base_width, base_height = int(info.width), int(info.height)
+    except (RenderKitError, OSError, RuntimeError, TypeError, ValueError):
+        pass
+
+    scale = max(0.05, float(preview_scale))
+    return (
+        max(1, int(round(base_width * scale))),
+        max(1, int(round(base_height * scale))),
+    )
+
+
 def build_preview_cache_key(
     file_path: Path,
     color_space: ColorSpacePreset,
@@ -181,6 +212,9 @@ def build_preview_cache_key(
     cs_config: Optional[ContactSheetConfig] = None,
     burnin_config: Optional[BurnInConfig] = None,
     preview_scale: float = 1.0,
+    watermark_config: Optional[WatermarkConfig] = None,
+    slate_config: Optional[SlateConfig] = None,
+    preview_slate: bool = False,
 ) -> tuple[Any, ...]:
     """Build a cache key capturing the file mtime and preview processing parameters."""
     try:
@@ -201,6 +235,9 @@ def build_preview_cache_key(
         repr(cs_config),
         repr(burnin_config),
         round(float(preview_scale), 3),
+        repr(watermark_config),
+        repr(slate_config),
+        bool(preview_slate),
     )
 
 
@@ -225,6 +262,9 @@ class PreviewWorker(QThread):
         ocio_view: Optional[str] = None,
         exposure: float = 0.0,
         gamma: float = 1.0,
+        watermark_config: Optional[WatermarkConfig] = None,
+        slate_config: Optional[SlateConfig] = None,
+        preview_slate: bool = False,
     ) -> None:
         """Initialize preview worker.
 
@@ -242,6 +282,9 @@ class PreviewWorker(QThread):
             ocio_view: Optional OCIO view name
             exposure: Exposure adjustment in stops
             gamma: Display gamma exponent
+            watermark_config: Optional watermark overlay configuration
+            slate_config: Optional intro slate configuration
+            preview_slate: Whether to render the intro slate card instead of the frame
         """
         super().__init__()
         self.file_path = file_path
@@ -257,16 +300,43 @@ class PreviewWorker(QThread):
         self.ocio_view = ocio_view
         self.exposure = exposure
         self.gamma = gamma
+        self.watermark_config = watermark_config
+        self.slate_config = slate_config
+        self.preview_slate = preview_slate
 
     def run(self) -> None:
         """Load and process preview image."""
         try:
+            if self.preview_slate and self.slate_config is not None:
+                from renderkit.processing.slate import SlateGenerator
+
+                target_w, target_h = _probe_slate_preview_dimensions(
+                    self.file_path,
+                    self.preview_scale,
+                )
+                slate_buf = SlateGenerator(self.slate_config).generate_slate_buf(
+                    target_w,
+                    target_h,
+                    dict(self.burnin_metadata or {}),
+                )
+                buf = _prepare_buf_for_preview_display(
+                    slate_buf,
+                    ColorSpacePreset.NO_CONVERSION,
+                    input_space=None,
+                )
+                self.preview_ready.emit(imagebuf_to_preview_image(buf))
+                return
+
             from renderkit.processing.burnin import BurnInProcessor
+            from renderkit.processing.watermark import WatermarkProcessor
 
             burnin_processor = (
                 BurnInProcessor()
                 if self.burnin_config is not None and self.burnin_metadata is not None
                 else None
+            )
+            watermark_processor = (
+                WatermarkProcessor() if self.watermark_config is not None else None
             )
             color_converter = ColorSpaceConverter(
                 self.color_space,
@@ -294,6 +364,8 @@ class PreviewWorker(QThread):
                     burnin_config_adapter=_scaled_burnin_config_for_preview,
                     contact_sheet_config=self.cs_config,
                     output_scale=self.preview_scale,
+                    watermark_processor=watermark_processor,
+                    watermark_config=self.watermark_config,
                 )
             )
             buf = _prepare_buf_for_preview_display(
@@ -638,6 +710,9 @@ class PreviewWidget(QWidget):
         ocio_view: Optional[str] = None,
         exposure: float = 0.0,
         gamma: float = 1.0,
+        watermark_config: Optional[WatermarkConfig] = None,
+        slate_config: Optional[SlateConfig] = None,
+        preview_slate: bool = False,
     ) -> None:
         """Load preview from file.
 
@@ -655,6 +730,9 @@ class PreviewWidget(QWidget):
             ocio_view: Optional OCIO view name
             exposure: Exposure adjustment in stops
             gamma: Display gamma exponent
+            watermark_config: Optional watermark overlay configuration
+            slate_config: Optional intro slate configuration
+            preview_slate: Whether to preview the generated intro slate card
         """
         # Safety: Never terminate() a thread busy with I/O (like OIIO).
         # Instead, disconnect signals so its results are ignored, and let it finish.
@@ -675,6 +753,9 @@ class PreviewWidget(QWidget):
             cs_config=cs_config,
             burnin_config=burnin_config,
             preview_scale=preview_scale,
+            watermark_config=watermark_config,
+            slate_config=slate_config,
+            preview_slate=preview_slate,
         )
         cached = self._frame_cache.get(cache_key)
         if cached is not None:
@@ -699,6 +780,9 @@ class PreviewWidget(QWidget):
             ocio_view=ocio_view,
             exposure=exposure,
             gamma=gamma,
+            watermark_config=watermark_config,
+            slate_config=slate_config,
+            preview_slate=preview_slate,
         )
         self.worker = worker
 

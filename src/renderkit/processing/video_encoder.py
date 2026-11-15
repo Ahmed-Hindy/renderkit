@@ -14,7 +14,13 @@ from typing import Any, Optional
 import numpy as np
 import OpenImageIO as oiio
 
-from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
+from renderkit.core.ffmpeg_utils import (
+    ffmpeg_supports_filter,
+    get_ffmpeg_exe,
+    parse_ffmpeg_encoders,
+    popen_kwargs,
+    resolve_ffmpeg_for_encoder,
+)
 from renderkit.exceptions import ConfigurationError, VideoEncodingError
 from renderkit.processing.pixels import float_pixels_to_uint8, float_pixels_to_uint16
 from renderkit.processing.scaler import ImageScaler
@@ -347,9 +353,10 @@ def _last_nonempty_line(text: str) -> Optional[str]:
     return None
 
 
-def _probe_available_encoders() -> EncoderProbeResult:
+def _probe_available_encoders(ffmpeg_exe: Optional[str] = None) -> EncoderProbeResult:
+    exe = ffmpeg_exe or get_ffmpeg_exe()
     try:
-        cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
+        cmd = [exe, "-hide_banner", "-encoders"]
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -367,19 +374,7 @@ def _probe_available_encoders() -> EncoderProbeResult:
             error = f"{error}: {output_tail}"
         return _probe_failure_result(error)
 
-    encoders: set[str] = set()
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("Encoders:") or line.startswith("-"):
-            continue
-        if not line[0].isalpha() or len(line) < 2:
-            continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        if parts[0].startswith("V"):
-            encoders.add(parts[1])
-    return EncoderProbeResult(frozenset(encoders))
+    return EncoderProbeResult(parse_ffmpeg_encoders(text))
 
 
 @lru_cache(maxsize=1)
@@ -387,8 +382,16 @@ def _cached_encoder_probe_result() -> EncoderProbeResult:
     return _probe_available_encoders()
 
 
+@lru_cache(maxsize=16)
+def _cached_encoder_probe_for_exe(ffmpeg_exe: str) -> EncoderProbeResult:
+    return _probe_available_encoders(ffmpeg_exe)
+
+
 def get_encoder_probe_result() -> EncoderProbeResult:
     return _cached_encoder_probe_result()
+
+
+_UNPATCHED_GET_ENCODER_PROBE_RESULT = get_encoder_probe_result
 
 
 def get_available_encoders() -> set[str]:
@@ -466,11 +469,12 @@ class _RawFfmpegPipeWriter:
         ffmpeg_log_level: str,
         bitrate: Optional[str],
         env: Optional[dict[str, str]] = None,
+        ffmpeg_exe: Optional[str] = None,
     ) -> None:
-        ffmpeg_exe = get_ffmpeg_exe()
+        resolved_exe = ffmpeg_exe or get_ffmpeg_exe()
         size_str = f"{width}x{height}"
         self._cmd = [
-            ffmpeg_exe,
+            resolved_exe,
             "-y",
             "-f",
             "rawvideo",
@@ -711,13 +715,27 @@ class VideoEncoder:
         # Resolve codec profile and verify FFmpeg encoder availability
         profile = self._profile
         ffmpeg_codec = profile.ffmpeg_codec
+        default_exe = get_ffmpeg_exe()
+        resolved_ffmpeg_exe = default_exe
         encoder_probe = get_encoder_probe_result()
-        available_encoders = set(encoder_probe.encoders)
-        if self.codec in _FALLBACK_ELIGIBLE_CODECS or (
+        _fallback_eligible = self.codec in _FALLBACK_ELIGIBLE_CODECS or (
             profile.ffmpeg_codec in _FALLBACK_ELIGIBLE_CODECS
             and profile.bit_depth == 8
             and not profile.extra_params
+        )
+        if (
+            get_encoder_probe_result is _UNPATCHED_GET_ENCODER_PROBE_RESULT
+            and encoder_probe.succeeded
+            and ffmpeg_codec not in encoder_probe.encoders
+            and not _fallback_eligible
         ):
+            candidate_exe = resolve_ffmpeg_for_encoder(default_exe, ffmpeg_codec)
+            if candidate_exe != default_exe:
+                resolved_ffmpeg_exe = candidate_exe
+                encoder_probe = _cached_encoder_probe_for_exe(resolved_ffmpeg_exe)
+
+        available_encoders = set(encoder_probe.encoders)
+        if _fallback_eligible:
             ffmpeg_codec, fallback_warning = select_available_encoder(
                 ffmpeg_codec, available_encoders
             )
@@ -763,7 +781,13 @@ class VideoEncoder:
         if profile.extra_params:
             ffmpeg_params.extend(profile.extra_params)
         if abs(self.pixel_aspect - 1.0) > 1e-4:
-            ffmpeg_params.extend(["-vf", f"setsar={self.pixel_aspect:.6f}"])
+            if ffmpeg_supports_filter(resolved_ffmpeg_exe, "setsar") is False:
+                display_aspect = (self._adjusted_width * self.pixel_aspect) / max(
+                    1, self._adjusted_height
+                )
+                ffmpeg_params.extend(["-aspect", f"{display_aspect:.6f}"])
+            else:
+                ffmpeg_params.extend(["-vf", f"setsar={self.pixel_aspect:.6f}"])
 
         bitrate: Optional[str] = None
 
@@ -850,6 +874,8 @@ class VideoEncoder:
             writer_kwargs: dict[str, Any] = {}
             if self._ffmpeg_env is not None:
                 writer_kwargs["env"] = self._ffmpeg_env
+            if resolved_ffmpeg_exe != default_exe:
+                writer_kwargs["ffmpeg_exe"] = resolved_ffmpeg_exe
             self._writer = _RawFfmpegPipeWriter(
                 self._partial_output_path,
                 self._adjusted_width,

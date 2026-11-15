@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,10 +10,11 @@ from typing import Any
 
 import pytest
 
-from renderkit.core.config import ConversionConfig, ConversionConfigBuilder
-from renderkit.core.presets import save_preset
+from renderkit.core.config import VALID_BURNIN_ZONES, ConversionConfig, ConversionConfigBuilder
+from renderkit.core.presets import load_preset, resolve_preset_path, save_preset
 from renderkit.exceptions import ConfigurationError
 from renderkit.integrations import houdini, nuke
+from renderkit.processing.color_space import ColorSpacePreset
 
 
 class _FakeParm:
@@ -280,3 +282,199 @@ def test_build_nuke_ui_command(tmp_path: Path) -> None:
         "--ocio",
         "/pipe/config.ocio",
     ]
+
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_PRESETS_DIR = _REPO_ROOT / "presets"
+
+
+def test_repo_presets_load_and_resolve_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """All JSON presets in presets/ pass load_preset, build ConversionConfig, and resolve via env."""
+    preset_files = sorted(_PRESETS_DIR.glob("*.json"))
+    expected_names = {
+        "studio_dailies.json",
+        "client_review_watermarked.json",
+        "editorial_prores422.json",
+    }
+    assert expected_names.issubset({path.name for path in preset_files})
+
+    monkeypatch.setenv("RENDERKIT_PRESET_PATH", str(_PRESETS_DIR))
+
+    loaded_by_name: dict[str, dict[str, Any]] = {}
+    for preset_file in preset_files:
+        assert resolve_preset_path(preset_file.stem) == preset_file
+        assert resolve_preset_path(preset_file.name) == preset_file
+        loaded = load_preset(preset_file)
+        cfg = ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="output.mov",
+            **loaded,
+        )
+        assert cfg.color_space_preset == ColorSpacePreset.OCIO_CONVERSION
+        loaded_by_name[preset_file.stem] = loaded
+
+    studio = loaded_by_name["studio_dailies"]
+    assert studio["codec"] == "libx264"
+    assert studio["quality"] == 8
+    assert studio["explicit_input_color_space"] == "ACES - ACEScg"
+    assert studio["burnin_config"] is not None
+    assert {el.zone for el in studio["burnin_config"].elements} == set(VALID_BURNIN_ZONES)
+
+    client = loaded_by_name["client_review_watermarked"]
+    assert client["codec"] == "libx264"
+    assert client["quality"] == 7
+    assert client["slate_config"] is not None
+    assert client["slate_config"].enabled is True
+    assert client["watermark_config"] is not None
+    assert client["watermark_config"].text == "CONFIDENTIAL - {user}"
+    assert client["watermark_config"].opacity == 25
+    assert client["watermark_config"].tiled is True
+    assert client["burnin_config"] is not None
+
+    editorial = loaded_by_name["editorial_prores422"]
+    assert editorial["codec"] == "prores_422"
+    assert editorial["quality"] == 10
+
+
+def test_houdini_wrapper_scripts_with_fake_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Drop-in Houdini post-render and shelf scripts import cleanly and run with fake nodes."""
+    monkeypatch.syspath_prepend(str(_REPO_ROOT))
+    monkeypatch.delitem(sys.modules, "hou", raising=False)
+
+    post_render_mod = importlib.import_module("integrations.houdini.post_render_dailies")
+    shelf_mod = importlib.import_module("integrations.houdini.launch_renderkit_shelf")
+
+    assert post_render_mod.main(None) is None
+    assert shelf_mod.launch_selected_node_in_renderkit(None) is None
+
+    captured_configs: list[ConversionConfig] = []
+
+    class FakeConverter:
+        def __init__(self, config: ConversionConfig) -> None:
+            self.config = config
+
+        def convert(self) -> None:
+            captured_configs.append(self.config)
+
+    monkeypatch.setattr(houdini, "SequenceConverter", FakeConverter)
+    monkeypatch.setenv("OCIO", "/studio/config.ocio")
+
+    rop_node = _FakeHoudiniNode({"lopoutput": str(tmp_path / "shot010.$F4.exr")})
+    out_video = post_render_mod.main(
+        rop_node,
+        preset=_PRESETS_DIR / "studio_dailies.json",
+        contact_sheet=True,
+    )
+    assert out_video == tmp_path / "shot010.mp4"
+    assert len(captured_configs) == 1
+    assert captured_configs[0].ocio_config_path == "/studio/config.ocio"
+    assert captured_configs[0].contact_sheet_mode is True
+
+    fake_hou = SimpleNamespace(
+        pwd=lambda: rop_node,
+        selectedNodes=lambda: (rop_node,),
+        fps=lambda: 25.0,
+        playbar=SimpleNamespace(frameRange=lambda: (1001, 1020)),
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    spawned: list[list[str]] = []
+    fake_proc = SimpleNamespace(pid=4321)
+
+    def fake_popen(args: list[str], **_kwargs: Any) -> Any:
+        spawned.append(args)
+        return fake_proc
+
+    monkeypatch.setattr(houdini.subprocess, "Popen", fake_popen)
+
+    proc = shelf_mod.launch_selected_node_in_renderkit(preset="studio_dailies", layer="beauty")
+    assert proc is fake_proc
+    assert len(spawned) == 1
+    assert "--open" in spawned[0]
+    assert str(tmp_path / "shot010.$F4.exr") in spawned[0]
+    assert "--layer" in spawned[0]
+    assert "beauty" in spawned[0]
+    assert "--preset" in spawned[0]
+    assert "studio_dailies" in spawned[0]
+    assert "--ocio" in spawned[0]
+    assert "/studio/config.ocio" in spawned[0]
+
+
+def test_nuke_menu_wrapper_outside_and_inside_fake_nuke(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Drop-in Nuke menu.py is safe outside Nuke and registers working menu callbacks."""
+    monkeypatch.syspath_prepend(str(_REPO_ROOT))
+    monkeypatch.delitem(sys.modules, "nuke", raising=False)
+
+    nuke_menu_mod = importlib.import_module("integrations.nuke.menu")
+    assert nuke_menu_mod._get_nuke() is None
+    assert nuke_menu_mod.create_dailies_menu() is None
+
+    class FakeMenu:
+        def __init__(self, name: str = "Nuke") -> None:
+            self.name = name
+            self.commands: dict[str, Any] = {}
+            self.submenus: dict[str, FakeMenu] = {}
+
+        def addMenu(self, name: str) -> FakeMenu:  # noqa: N802
+            submenu = FakeMenu(name)
+            self.submenus[name] = submenu
+            return submenu
+
+        def addCommand(self, label: str, callback: Any) -> None:  # noqa: N802
+            self.commands[label] = callback
+
+    write_node = _FakeNukeNode(
+        {
+            "file": _FakeKnob(str(tmp_path / "comp.%04d.exr")),
+            "colorspace": _FakeKnob("ACES - ACEScg"),
+        },
+        first_frame=1001,
+        last_frame=1010,
+    )
+    root_menu = FakeMenu("Nuke")
+    fake_nuke = SimpleNamespace(
+        menu=lambda name: root_menu if name == "Nuke" else None,
+        selectedNode=lambda: write_node,
+        selectedNodes=lambda: [write_node],
+    )
+    monkeypatch.setitem(sys.modules, "nuke", fake_nuke)
+
+    created = nuke_menu_mod.create_dailies_menu()
+    assert created is root_menu.submenus["RenderKit"]
+    assert "Generate Dailies (RenderKit)" in created.commands
+    assert "Open in RenderKit UI" in created.commands
+
+    captured_configs: list[ConversionConfig] = []
+
+    class FakeConverter:
+        def __init__(self, config: ConversionConfig) -> None:
+            self.config = config
+
+        def convert(self) -> None:
+            captured_configs.append(self.config)
+
+    monkeypatch.setattr(nuke, "SequenceConverter", FakeConverter)
+    out_mov = created.commands["Generate Dailies (RenderKit)"]()
+    assert out_mov == tmp_path / "comp.mov"
+    assert len(captured_configs) == 1
+    assert captured_configs[0].codec == "prores_422"
+
+    spawned: list[list[str]] = []
+    fake_proc = SimpleNamespace(pid=9876)
+
+    def fake_popen(args: list[str], **_kwargs: Any) -> Any:
+        spawned.append(args)
+        return fake_proc
+
+    monkeypatch.setattr(nuke_menu_mod.subprocess, "Popen", fake_popen)
+    proc = created.commands["Open in RenderKit UI"]()
+    assert proc is fake_proc
+    assert len(spawned) == 1
+    assert "--open" in spawned[0]
+    assert str(tmp_path / "comp.%04d.exr") in spawned[0]

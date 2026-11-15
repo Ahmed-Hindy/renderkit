@@ -13,7 +13,14 @@ from typing import IO, Any, Optional
 
 import numpy as np
 
-from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, get_ffprobe_exe, popen_kwargs
+from renderkit.core.ffmpeg_utils import (
+    ffmpeg_supports_video_decode,
+    get_ffmpeg_exe,
+    get_ffprobe_exe,
+    is_auto_bundled_ffmpeg,
+    popen_kwargs,
+    resolve_ffmpeg_for_decoding,
+)
 from renderkit.exceptions import RenderKitError
 from renderkit.io.oiio_utils import require_oiio
 
@@ -234,7 +241,12 @@ class FFmpegVideoReader:
         oiio = require_oiio(VideoReadError, "OpenImageIO is required to decode video frames.")
         video_path = Path(path)
         info = self.probe_video(video_path)
-        ffmpeg_exe = _resolve_executable(get_ffmpeg_exe(), "ffmpeg")
+        ffmpeg_exe = resolve_ffmpeg_for_decoding(_resolve_executable(get_ffmpeg_exe(), "ffmpeg"))
+        if is_auto_bundled_ffmpeg(ffmpeg_exe) and ffmpeg_supports_video_decode(ffmpeg_exe) is False:
+            raise VideoReadError(
+                f"Bundled FFmpeg executable '{ffmpeg_exe}' does not support video container "
+                "decoding. Install a full FFmpeg build on PATH or set IMAGEIO_FFMPEG_EXE."
+            )
 
         pix_fmt = "rgb48le" if bit_depth == 16 else "rgb24"
         cmd = [ffmpeg_exe, "-v", "error", "-i", str(video_path)]

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from renderkit import __version__
-from renderkit.core.config import ContactSheetConfig
+from renderkit.core.config import VALID_BURNIN_ZONES, ContactSheetConfig
 from renderkit.ui.collapsible_group import CollapsibleGroupBox
 from renderkit.ui.icons import icon_manager
 from renderkit.ui.main_window_widgets import (
@@ -71,6 +71,14 @@ _POLICY_MAXIMUM = resolve_enum_member(QSizePolicy, "Policy", "Maximum")
 _POLICY_MINIMUM = resolve_enum_member(QSizePolicy, "Policy", "Minimum")
 _FIELD_GROWTH_ALL = resolve_enum_member(QFormLayout, "FieldGrowthPolicy", "AllNonFixedFieldsGrow")
 _COMBO_NO_INSERT = resolve_enum_member(QComboBox, "InsertPolicy", "NoInsert")
+_BURNIN_ZONE_ORDER = (
+    "top_left",
+    "top_center",
+    "top_right",
+    "bottom_left",
+    "bottom_center",
+    "bottom_right",
+)
 
 logger = logging.getLogger("renderkit.ui.main_window")
 
@@ -91,6 +99,9 @@ class MainWindowUiMixin(_MixinBase):
         left_splitter: Optional[QSplitter]
         preview_panel: Optional[QWidget]
         _codec_map: dict[int, str]
+        burnin_zone_combo: Any
+        slate_preview_check: Any
+        _preset_burnin_zones: dict[str, Optional[str]]
 
         def __getattr__(self, name: str) -> Any: ...
 
@@ -679,6 +690,19 @@ class MainWindowUiMixin(_MixinBase):
         self.burnin_opacity_spin.setSuffix(" %")
         form.addRow("Box Opacity:", self.burnin_opacity_spin)
 
+        self.burnin_zone_combo = NoWheelComboBox()
+        self.burnin_zone_combo.addItem("(Auto)", None)
+        ordered_zones = [zone for zone in _BURNIN_ZONE_ORDER if zone in VALID_BURNIN_ZONES]
+        for extra_zone in sorted(VALID_BURNIN_ZONES):
+            if extra_zone not in ordered_zones:
+                ordered_zones.append(extra_zone)
+        for zone in ordered_zones:
+            self.burnin_zone_combo.addItem(zone, zone)
+        self.burnin_zone_combo.setToolTip(
+            "Select a 6-zone HUD placement for burn-in overlays, or (Auto) for default layout."
+        )
+        form.addRow("HUD Zone:", self.burnin_zone_combo)
+
         layout.addLayout(form)
         return layout
 
@@ -717,6 +741,13 @@ class MainWindowUiMixin(_MixinBase):
         self.slate_enable_check.setToolTip("Prepend an intro slate frame to the encoded video.")
         self.slate_enable_check.toggled.connect(self._on_slate_enable_toggled)
         layout.addWidget(self.slate_enable_check)
+
+        self.slate_preview_check = QCheckBox("Preview Slate Card")
+        self.slate_preview_check.setChecked(False)
+        self.slate_preview_check.setToolTip(
+            "Preview the rendered intro slate card in the viewport."
+        )
+        layout.addWidget(self.slate_preview_check)
 
         form_layout = QFormLayout()
         form_layout.setSpacing(8)

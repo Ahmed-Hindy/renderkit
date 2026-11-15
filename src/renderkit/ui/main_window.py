@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from renderkit import __version__
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
@@ -50,6 +50,10 @@ RECENT_PATTERNS_LIMIT = _RECENT_PATTERNS_LIMIT
 class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
     """Modern main application window with comprehensive features."""
 
+    if TYPE_CHECKING:
+        burnin_zone_combo: Any
+        slate_preview_check: Any
+
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
@@ -80,6 +84,7 @@ class ModernMainWindow(MainWindowUiMixin, MainWindowLogicMixin, QMainWindow):
         self._aspect_sync_guard = False
         self._last_preview_path: Optional[Path] = None
         self._codec_map: dict[int, str] = {}
+        self._preset_burnin_zones: dict[str, Optional[str]] = {}
         # Debounce timer for real-time contact sheet preview updates
         self._cs_preview_timer = QTimer(self)
         self._cs_preview_timer.setSingleShot(True)

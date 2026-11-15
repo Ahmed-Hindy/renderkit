@@ -371,7 +371,15 @@ def apply_ocio_config_path(ui: Any, ocio_path: Optional[str]) -> Optional[Path]:
 def _apply_burnin_preset(ui: Any, burnin_config: Optional[BurnInConfig]) -> None:
     if not hasattr(ui, "burnin_enable_check"):
         return
+    zone_combo = getattr(ui, "burnin_zone_combo", None)
     if burnin_config is None:
+        ui._preset_burnin_zones = {}
+        if zone_combo is not None:
+            zone_combo.blockSignals(True)
+            try:
+                zone_combo.setCurrentIndex(0)
+            finally:
+                zone_combo.blockSignals(False)
         ui.burnin_enable_check.setChecked(False)
         return
 
@@ -387,6 +395,36 @@ def _apply_burnin_preset(ui: Any, burnin_config: Optional[BurnInConfig]) -> None
         ui.burnin_font_size_spin.setValue(int(burnin_config.elements[0].font_size))
     if hasattr(ui, "burnin_opacity_spin"):
         ui.burnin_opacity_spin.setValue(int(burnin_config.background_opacity))
+
+    zones = {el.zone for el in burnin_config.elements}
+    preset_zones: dict[str, Optional[str]] = {}
+    target_zone: Optional[str] = None
+    if len(zones) == 1:
+        only_zone = next(iter(zones))
+        if isinstance(only_zone, str) and only_zone:
+            target_zone = only_zone
+    elif len(zones) > 1:
+        for el in burnin_config.elements:
+            if "{frame}" in el.text_template:
+                preset_zones["frame"] = el.zone
+            if "{layer}" in el.text_template:
+                preset_zones["layer"] = el.zone
+            if "{fps" in el.text_template:
+                preset_zones["fps"] = el.zone
+
+    ui._preset_burnin_zones = preset_zones
+    if zone_combo is not None:
+        zone_combo.blockSignals(True)
+        try:
+            if target_zone is not None:
+                idx = zone_combo.findData(target_zone)
+                if idx < 0:
+                    idx = zone_combo.findText(target_zone)
+                zone_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            else:
+                zone_combo.setCurrentIndex(0)
+        finally:
+            zone_combo.blockSignals(False)
 
 
 def _apply_contact_sheet_preset(
@@ -413,6 +451,8 @@ def _apply_slate_preset(ui: Any, slate_config: Optional[SlateConfig]) -> None:
     )
     if slate_config is None:
         ui.slate_enable_check.setChecked(False)
+        if hasattr(ui, "slate_preview_check"):
+            ui.slate_preview_check.setChecked(False)
         for widget_attr, _ in field_attrs:
             widget = getattr(ui, widget_attr, None)
             if widget is not None and hasattr(widget, "setText"):

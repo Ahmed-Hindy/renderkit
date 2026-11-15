@@ -6,9 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from renderkit.core.config import BurnInConfig, BurnInElement, ContactSheetConfig
+from renderkit.core.config import (
+    BurnInConfig,
+    BurnInElement,
+    ContactSheetConfig,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.ui.main_window_ocio import (
+    build_slate_config_from_ui,
+    build_watermark_config_from_ui,
     get_configured_ocio_path,
     get_grade_values,
     get_selected_ocio_display,
@@ -34,12 +42,46 @@ class PreviewRequest:
     ocio_view: Optional[str] = None
     exposure: float = 0.0
     gamma: float = 1.0
+    watermark_config: Optional[WatermarkConfig] = None
+    slate_config: Optional[SlateConfig] = None
+    preview_slate: bool = False
+
+
+def get_selected_burnin_zone(ui: Any) -> Optional[str]:
+    """Return the selected burn-in HUD zone name, or ``None`` for automatic layout."""
+    combo = getattr(ui, "burnin_zone_combo", None)
+    if combo is None:
+        return None
+    if hasattr(combo, "currentData"):
+        data = combo.currentData()
+        if isinstance(data, str):
+            cleaned = data.strip()
+            return cleaned or None
+        if data is None:
+            return None
+    if hasattr(combo, "currentText"):
+        text = str(combo.currentText()).strip()
+        if not text or text == "(Auto)":
+            return None
+        return text
+    return None
 
 
 def build_burnin_config(ui: Any, *, include_layer: bool) -> Optional[BurnInConfig]:
     """Build burn-in settings from the current main-window UI state."""
     if not ui.burnin_enable_check.isChecked():
         return None
+
+    selected_zone = get_selected_burnin_zone(ui)
+    preset_zones = getattr(ui, "_preset_burnin_zones", None)
+    if not isinstance(preset_zones, dict):
+        preset_zones = {}
+
+    def _zone_for(key: str) -> Optional[str]:
+        if selected_zone is not None:
+            return selected_zone
+        zone_val = preset_zones.get(key)
+        return str(zone_val) if isinstance(zone_val, str) and zone_val else None
 
     burnin_elements = []
     font_size = ui.burnin_font_size_spin.value()
@@ -51,6 +93,7 @@ def build_burnin_config(ui: Any, *, include_layer: bool) -> Optional[BurnInConfi
                 y=10,
                 font_size=font_size,
                 alignment="left",
+                zone=_zone_for("frame"),
             )
         )
     if include_layer and ui.burnin_layer_check.isChecked():
@@ -61,6 +104,7 @@ def build_burnin_config(ui: Any, *, include_layer: bool) -> Optional[BurnInConfi
                 y=10,
                 font_size=font_size,
                 alignment="center",
+                zone=_zone_for("layer"),
             )
         )
     if ui.burnin_fps_check.isChecked():
@@ -71,6 +115,7 @@ def build_burnin_config(ui: Any, *, include_layer: bool) -> Optional[BurnInConfi
                 y=10,
                 font_size=font_size,
                 alignment="right",
+                zone=_zone_for("fps"),
             )
         )
 
@@ -140,12 +185,27 @@ def build_preview_request(
 
     burnin_config = None
     burnin_metadata = None
+    watermark_config = None
+    slate_config = None
+    preview_slate = False
     if not scrubbing:
         burnin_config = build_burnin_config(
             ui,
             include_layer=not ui.cs_enable_check.isChecked(),
         )
-        if burnin_config is not None:
+        watermark_config = build_watermark_config_from_ui(ui)
+        slate_config = build_slate_config_from_ui(ui)
+        slate_preview_check = getattr(ui, "slate_preview_check", None)
+        preview_slate = (
+            bool(slate_preview_check.isChecked())
+            if slate_preview_check is not None and hasattr(slate_preview_check, "isChecked")
+            else False
+        )
+        if (
+            burnin_config is not None
+            or watermark_config is not None
+            or (preview_slate and slate_config is not None)
+        ):
             burnin_metadata = build_burnin_metadata(
                 sample_path,
                 fps=float(ui.fps_spin.value()),
@@ -168,6 +228,9 @@ def build_preview_request(
         ocio_view=get_selected_ocio_view(ui),
         exposure=exposure,
         gamma=gamma,
+        watermark_config=watermark_config,
+        slate_config=slate_config,
+        preview_slate=preview_slate,
     )
 
 
@@ -202,5 +265,8 @@ def load_preview_for_frame(
         ocio_view=request.ocio_view,
         exposure=request.exposure,
         gamma=request.gamma,
+        watermark_config=request.watermark_config,
+        slate_config=request.slate_config,
+        preview_slate=request.preview_slate,
     )
     return request

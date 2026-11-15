@@ -18,12 +18,15 @@ If RenderKit is already installed or you are using a release build that adds the
 
 ```bash
 renderkit --help
-renderkit ui
+renderkit ui [OPTIONS]
 renderkit convert-exr-sequence INPUT_PATTERN OUTPUT_PATH [OPTIONS]
 renderkit batch-convert ROOT [OPTIONS]
 renderkit replace-sequence-with-mp4 INPUT_PATTERN OUTPUT_MP4 [OPTIONS]
 renderkit batch-replace ROOT_PATH [OPTIONS]
 renderkit contact-sheet INPUT_PATTERN OUTPUT_PATH [OPTIONS]
+renderkit video-to-exr INPUT_VIDEO OUTPUT_PATTERN [OPTIONS]
+renderkit transcode INPUT_VIDEO OUTPUT_VIDEO [OPTIONS]
+renderkit proxy INPUT_VIDEO [OPTIONS]
 ```
 
 `INPUT_PATTERN` accepts common sequence styles:
@@ -61,27 +64,62 @@ Set both width and height when overriding resolution:
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --width 1920 --height 1080
 ```
 
-### Color Space Preset
+### Color Space Preset & OCIO Display/View Grading
 
 ```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --color-space linear_to_rec709
 ```
 
-Available presets:
+Available `--color-space` presets:
 
 - `linear_to_srgb`
 - `linear_to_rec709`
 - `srgb_to_linear`
 - `no_conversion`
+- `ocio_conversion`
 
-### Codec And Quality
+For full OpenColorIO Display/View transforms and look grading, use `--ocio`, `--input-space`,
+`--display`, `--view`, `--exposure`, and `--gamma` (providing OCIO options automatically selects
+`ocio_conversion`):
 
-H.264 is the default. Use H.265 or AV1 when the review target supports it.
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 \
+  --ocio /studio/ocio/config.ocio \
+  --input-space "ACES - ACEScg" \
+  --display sRGB \
+  --view "ACES 1.0 - SDR Video" \
+  --exposure 0.5 \
+  --gamma 1.0
+```
+
+### Codec, Profiles, And Quality
+
+H.264 (`libx264`) is the default. RenderKit supports delivery MP4 codecs, 10-bit HEVC,
+10/12-bit ProRes and DNxHR `.mov` editorial profiles, and hardware-accelerated encoders with
+automatic fallback to software (`libx264` / `libx265`) when hardware drivers are unavailable:
 
 ```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libx265 --quality 8
+renderkit convert-exr-sequence render.%04d.exr output_10bit.mp4 --codec hevc_10bit --quality 8
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libaom-av1 --quality 8
+renderkit convert-exr-sequence render.%04d.exr editorial.mov --codec prores_422 --quality 10
+renderkit convert-exr-sequence render.%04d.exr editorial_dnx.mov --codec dnxhr_hqx --quality 10
 ```
+
+| Profile | FFmpeg Encoder | Container | Bit Depth | Notes |
+|---|---|---|---|---|
+| `libx264`, `h264` | `libx264` | `.mp4` | 8-bit | Default web/dailies delivery |
+| `libx265`, `hevc` | `libx265` | `.mp4` | 8-bit | High-efficiency MP4 |
+| `hevc_10bit`, `libx265_10bit` | `libx265` | `.mp4` | 10-bit | `yuv420p10le`, `hvc1` tag |
+| `libaom-av1`, `av1` | `libaom-av1` | `.mp4` | 8-bit | AV1 delivery |
+| `prores_proxy`, `prores_lt`, `prores_422`, `prores_hq`, `prores` | `prores_ks` | `.mov` | 10-bit | Apple ProRes 422 profiles |
+| `prores_4444`, `prores_xq` | `prores_ks` | `.mov` | 12-bit | ProRes 4444 with alpha |
+| `dnxhr_hq` | `dnxhd` | `.mov` | 8-bit | Avid DNxHR HQ |
+| `dnxhr_hqx` | `dnxhd` | `.mov` | 10-bit | Avid DNxHR HQX |
+| `h264_nvenc`, `hevc_nvenc` | NVENC | `.mp4` | 8-bit | NVIDIA GPU; falls back to software |
+| `h264_qsv`, `hevc_qsv` | Intel QSV | `.mp4` | 8-bit | Intel Quick Sync; falls back to software |
+| `h264_videotoolbox`, `hevc_videotoolbox` | VideoToolbox | `.mp4` | 8-bit | macOS hardware; falls back to software |
+| `h264_vaapi` | VAAPI | `.mp4` | 8-bit | Linux VA-API; falls back to software |
 
 `--quality` uses a 0-10 scale where 10 is highest quality.
 
@@ -91,7 +129,7 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec libaom-av1 --q
 renderkit convert-exr-sequence render.%04d.exr diffuse.mp4 --layer diffuse
 ```
 
-### Burn-ins
+### Burn-ins, HUD Zones, And Metadata Tokens
 
 ```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-layer --burnin-fps
@@ -102,6 +140,64 @@ Tune the burn-in background:
 ```bash
 renderkit convert-exr-sequence render.%04d.exr output.mp4 --burnin-frame --burnin-opacity 45
 ```
+
+When configuring burn-ins in JSON presets or the Python API (`BurnInElement`), elements can be
+placed into 6 named HUD zones (`top_left`, `top_center`, `top_right`, `bottom_left`,
+`bottom_center`, `bottom_right`) and reference dynamic tokens:
+
+- Standard tokens: `{frame}`, `{frame_range}`, `{shot}`, `{layer}`, `{fps}`, `{fps:.2f}`,
+  `{user}`, `{resolution}`, `{colorspace}`, `{date}`, `{file}`, `{filename}`, `{stem}`
+- EXR header attribute tokens: `{exr:<attr>}` (for example `{exr:compression}` or
+  `{exr:camera}`)
+
+### Intro Slates
+
+Prepend a styled intro slate frame containing show/shot/artist/date/frame-range/codec metadata:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 \
+  --slate \
+  --slate-title "Lighting Dailies" \
+  --slate-show "SHOW" \
+  --slate-shot "sh010" \
+  --slate-artist "Alex" \
+  --slate-notes "Check rim key and spec lobes"
+```
+
+### Watermarks
+
+Apply a centered or staggered tiled watermark overlay (supports `{user}`, `{shot}`, `{date}`,
+and `{exr:<attr>}` tokens):
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr client_review.mp4 \
+  --watermark "CONFIDENTIAL - {user}" \
+  --watermark-opacity 25 \
+  --watermark-tiled
+```
+
+### JSON Presets & `RENDERKIT_PRESET_PATH`
+
+Load a JSON preset or save the active CLI flags as a reusable preset:
+
+```bash
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --preset presets/studio_dailies.json
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --codec prores_422 --save-preset my_prores.json
+```
+
+When `RENDERKIT_PRESET_PATH` is set (colon-separated on POSIX, semicolon-separated on Windows),
+presets can be referenced by short name (with or without `.json`):
+
+```powershell
+$env:RENDERKIT_PRESET_PATH = "G:\Projects\Dev\Github\renderkit\presets"
+renderkit convert-exr-sequence render.%04d.exr output.mp4 --preset studio_dailies
+```
+
+Included sample presets in `presets/`:
+
+- `presets/studio_dailies.json`: `libx264`, quality 8, `ocio_conversion` (`ACES - ACEScg`), 6-zone HUD burn-ins.
+- `presets/client_review_watermarked.json`: `libx264`, quality 7, `ocio_conversion`, intro slate, tiled `"CONFIDENTIAL - {user}"` watermark, and HUD burn-ins.
+- `presets/editorial_prores422.json`: `prores_422`, quality 10, `ocio_conversion`, 10-bit editorial `.mov` output.
 
 ### Multi-AOV Contact Sheet Movie
 
@@ -148,6 +244,32 @@ renderkit convert-exr-sequence render.%04d.exr output.mp4 --profile --profile-ou
 
 Profiling writes `.prof` data and a readable `.prof.txt` summary.
 
+## Editorial Video Workflows (`video-to-exr`, `transcode`, `proxy`)
+
+### Video-to-EXR Plate Ingest
+
+Decode a video file into atomic 16-bit half-float (or 32-bit float) OpenEXR plates:
+
+```bash
+renderkit video-to-exr plate.mov plates/shot.%04d.exr --start-frame 1001 --compression dwaa
+```
+
+### Editorial Video Transcode
+
+Transcode an existing movie with optional scaling, OCIO display/view grading, and watermarks:
+
+```bash
+renderkit transcode master.mov review_h264.mp4 --codec libx264 --width 1280 --watermark "REVIEW" --watermark-opacity 25
+```
+
+### Proxy Generation
+
+Generate a scaled editorial proxy (defaults to `<input_dir>/Proxy/<stem>_proxy.mp4` or `.mov`):
+
+```bash
+renderkit proxy master.mov --scale 0.5 --codec libx264
+```
+
 ## Automation Patterns
 
 ### PowerShell Batch
@@ -174,20 +296,26 @@ done
 
 ### Recursive Batch Convert
 
-Use `batch-convert` when RenderKit should discover sequences recursively and write review MP4s
+Use `batch-convert` when RenderKit should discover sequences recursively and write review MP4s/MOVs
 plus audit manifests:
 
 ```powershell
 renderkit batch-convert G:\Projects\Data_folder --ext exr --out _review_mp4s --fps 24 --overwrite
 ```
 
-By default, relative output and manifest paths are resolved under `ROOT`. Existing MP4s are
+Apply a preset (including ProRes `.mov` container selection, burn-ins, slates, or watermarks):
+
+```powershell
+renderkit batch-convert G:\Projects\Data_folder --preset studio_dailies --overwrite
+```
+
+By default, relative output and manifest paths are resolved under `ROOT`. Existing outputs are
 skipped unless `--overwrite` is set. The command keeps processing after per-sequence failures and
 exits nonzero if any sequence failed.
 
 Extension matching is case-insensitive, so `--ext exr` also finds `.EXR` frames. Output names are
 built from the relative folder path and sequence prefix. If multiple discovered sequences would
-write the same MP4 path in one run, RenderKit appends a numeric suffix such as `_2`.
+write the same output path in one run, RenderKit appends a numeric suffix such as `_2`.
 
 Default manifests:
 
@@ -197,6 +325,17 @@ Default manifests:
 Each manifest record includes the source pattern, output path, frame count, frame range, output
 size, status, and error text. Use the JSONL file for automation that tails results while a batch is
 running, and the CSV file for review in spreadsheets or asset-management tools.
+
+### Watch Folder Automation (`batch-convert --watch`)
+
+Continuously poll a render output directory, wait for active frame writes to settle, and convert
+new or re-rendered sequences automatically:
+
+```powershell
+renderkit batch-convert G:\Projects\Renders --out _review_mp4s --preset studio_dailies --watch --watch-interval 5.0 --settle-seconds 2.0
+```
+
+Use `--max-polls` in CI or cron jobs to bound the number of polling passes.
 
 ### Verify Review MP4s
 
@@ -318,6 +457,15 @@ Before using `batch-replace`, confirm the approved MP4s still use the names prod
 `batch-convert`. If review movies were renamed by hand, use explicit `replace-sequence-with-mp4`
 calls or stage renamed MP4s in `--mp4-dir`.
 
+## `ui` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--open` | Initial sequence pattern or file path to open in the UI. | None |
+| `--layer` | Initial EXR layer/AOV name to select. | None |
+| `--preset` | Preset name (via `RENDERKIT_PRESET_PATH`) or JSON preset path to apply on startup. | None |
+| `--ocio` | Path to a custom OpenColorIO config file. | None |
+
 ## `convert-exr-sequence` Options
 
 | Option | Description | Default |
@@ -327,18 +475,35 @@ calls or stage renamed MP4s in `--mp4-dir`.
 | `--prefetch-workers` | Number of frame prefetch workers; use `1` to disable concurrent prefetch. | `2` |
 | `--fps` | Frame rate. If omitted, RenderKit attempts auto-detection. | Auto-detect |
 | `--quality` | Visual quality on a 0-10 scale. | `10` |
-| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, or `no_conversion`. | `linear_to_srgb` |
+| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, `no_conversion`, or `ocio_conversion`. | `linear_to_srgb` |
 | `--width` | Output width. Must be paired with `--height`. | Source width |
 | `--height` | Output height. Must be paired with `--width`. | Source height |
-| `--codec` | FFmpeg codec, commonly `libx264`, `libx265`, or `libaom-av1`. | `libx264` |
+| `--codec` | Codec or profile (`libx264`, `libx265`, `hevc_10bit`, `libaom-av1`, `prores_422`, `prores_hq`, `prores_4444`, `dnxhr_hq`, `dnxhr_hqx`, `h264_nvenc`, `hevc_nvenc`, `h264_qsv`, `hevc_qsv`, `h264_videotoolbox`, `hevc_videotoolbox`, `h264_vaapi`). | `libx264` |
 | `--layer` | EXR layer/AOV to extract. | None |
 | `--start-frame` | Start frame number. | First frame |
 | `--end-frame` | End frame number. | Last frame |
+| `--ocio` | Path to a custom OpenColorIO config file. | None |
+| `--input-space` | Explicit input color space name (for OCIO). | Auto-detect |
+| `--display` | OCIO display name. | Config default |
+| `--view` | OCIO view name. | Display default |
+| `--exposure` | Exposure adjustment in stops. | `0.0` |
+| `--gamma` | Gamma adjustment (`> 0`). | `1.0` |
+| `--preset` | Load conversion settings from a JSON preset file or `RENDERKIT_PRESET_PATH`. | None |
+| `--save-preset` | Save conversion settings to a JSON preset file. | None |
+| `--slate` | Prepend an intro slate frame before sequence frames. | `False` |
+| `--slate-title` | Title text for the slate frame. | `""` |
+| `--slate-show` | Show/project name for the slate frame. | `""` |
+| `--slate-shot` | Shot name for the slate frame. | `""` |
+| `--slate-artist` | Artist name for the slate frame. | `""` |
+| `--slate-notes` | Notes text for the slate frame. | `""` |
 | `--overwrite` | Overwrite output file if it exists. | `False` |
 | `--burnin-frame` | Burn in frame number. | `False` |
 | `--burnin-layer` | Burn in layer name. | `False` |
 | `--burnin-fps` | Burn in frame rate. | `False` |
 | `--burnin-opacity` | Burn-in background opacity from 0-100. | `30` |
+| `--watermark` | Watermark text overlay applied across the output video. | None |
+| `--watermark-opacity` | Watermark opacity percentage from 0-100. | `25` |
+| `--watermark-tiled` | Tile watermark text across the frame instead of centering. | `False` |
 | `--contact-sheet` | Enable multi-AOV grid movie mode. | `False` |
 | `--cs-columns` | Contact sheet columns. | `4` |
 | `--cs-thumb-width` | Width of each contact sheet layer cell. | Source resolution |
@@ -354,19 +519,30 @@ calls or stage renamed MP4s in `--mp4-dir`.
 |---|---|---|
 | `ROOT` | Directory tree to scan recursively. | Required |
 | `--ext` | Frame extension to discover, with or without a leading dot. | `exr` |
-| `--out` | Output directory for generated MP4 files. Relative paths resolve under `ROOT`. | `_review_mp4s` |
+| `--out` | Output directory for generated videos. Relative paths resolve under `ROOT`. | `_review_mp4s` |
 | `--prefetch-workers` | Number of frame prefetch workers; use `1` to disable concurrent prefetch. | `2` |
 | `--fps` | Frame rate. If omitted, RenderKit attempts auto-detection per sequence. | Auto-detect |
 | `--quality` | Visual quality on a 0-10 scale. | `10` |
-| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, or `no_conversion`. | `linear_to_srgb` |
+| `--color-space` | `linear_to_srgb`, `linear_to_rec709`, `srgb_to_linear`, `no_conversion`, or `ocio_conversion`. | `linear_to_srgb` |
 | `--width` | Output width. Must be paired with `--height`. | Source width |
 | `--height` | Output height. Must be paired with `--width`. | Source height |
-| `--codec` | FFmpeg codec, commonly `libx264`, `libx265`, or `libaom-av1`. | `libx264` |
+| `--codec` | Video codec or profile (`libx264`, `libx265`, `prores_422`, `dnxhr_hqx`, etc.). | `libx264` |
 | `--layer` | EXR layer/AOV to extract. | None |
+| `--ocio` | Path to a custom OpenColorIO config file. | None |
+| `--input-space` | Explicit input color space name (for OCIO). | Auto-detect |
+| `--display` | OCIO display name. | Config default |
+| `--view` | OCIO view name. | Display default |
+| `--exposure` | Exposure adjustment in stops. | `0.0` |
+| `--gamma` | Gamma adjustment (`> 0`). | `1.0` |
 | `--overwrite` | Overwrite output files if they exist. | `False` |
 | `--manifest-csv` | CSV manifest path. Relative paths resolve under `ROOT`. | `OUTPUT_DIR/renderkit_batch_manifest.csv` |
 | `--manifest-jsonl` | JSONL results path. Relative paths resolve under `ROOT`. | `OUTPUT_DIR/renderkit_batch_results.jsonl` |
 | `--no-progress` | Disable progress bars for stable captured logs. | `False` |
+| `--preset` | Load base conversion settings from a preset name or JSON file. | None |
+| `--watch` | Continuously poll `ROOT` for newly settled sequences and convert them. | `False` |
+| `--watch-interval` | Seconds between watch folder polls. | `5.0` |
+| `--settle-seconds` | Minimum age in seconds since last frame write before converting. | `2.0` |
+| `--max-polls` | Maximum number of watch polls before exiting. | Unlimited |
 
 ## `replace-sequence-with-mp4` Options
 
@@ -406,8 +582,99 @@ calls or stage renamed MP4s in `--mp4-dir`.
 | `--end-frame` | End frame number. | Last frame |
 | `--overwrite` | Overwrite output file if it exists. | `False` |
 
+## `video-to-exr` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `INPUT_VIDEO` | Source video file path. | Required |
+| `OUTPUT_PATTERN` | Output EXR pattern (`%04d` or `####`). | Required |
+| `--start-frame` | Starting frame number for output EXR files. | `1001` |
+| `--source-start` | Optional 0-based inclusive start frame in `INPUT_VIDEO`. | Start of video |
+| `--source-end` | Optional 0-based inclusive end frame in `INPUT_VIDEO`. | End of video |
+| `--compression` | EXR compression (`none`, `rle`, `zip`, `zips`, `piz`, `pxr24`, `b44`, `b44a`, `dwaa`, `dwab`). | `dwaa` |
+| `--float32` | Write 32-bit float EXRs instead of 16-bit half float. | `False` |
+| `--input-space` | Input video color space. | `sRGB` |
+| `--output-space` | Output EXR color space. | `Linear` |
+| `--ocio` | Path to a custom OpenColorIO config file. | None |
+
+## `transcode` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `INPUT_VIDEO` | Source video file path. | Required |
+| `OUTPUT_VIDEO` | Destination video file path. | Required |
+| `--codec` | Target video codec or profile. | `libx264` |
+| `--fps` | Override output frame rate. | Source FPS |
+| `--quality` | Video quality on a 0-10 scale. | `10` |
+| `--width` | Target width (preserves aspect ratio if used alone). | Source width |
+| `--height` | Target height (preserves aspect ratio if used alone). | Source height |
+| `--ocio` | Path to a custom OpenColorIO config file. | None |
+| `--input-space` | Input video color space. | `sRGB` |
+| `--output-space` | Output video color space. | `sRGB` |
+| `--display` | OCIO display name. | None |
+| `--view` | OCIO view name. | None |
+| `--exposure` | Exposure adjustment in stops. | `0.0` |
+| `--gamma` | Gamma adjustment (`> 0`). | `1.0` |
+| `--watermark` | Watermark text overlay applied across the transcoded video. | None |
+| `--watermark-opacity` | Watermark opacity percentage from 0-100. | `25` |
+| `--watermark-tiled` | Tile watermark text across the frame instead of centering. | `False` |
+
+## `proxy` Options
+
+| Option | Description | Default |
+|---|---|---|
+| `INPUT_VIDEO` | Source video file path. | Required |
+| `--output` | Optional destination proxy path. | `Proxy/<stem>_proxy.mp4\|.mov` |
+| `--scale` | Proxy resolution scale factor in `(0.0, 1.0]`. | `0.5` |
+| `--codec` | Target proxy codec or profile. | `libx264` |
+| `--quality` | Video quality on a 0-10 scale. | `10` |
+
+## DCC Integrations (Houdini 21.0 & Nuke)
+
+Drop-in wrapper scripts live in `integrations/` and delegate to `renderkit.integrations.houdini`
+and `renderkit.integrations.nuke`.
+
+### Houdini 21.0 (ROP / Solaris Husk / TOPs / Shelf)
+
+Add RenderKit's environment to `PYTHONPATH` (or launch via a virtual environment with RenderKit
+installed).
+
+**Post-Render Script (`integrations/houdini/post_render_dailies.py`):**
+
+In a Karma/Mantra ROP, Solaris USD Render ROP, or TOPs Post-Render Script (Python):
+
+```python
+from integrations.houdini import post_render_dailies
+
+post_render_dailies.main(preset="studio_dailies", contact_sheet=False)
+```
+
+`main(node=None, *, preset=None, contact_sheet=False)` inspects `vm_picture`, `picture`,
+`lopoutput`, `sopoutput`, or `outputimage`, inherits `hou.fps()` and `$OCIO`, and produces a review
+`.mp4` or `.mov` alongside the rendered sequence.
+
+**Shelf Tool (`integrations/houdini/launch_renderkit_shelf.py`):**
+
+```python
+from integrations.houdini import launch_renderkit_shelf
+
+launch_renderkit_shelf.launch_selected_node_in_renderkit(preset="studio_dailies")
+```
+
+### Foundry Nuke (`integrations/nuke/menu.py`)
+
+Add `integrations/nuke/menu.py` to your `NUKE_PATH` (or import it from `~/.nuke/menu.py` via
+`from integrations.nuke.menu import create_dailies_menu; create_dailies_menu()`). It registers a
+**RenderKit** menu with:
+
+- **Generate Dailies (RenderKit)**: converts the selected `Write`/`Read` node (`file`, `first`,
+  `last`, `colorspace`, `$OCIO`) to dailies (defaults to `prores_422` unless overridden by a preset).
+- **Open in RenderKit UI**: spawns `renderkit ui --open ... --ocio ...` for the selected node.
+
 ## Environment Variables
 
+- `OCIO`: Default OpenColorIO config path used when `--ocio` is not specified.
+- `RENDERKIT_PRESET_PATH`: Search path list (`;` on Windows, `:` on POSIX) for `--preset` short names.
 - `IMAGEIO_FFMPEG_EXE`: Path to a custom ffmpeg binary; overrides the bundled or PATH ffmpeg.
 - `RENDERKIT_FFMPEG_LOG`: FFmpeg report logging. Use `0` to disable, `1` for a temp log, or a full file path.
 - `RENDERKIT_PROFILE`: Enable cProfile output for UI/CLI when set to `1`, `true`, or `yes`.
@@ -420,14 +687,14 @@ calls or stage renamed MP4s in `--mp4-dir`.
 
 - FPS auto-detection logs a warning when metadata probing is unavailable or image metadata cannot
   be read, then falls back to the configured/default FPS behavior.
-- OCIO conversions use RenderKit's bundled OCIO config.
+- OCIO conversions use `$OCIO` when set or fall back to RenderKit's bundled OCIO config.
 - OCIO conversion failures include diagnostics in the RenderKit log, including role and color-space
   resolution details, available color-space samples, and bundled LUT/config checks where possible.
 
 ## Desktop UI From The CLI
 
 ```bash
-renderkit ui
+renderkit ui --open render.%04d.exr --layer beauty --preset studio_dailies --ocio /studio/ocio/config.ocio
 ```
 
 The hidden `renderkit gui` alias also launches the desktop UI for older scripts, but `renderkit ui` is the public command.
@@ -446,6 +713,8 @@ processor.convert_exr_sequence_to_mp4(
     fps=24.0,
     quality=10,
     codec="libx264",
+    exposure=0.25,
+    gamma=1.0,
 )
 ```
 
@@ -453,7 +722,12 @@ For complex setups, build an explicit config:
 
 ```python
 from renderkit import RenderKit
-from renderkit.core.config import ContactSheetConfig, ConversionConfigBuilder
+from renderkit.core.config import (
+    ContactSheetConfig,
+    ConversionConfigBuilder,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.processing.color_space import ColorSpacePreset
 
 config = (
@@ -462,7 +736,10 @@ config = (
     .with_output_path("output.mp4")
     .with_fps(24.0)
     .with_color_space_preset(ColorSpacePreset.OCIO_CONVERSION)
-    .with_explicit_input_color_space("ACES - ACEScg")
+    .with_ocio(input_space="ACES - ACEScg", display="sRGB", view="ACES 1.0 - SDR Video")
+    .with_grade(exposure=0.5, gamma=1.0)
+    .with_slate(SlateConfig(enabled=True, title="Dailies", shot="sh010", artist="Alex"))
+    .with_watermark(WatermarkConfig(text="CONFIDENTIAL - {user}", opacity=25, tiled=True))
     .with_resolution(3840, 2160)
     .with_codec("libx264")
     .with_contact_sheet(

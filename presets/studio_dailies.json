@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "prefetch_workers": 2,
+  "fps": 24.0,
+  "color_space_preset": "ocio_conversion",
+  "width": null,
+  "height": null,
+  "codec": "libx264",
+  "bitrate": null,
+  "quality": 8,
+  "layer": null,
+  "start_frame": null,
+  "end_frame": null,
+  "explicit_input_color_space": "ACES - ACEScg",
+  "ocio_config_path": null,
+  "ocio_display": null,
+  "ocio_view": null,
+  "ocio_output_space": null,
+  "exposure": 0.0,
+  "gamma": 1.0,
+  "burnin_config": {
+    "elements": [
+      {
+        "text_template": "{shot}",
+        "x": 20,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "left",
+        "zone": "top_left"
+      },
+      {
+        "text_template": "Layer: {layer}",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "center",
+        "zone": "top_center"
+      },
+      {
+        "text_template": "{resolution} | {date}",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.85, 0.85, 0.85],
+        "alignment": "right",
+        "zone": "top_right"
+      },
+      {
+        "text_template": "Artist: {user}",
+        "x": 20,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.85, 0.85, 0.85],
+        "alignment": "left",
+        "zone": "bottom_left"
+      },
+      {
+        "text_template": "FPS: {fps:.2f}",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "center",
+        "zone": "bottom_center"
+      },
+      {
+        "text_template": "Frame: {frame} ({frame_range})",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "right",
+        "zone": "bottom_right"
+      }
+    ],
+    "use_background": true,
+    "background_opacity": 35
+  },
+  "contact_sheet_mode": false,
+  "contact_sheet_config": null,
+  "slate_config": null,
+  "watermark_config": null
+}
