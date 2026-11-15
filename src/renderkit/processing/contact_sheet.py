@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import OpenImageIO as oiio
 
@@ -49,14 +49,18 @@ class ContactSheetGenerator:
         self.reader = reader
         self.layers = layers
         self.layer_map = layer_map
+        self._last_layout_context: Optional[tuple[list[str], int, int]] = None
         if layer_map is not None:
             logger.debug("Contact sheet layer map cached at init.")
 
-    def composite_layers(self, frame_path: Path) -> oiio.ImageBuf:
+    def composite_layers(self, frame_path: Path, *, render_labels: bool = True) -> oiio.ImageBuf:
         """Composite all layers of a frame into a grid.
 
         Args:
             frame_path: Path to the image file (e.g. EXR)
+            render_labels: Whether to render layer labels immediately on the
+                composited canvas. Pass ``False`` when labels should be drawn
+                after color-space conversion.
 
         Returns:
             ImageBuf containing the composited grid
@@ -75,6 +79,7 @@ class ContactSheetGenerator:
 
         if not layers:
             # Fallback to just reading the image if no layers detected
+            self._last_layout_context = None
             return oiio.ImageBuf(str(frame_path))
 
         subimage_buffers = self._build_subimage_buffers(reader, frame_path, layers, layer_map)
@@ -89,6 +94,7 @@ class ContactSheetGenerator:
         )
         spec = first_buf.spec()
         h, w = spec.height, spec.width
+        self._last_layout_context = (list(layers), w, h)
         layout = self._compute_layout(len(layers), w, h)
         thumb_w = layout["thumb_w"]
         thumb_h = layout["thumb_h"]
@@ -96,7 +102,6 @@ class ContactSheetGenerator:
         cell_h = layout["cell_h"]
         canvas_w = layout["canvas_w"]
         canvas_h = layout["canvas_h"]
-        label_gap = layout["label_gap"]
         padding = layout["padding"]
         cols = layout["cols"]
 
@@ -139,24 +144,78 @@ class ContactSheetGenerator:
                     f"Failed to paste layer '{layer_name}' into contact sheet: {oiio.geterror()}"
                 )
 
-            if self.config.show_labels:
-                label_x = x_offset
-                label_y = (
-                    y_offset
-                    + thumb_h
-                    + label_gap
-                    + self.config.font_size
-                    - max(2, int(self.config.font_size * 0.2))
-                )
-                if not oiio.ImageBufAlgo.render_text(
-                    canvas,
-                    label_x,
-                    label_y,
-                    layer_name,
-                    fontsize=self.config.font_size,
-                    textcolor=(1, 1, 1, 1),
-                ):
-                    raise RuntimeError(f"Failed to render label '{layer_name}': {oiio.geterror()}")
+        if render_labels:
+            self.render_layer_labels(canvas, layers=layers, source_w=w, source_h=h)
+
+        return canvas
+
+    def render_layer_labels(
+        self,
+        canvas: oiio.ImageBuf,
+        layers: Optional[list[str]] = None,
+        source_w: Optional[int] = None,
+        source_h: Optional[int] = None,
+    ) -> oiio.ImageBuf:
+        """Render layer labels onto an existing contact sheet canvas.
+
+        Args:
+            canvas: Contact sheet ImageBuf to draw labels on.
+            layers: Optional list of layer names. Defaults to the last composited
+                layout context.
+            source_w: Optional source width used to compute layout coordinates.
+            source_h: Optional source height used to compute layout coordinates.
+
+        Returns:
+            The modified canvas ImageBuf.
+        """
+        if not self.config.show_labels:
+            return canvas
+
+        if layers is None or source_w is None or source_h is None:
+            if self._last_layout_context is None:
+                return canvas
+            ctx_layers, ctx_w, ctx_h = self._last_layout_context
+            if layers is None:
+                layers = ctx_layers
+            if source_w is None:
+                source_w = ctx_w
+            if source_h is None:
+                source_h = ctx_h
+
+        if not layers:
+            return canvas
+
+        layout = self._compute_layout(len(layers), source_w, source_h)
+        thumb_h = layout["thumb_h"]
+        cell_w = layout["cell_w"]
+        cell_h = layout["cell_h"]
+        label_gap = layout["label_gap"]
+        padding = layout["padding"]
+        cols = layout["cols"]
+
+        for i, layer_name in enumerate(layers):
+            row = i // cols
+            col = i % cols
+
+            x_offset = col * cell_w + padding
+            y_offset = row * cell_h + padding
+            label_x = x_offset
+            label_y = (
+                y_offset
+                + thumb_h
+                + label_gap
+                + self.config.font_size
+                - max(2, int(self.config.font_size * 0.2))
+            )
+            if not oiio.ImageBufAlgo.render_text(
+                canvas,
+                label_x,
+                label_y,
+                layer_name,
+                fontsize=self.config.font_size,
+                textcolor=(1, 1, 1, 1),
+            ):
+                raise RuntimeError(f"Failed to render label '{layer_name}': {oiio.geterror()}")
 
         return canvas
 
@@ -247,8 +306,11 @@ class ContactSheetGenerator:
                     else:
                         return base_buf
 
-        return reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map)
+        return cast(
+            oiio.ImageBuf,
+            reader.read_imagebuf(frame_path, layer=layer_name, layer_map=layer_map),
+        )
 
     def _scale_to_thumbnail(self, buf: oiio.ImageBuf, width: int, height: int) -> oiio.ImageBuf:
         """Scale ImageBuf to thumbnail dimensions and return ImageBuf."""
-        return ImageScaler.scale_buf(buf, width=width, height=height)
+        return cast(oiio.ImageBuf, ImageScaler.scale_buf(buf, width=width, height=height))

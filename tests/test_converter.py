@@ -6,15 +6,24 @@ from pathlib import Path
 import pytest
 
 from renderkit.core import converter as converter_module
-from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
+from renderkit.core.config import (
+    VALID_BURNIN_ZONES,
+    BurnInElement,
+    ContactSheetConfig,
+    ConversionConfig,
+    ConversionConfigBuilder,
+    SlateConfig,
+)
 from renderkit.core.converter import SequenceConverter
 from renderkit.exceptions import (
     ColorSpaceError,
     ConfigurationError,
+    ConversionCancelledError,
     ImageReadError,
     VideoEncodingError,
 )
 from renderkit.io.file_info import FileInfo
+from renderkit.processing.color_space import ColorSpacePreset
 from renderkit.processing.contact_sheet import compute_contact_sheet_label_metrics
 from renderkit.processing.video_encoder import VideoEncoder
 
@@ -89,6 +98,27 @@ class TestConversionConfig:
                 output_path="output.mp4",
                 contact_sheet_mode=True,
             )
+
+    @pytest.mark.parametrize("gamma", [0.0, -0.5])
+    def test_config_validation_gamma_positive(self, gamma: float) -> None:
+        """Test gamma validation requires values > 0."""
+        with pytest.raises(ConfigurationError, match="Gamma must be greater than 0"):
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                gamma=gamma,
+            )
+
+    @pytest.mark.parametrize("zone", sorted(VALID_BURNIN_ZONES))
+    def test_burnin_element_accepts_valid_zones(self, zone: str) -> None:
+        """Valid HUD zone names should be accepted on BurnInElement."""
+        element = BurnInElement(text_template="{frame}", zone=zone)
+        assert element.zone == zone
+
+    def test_burnin_element_rejects_invalid_zone(self) -> None:
+        """Invalid HUD zone names should raise ConfigurationError."""
+        with pytest.raises(ConfigurationError, match="Invalid burn-in zone"):
+            BurnInElement(text_template="{frame}", zone="middle_nowhere")
 
 
 class TestConversionConfigBuilder:
@@ -166,6 +196,47 @@ class TestConversionConfigBuilder:
         )
 
         assert config.prefetch_workers == 4
+
+    def test_builder_with_ocio_grade_and_slate(self) -> None:
+        """Test builder OCIO, grade, and slate methods."""
+        slate = SlateConfig(
+            enabled=True,
+            title="Shot Review",
+            show="DEMO",
+            shot="sh010",
+            artist="Alex",
+            notes="Final",
+        )
+        config = (
+            ConversionConfigBuilder()
+            .with_input_pattern("render.%04d.exr")
+            .with_output_path("output.mp4")
+            .with_ocio(
+                config_path="/studio/config.ocio",
+                input_space="ACEScg",
+                display="sRGB",
+                view="ACES 1.0 - SDR Video",
+                output_space="Output - sRGB",
+            )
+            .with_grade(exposure=1.25, gamma=2.2)
+            .with_slate(slate)
+            .build()
+        )
+
+        assert config.color_space_preset == ColorSpacePreset.OCIO_CONVERSION
+        assert config.ocio_config_path == "/studio/config.ocio"
+        assert config.explicit_input_color_space == "ACEScg"
+        assert config.ocio_display == "sRGB"
+        assert config.ocio_view == "ACES 1.0 - SDR Video"
+        assert config.ocio_output_space == "Output - sRGB"
+        assert config.exposure == 1.25
+        assert config.gamma == 2.2
+        assert config.slate_config == slate
+
+    def test_builder_with_grade_rejects_non_positive_gamma(self) -> None:
+        """Builder with_grade should validate gamma > 0."""
+        with pytest.raises(ConfigurationError, match="Gamma must be greater than 0"):
+            ConversionConfigBuilder().with_grade(exposure=0.0, gamma=0.0)
 
 
 class _FakeSequence:
@@ -432,6 +503,140 @@ class TestSequenceConverterFailures:
 
         assert success_count == 3
         assert converter.encoder.frames == ["1", "1", "3"]
+
+    def test_process_frames_calls_encoder_abort_on_frame_error(self) -> None:
+        """Frame failures should call encoder.abort() instead of close() when available."""
+
+        class AbortableEncoder:
+            def __init__(self) -> None:
+                self.aborted = False
+                self.closed = False
+
+            def abort(self) -> None:
+                self.aborted = True
+
+            def close(self) -> None:
+                self.closed = True
+
+        encoder = AbortableEncoder()
+        converter = self._converter()
+        converter.encoder = encoder
+
+        def raise_frame_failure(*args, **kwargs):
+            raise VideoEncodingError("frame preparation failed")
+
+        converter._process_single_frame_buf = raise_frame_failure
+
+        with pytest.raises(VideoEncodingError, match="frame preparation failed"):
+            converter._process_frames(
+                frame_numbers=[1],
+                output_width=100,
+                output_height=100,
+                width=100,
+                height=100,
+                input_space=None,
+                file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+                progress_callback=None,
+                show_progress=False,
+            )
+
+        assert encoder.aborted is True
+        assert encoder.closed is False
+
+    def test_process_frames_calls_encoder_abort_on_cancellation(self) -> None:
+        """Progress callback cancellation should call encoder.abort() instead of close()."""
+
+        class AbortableEncoder:
+            def __init__(self) -> None:
+                self.aborted = False
+                self.closed = False
+
+            def abort(self) -> None:
+                self.aborted = True
+
+            def close(self) -> None:
+                self.closed = True
+
+        encoder = AbortableEncoder()
+        converter = self._converter()
+        converter.encoder = encoder
+        converter._process_single_frame_buf = lambda *args, **kwargs: _FakeBuf()
+
+        with pytest.raises(ConversionCancelledError, match="cancelled"):
+            converter._process_frames(
+                frame_numbers=[1, 2],
+                output_width=100,
+                output_height=100,
+                width=100,
+                height=100,
+                input_space=None,
+                file_info=FileInfo(width=100, height=100, channels=4, layers=[]),
+                progress_callback=lambda _cur, _tot: False,
+                show_progress=False,
+            )
+
+        assert encoder.aborted is True
+        assert encoder.closed is False
+
+    def test_initialize_encoder_passes_non_unit_pixel_aspect_only(self, monkeypatch) -> None:
+        """_initialize_encoder should omit pixel_aspect=1.0 and pass non-unit pixel_aspect."""
+        calls: list[tuple[tuple, dict]] = []
+
+        class SpyEncoder:
+            def __init__(self, *args, **kwargs) -> None:
+                calls.append((args, kwargs))
+
+            def initialize(self, _w: int, _h: int) -> None:
+                pass
+
+        monkeypatch.setattr(converter_module, "VideoEncoder", SpyEncoder)
+
+        converter = self._converter()
+        converter._initialize_encoder(1920, 1080, pixel_aspect=1.0)
+        converter._initialize_encoder(1920, 1080, pixel_aspect=2.0)
+
+        assert calls[0][1] == {}
+        assert calls[1][1] == {"pixel_aspect": 2.0}
+
+    def test_configure_color_converter_wires_ocio_and_grade(self, monkeypatch) -> None:
+        """_configure_color_converter should promote to OCIO and pass grade parameters."""
+        captured: list[tuple[tuple, dict]] = []
+
+        class SpyColorConverter:
+            def __init__(self, *args, **kwargs) -> None:
+                captured.append((args, kwargs))
+
+        monkeypatch.setattr(converter_module, "ColorSpaceConverter", SpyColorConverter)
+
+        converter = SequenceConverter(
+            ConversionConfig(
+                input_pattern="render.%04d.exr",
+                output_path="output.mp4",
+                fps=24.0,
+                ocio_config_path="/studio/config.ocio",
+                ocio_display="sRGB",
+                ocio_view="ACES 1.0 - SDR Video",
+                ocio_output_space="Output - sRGB",
+                explicit_input_color_space="ACEScg",
+                exposure=1.5,
+                gamma=2.2,
+            )
+        )
+
+        input_space = converter._configure_color_converter(None)
+
+        assert input_space == "ACEScg"
+        assert len(captured) == 1
+        args, kwargs = captured[0]
+        assert args == (ColorSpacePreset.OCIO_CONVERSION,)
+        assert kwargs == {
+            "ocio_config_path": "/studio/config.ocio",
+            "ocio_display": "sRGB",
+            "ocio_view": "ACES 1.0 - SDR Video",
+            "ocio_output_space": "Output - sRGB",
+            "exposure": 1.5,
+            "gamma": 2.2,
+        }
 
 
 class TestSequenceConverterProgress:

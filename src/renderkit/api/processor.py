@@ -3,7 +3,14 @@
 import logging
 from typing import Optional
 
-from renderkit.core.config import ContactSheetConfig, ConversionConfig, ConversionConfigBuilder
+from renderkit.core.config import (
+    BurnInConfig,
+    ContactSheetConfig,
+    ConversionConfig,
+    ConversionConfigBuilder,
+    SlateConfig,
+    WatermarkConfig,
+)
 from renderkit.core.converter import SequenceConverter
 from renderkit.core.ffmpeg_utils import ensure_ffmpeg_env
 from renderkit.logging_utils import setup_logging
@@ -37,6 +44,15 @@ class RenderKit:
         contact_sheet: bool = False,
         contact_sheet_config: Optional[ContactSheetConfig] = None,
         show_progress: Optional[bool] = None,
+        ocio_config_path: Optional[str] = None,
+        input_space: Optional[str] = None,
+        display: Optional[str] = None,
+        view: Optional[str] = None,
+        exposure: float = 0.0,
+        gamma: float = 1.0,
+        burnin_config: Optional[BurnInConfig] = None,
+        slate_config: Optional[SlateConfig] = None,
+        watermark_config: Optional[WatermarkConfig] = None,
     ) -> None:
         """Convert an EXR sequence to MP4 video.
 
@@ -53,8 +69,19 @@ class RenderKit:
             layer: Optional EXR layer to extract (default: None)
             start_frame: Start frame number (optional)
             end_frame: End frame number (optional)
+            contact_sheet: Whether to generate a multi-AOV contact sheet
+            contact_sheet_config: Configuration for contact sheet layout
             show_progress: Whether to show the tqdm progress bar. When omitted, progress is shown
                 only when stderr is interactive.
+            ocio_config_path: Optional explicit OpenColorIO config file path
+            input_space: Optional explicit input color space name
+            display: Optional OCIO display name
+            view: Optional OCIO view name
+            exposure: Exposure adjustment in stops (default: 0.0)
+            gamma: Display gamma adjustment (default: 1.0)
+            burnin_config: Optional burn-in overlay configuration
+            slate_config: Optional intro slate frame configuration
+            watermark_config: Optional confidential/tiled watermark configuration
 
         Example:
             >>> processor = RenderKit()
@@ -93,6 +120,25 @@ class RenderKit:
 
         if contact_sheet:
             config.with_contact_sheet(True, contact_sheet_config)
+
+        if any(value is not None for value in (ocio_config_path, input_space, display, view)):
+            config.with_ocio(
+                config_path=ocio_config_path,
+                input_space=input_space,
+                display=display,
+                view=view,
+            )
+
+        config.with_grade(exposure=exposure, gamma=gamma)
+
+        if burnin_config is not None:
+            config.with_burnin(burnin_config)
+
+        if slate_config is not None:
+            config.with_slate(slate_config)
+
+        if watermark_config is not None:
+            config.with_watermark(watermark_config)
 
         conversion_config = config.build()
         converter = SequenceConverter(conversion_config)

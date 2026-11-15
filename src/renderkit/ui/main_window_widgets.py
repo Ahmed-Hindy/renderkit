@@ -1,5 +1,7 @@
 """Shared UI widgets for the RenderKit main window."""
 
+from typing import Any
+
 from renderkit.ui.qt_compat import (
     QComboBox,
     QDoubleSpinBox,
@@ -14,27 +16,30 @@ from renderkit.ui.qt_compat import (
     Qt,
     Signal,
     qt_enum,
+    resolve_enum_member,
 )
 
 COMBO_POPUP_OBJECT_NAME = "ComboBoxPopup"
 _QT_LEFT_BUTTON = qt_enum("MouseButton", "LeftButton")
-try:
-    MOUSE_MOVE_EVENT = QEvent.Type.MouseMove
-except AttributeError:
-    MOUSE_MOVE_EVENT = QEvent.MouseMove
+MOUSE_MOVE_EVENT = resolve_enum_member(QEvent, "Type", "MouseMove")
+_POLICY_EXPANDING = resolve_enum_member(QSizePolicy, "Policy", "Expanding")
+_POLICY_FIXED = resolve_enum_member(QSizePolicy, "Policy", "Fixed")
+_ADJUST_TO_MIN_CONTENTS = resolve_enum_member(
+    QComboBox, "SizeAdjustPolicy", "AdjustToMinimumContentsLengthWithIcon"
+)
 
 
 class NoWheelSpinBox(QSpinBox):
     """Spin box that ignores wheel events unless focused."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         line_edit = self.lineEdit()
         if line_edit is not None:
             line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         if not self.hasFocus():
             event.ignore()
             return
@@ -44,14 +49,14 @@ class NoWheelSpinBox(QSpinBox):
 class NoWheelDoubleSpinBox(QDoubleSpinBox):
     """Double spin box that ignores wheel events unless focused."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         line_edit = self.lineEdit()
         if line_edit is not None:
             line_edit.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         if not self.hasFocus():
             event.ignore()
             return
@@ -66,11 +71,11 @@ class ComboPopupView(QListView):
             self._highlight_index_at_event(event)
         return super().viewportEvent(event)
 
-    def mouseMoveEvent(self, event) -> None:
+    def mouseMoveEvent(self, event: Any) -> None:
         self._highlight_index_at_event(event)
         super().mouseMoveEvent(event)
 
-    def _highlight_index_at_event(self, event) -> None:
+    def _highlight_index_at_event(self, event: Any) -> None:
         position = event.position().toPoint() if hasattr(event, "position") else event.pos()
         index = self.indexAt(position)
         if index.isValid():
@@ -80,18 +85,14 @@ class ComboPopupView(QListView):
 class NoWheelComboBox(QComboBox):
     """Combo box that ignores wheel events unless focused."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.setView(ComboPopupView(self))
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.setMinimumWidth(0)
         self._configure_popup_view()
-        size_adjust_policy = getattr(QComboBox, "SizeAdjustPolicy", None)
-        if size_adjust_policy is not None:
-            self.setSizeAdjustPolicy(size_adjust_policy.AdjustToMinimumContentsLengthWithIcon)
-        else:
-            self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setSizeAdjustPolicy(_ADJUST_TO_MIN_CONTENTS)
         self.setMinimumContentsLength(12)
         line_edit = self.lineEdit()
         if line_edit is not None:
@@ -105,7 +106,7 @@ class NoWheelComboBox(QComboBox):
         if viewport is not None:
             viewport.setMouseTracking(True)
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         if not self.hasFocus():
             event.ignore()
             return
@@ -115,13 +116,13 @@ class NoWheelComboBox(QComboBox):
 class NoWheelSlider(QSlider):
     """Slider that ignores wheel events unless focused."""
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(_POLICY_EXPANDING, _POLICY_FIXED)
         self.setMinimumWidth(0)
 
-    def wheelEvent(self, event) -> None:
+    def wheelEvent(self, event: Any) -> None:
         if not self.hasFocus():
             event.ignore()
             return
@@ -131,7 +132,7 @@ class NoWheelSlider(QSlider):
 class JumpToClickSlider(NoWheelSlider):
     """Slider that jumps to the clicked position."""
 
-    def mousePressEvent(self, event) -> None:
+    def mousePressEvent(self, event: Any) -> None:
         if event.button() == _QT_LEFT_BUTTON:
             option = QStyleOptionSlider()
             self.initStyleOption(option)
@@ -165,7 +166,7 @@ class JumpToClickSlider(NoWheelSlider):
                 self.maximum(),
                 int(pos - slider_min),
                 span,
-                option.upsideDown,
+                bool(getattr(option, "upsideDown", False)),
             )
             self.setValue(value)
         super().mousePressEvent(event)

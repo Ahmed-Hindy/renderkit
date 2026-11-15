@@ -2,13 +2,16 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from renderkit.core import sequence_replacement
 from renderkit.core.sequence_replacement import (
     find_exr_sequences,
     find_replacement_mp4,
     replace_sequence_with_mp4,
+    verify_mp4_readable,
 )
 from renderkit.exceptions import SequenceReplacementError
 
@@ -161,3 +164,95 @@ def test_find_replacement_mp4_matches_nested_batch_convert_name(tmp_path: Path) 
     )
 
     assert replacement_path == tmp_path / "_review_mp4s" / "shot_a_render.mp4"
+
+
+def test_verify_mp4_readable_matches_expected_nb_read_frames(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """verify_mp4_readable passes when ffprobe nb_read_frames matches expected_frames."""
+    mp4_path = tmp_path / "render.mp4"
+    mp4_path.write_bytes(b"mp4")
+    captured_cmd: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        payload = {"streams": [{"nb_read_frames": "3"}], "format": {"duration": "0.125"}}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(sequence_replacement, "get_ffprobe_exe", lambda: "ffprobe")
+    monkeypatch.setattr(sequence_replacement.subprocess, "run", fake_run)
+
+    verify_mp4_readable(mp4_path, expected_frames=3)
+
+    assert "-count_frames" in captured_cmd
+    assert "stream=nb_read_frames,nb_frames:format=duration" in captured_cmd
+
+
+def test_verify_mp4_readable_rejects_mismatched_nb_read_frames(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """verify_mp4_readable raises SequenceReplacementError on frame count mismatch."""
+    mp4_path = tmp_path / "render.mp4"
+    mp4_path.write_bytes(b"mp4")
+
+    def fake_run(cmd, **kwargs):
+        payload = {"streams": [{"nb_read_frames": "2"}], "format": {"duration": "0.083"}}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(sequence_replacement, "get_ffprobe_exe", lambda: "ffprobe")
+    monkeypatch.setattr(sequence_replacement.subprocess, "run", fake_run)
+
+    with pytest.raises(SequenceReplacementError, match="expected 3, got 2"):
+        verify_mp4_readable(mp4_path, expected_frames=3)
+
+
+def test_verify_mp4_readable_rejects_missing_or_non_integer_frame_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """verify_mp4_readable rejects missing or non-integer stream frame counts."""
+    mp4_path = tmp_path / "render.mp4"
+    mp4_path.write_bytes(b"mp4")
+
+    def fake_run_missing(cmd, **kwargs):
+        payload = {"streams": [{}]}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(sequence_replacement, "get_ffprobe_exe", lambda: "ffprobe")
+    monkeypatch.setattr(sequence_replacement.subprocess, "run", fake_run_missing)
+
+    with pytest.raises(SequenceReplacementError, match="missing or invalid"):
+        verify_mp4_readable(mp4_path, expected_frames=3)
+
+    def fake_run_bad_int(cmd, **kwargs):
+        payload = {"streams": [{"nb_read_frames": "N/A"}]}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(sequence_replacement.subprocess, "run", fake_run_bad_int)
+
+    with pytest.raises(SequenceReplacementError, match="not an integer"):
+        verify_mp4_readable(mp4_path, expected_frames=3)
+
+
+def test_replace_sequence_default_verifier_checks_source_frame_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """replace_sequence_with_mp4 passes source frame count to default verify_mp4_readable."""
+    frames = _write_sequence(tmp_path, count=4)
+    mp4_path = tmp_path / "render.mp4"
+    mp4_path.write_bytes(b"mp4")
+
+    def fake_run(cmd, **kwargs):
+        payload = {"streams": [{"nb_read_frames": "3"}]}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(sequence_replacement, "get_ffprobe_exe", lambda: "ffprobe")
+    monkeypatch.setattr(sequence_replacement.subprocess, "run", fake_run)
+
+    with pytest.raises(SequenceReplacementError, match="expected 4, got 3"):
+        replace_sequence_with_mp4(
+            str(tmp_path / "render.%04d.exr"),
+            mp4_path,
+            delete_source=True,
+        )
+
+    assert all(path.exists() for path in frames)

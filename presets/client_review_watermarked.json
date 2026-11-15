@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "prefetch_workers": 2,
+  "fps": 24.0,
+  "color_space_preset": "ocio_conversion",
+  "width": null,
+  "height": null,
+  "codec": "libx264",
+  "bitrate": null,
+  "quality": 7,
+  "layer": null,
+  "start_frame": null,
+  "end_frame": null,
+  "explicit_input_color_space": "ACES - ACEScg",
+  "ocio_config_path": null,
+  "ocio_display": null,
+  "ocio_view": null,
+  "ocio_output_space": null,
+  "exposure": 0.0,
+  "gamma": 1.0,
+  "burnin_config": {
+    "elements": [
+      {
+        "text_template": "{shot}",
+        "x": 20,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "left",
+        "zone": "top_left"
+      },
+      {
+        "text_template": "{date}",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.85, 0.85, 0.85],
+        "alignment": "right",
+        "zone": "top_right"
+      },
+      {
+        "text_template": "Prepared by: {user}",
+        "x": 20,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.85, 0.85, 0.85],
+        "alignment": "left",
+        "zone": "bottom_left"
+      },
+      {
+        "text_template": "Frame: {frame}",
+        "x": 0,
+        "y": 20,
+        "font": "",
+        "font_size": 18,
+        "color": [0.95, 0.95, 0.95],
+        "alignment": "right",
+        "zone": "bottom_right"
+      }
+    ],
+    "use_background": true,
+    "background_opacity": 35
+  },
+  "contact_sheet_mode": false,
+  "contact_sheet_config": null,
+  "slate_config": {
+    "enabled": true,
+    "title": "Client Review",
+    "show": "",
+    "shot": "",
+    "artist": "",
+    "notes": "Confidential - Do Not Distribute",
+    "background_color": [0.06, 0.06, 0.08, 1.0]
+  },
+  "watermark_config": {
+    "text": "CONFIDENTIAL - {user}",
+    "opacity": 25,
+    "font_size": 36,
+    "tiled": true,
+    "spacing": 240
+  }
+}

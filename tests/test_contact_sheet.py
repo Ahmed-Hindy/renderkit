@@ -203,3 +203,121 @@ def test_contact_sheet_layer_failure_raises(tmp_path):
 
     with pytest.raises(ImageReadError, match="Failed to read layer 'broken'"):
         generator.composite_layers(tmp_path / "dummy.exr")
+
+
+def test_prepare_frame_buffer_contact_sheet_renders_labels_after_color_conversion(tmp_path) -> None:
+    """Contact sheet labels should be rendered after color conversion at pure white (1, 1, 1)."""
+    try:
+        import numpy as np
+        import OpenImageIO as oiio
+    except ImportError:
+        pytest.skip("OpenImageIO not available")
+
+    from renderkit.processing.color_space import ColorSpaceConverter, ColorSpacePreset
+    from renderkit.processing.frame_pipeline import FramePreparationOptions, prepare_frame_buffer
+    from renderkit.processing.scaler import ImageScaler
+
+    class FakeReader:
+        def get_layers(self, path):
+            return ["beauty"]
+
+        def read_imagebuf(self, path, layer=None, layer_map=None):
+            spec = oiio.ImageSpec(160, 80, 3, oiio.FLOAT)
+            buf = oiio.ImageBuf(spec)
+            oiio.ImageBufAlgo.fill(buf, (0.0, 0.0, 0.0))
+            return buf
+
+    config = (
+        ContactSheetConfigBuilder()
+        .with_columns(1)
+        .with_thumbnail_width(160)
+        .with_padding(10)
+        .with_labels(True, font_size=16)
+        .build()
+    )
+    generator = ContactSheetGenerator(config, reader=FakeReader())
+
+    # Wrap color_converter to verify labels are not on the buffer during color conversion
+    inner_converter = ColorSpaceConverter(ColorSpacePreset.LINEAR_TO_SRGB)
+    seen_during_color: list[float] = []
+
+    class SpyColorConverter:
+        def convert_buf(self, buf, input_space=None):
+            pixels = buf.get_pixels(oiio.FLOAT)
+            label_region = pixels[10 + 80 :, :, :]
+            seen_during_color.append(float(np.max(label_region)))
+            return inner_converter.convert_buf(buf, input_space=input_space)
+
+    prepared = prepare_frame_buffer(
+        FramePreparationOptions(
+            frame_path=tmp_path / "beauty.0001.exr",
+            frame_num=1,
+            output_width=None,
+            output_height=None,
+            source_width=None,
+            source_height=None,
+            scaler=ImageScaler(),
+            input_space=None,
+            color_converter=SpyColorConverter(),
+            contact_sheet_generator=generator,
+            contact_sheet_config=config,
+            contact_sheet_enabled=True,
+        )
+    )
+
+    # During color conversion, label region had only background color (0.1), no label text (1.0)
+    assert seen_during_color == [pytest.approx(0.1, abs=1e-5)]
+
+    result_pixels = prepared.buf.get_pixels(oiio.FLOAT)
+    label_region = result_pixels[10 + 80 :, :, :]
+    max_rgb = np.max(label_region, axis=(0, 1))
+    np.testing.assert_allclose(max_rgb, (1.0, 1.0, 1.0), atol=1e-5)
+
+
+def test_prepare_frame_buffer_scales_before_color_conversion(tmp_path) -> None:
+    """Non-contact-sheet frames should scale in scene-linear before color conversion."""
+    try:
+        import OpenImageIO as oiio
+    except ImportError:
+        pytest.skip("OpenImageIO not available")
+
+    from renderkit.processing.frame_pipeline import FramePreparationOptions, prepare_frame_buffer
+    from renderkit.processing.scaler import ImageScaler
+
+    events: list[tuple[str, int, int]] = []
+
+    class FakeReader:
+        def read_imagebuf(self, path, layer=None, layer_map=None):
+            spec = oiio.ImageSpec(64, 32, 3, oiio.FLOAT)
+            buf = oiio.ImageBuf(spec)
+            oiio.ImageBufAlgo.fill(buf, (0.2, 0.2, 0.2))
+            return buf
+
+    class SpyScaler(ImageScaler):
+        def scale_buf(self, buf, width, height):
+            events.append(("scale", width, height))
+            return super().scale_buf(buf, width, height)
+
+    class SpyColorConverter:
+        def convert_buf(self, buf, input_space=None):
+            spec = buf.spec()
+            events.append(("color", spec.width, spec.height))
+            return buf
+
+    prepared = prepare_frame_buffer(
+        FramePreparationOptions(
+            frame_path=tmp_path / "shot.0001.exr",
+            frame_num=1,
+            output_width=32,
+            output_height=16,
+            source_width=64,
+            source_height=32,
+            scaler=SpyScaler(),
+            input_space="linear",
+            color_converter=SpyColorConverter(),
+            reader=FakeReader(),
+        )
+    )
+
+    assert events == [("scale", 32, 16), ("color", 32, 16)]
+    assert prepared.applied_scale == pytest.approx(0.5)

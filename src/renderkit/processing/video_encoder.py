@@ -8,14 +8,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from types import TracebackType
+from typing import Any, Optional
 
 import numpy as np
 import OpenImageIO as oiio
 
-from renderkit.core.ffmpeg_utils import get_ffmpeg_exe, popen_kwargs
+from renderkit.core.ffmpeg_utils import (
+    ffmpeg_supports_filter,
+    get_ffmpeg_exe,
+    parse_ffmpeg_encoders,
+    popen_kwargs,
+    resolve_ffmpeg_for_encoder,
+)
 from renderkit.exceptions import ConfigurationError, VideoEncodingError
-from renderkit.processing.pixels import float_pixels_to_uint8
+from renderkit.processing.pixels import float_pixels_to_uint8, float_pixels_to_uint16
 from renderkit.processing.scaler import ImageScaler
 
 _FFREPORT_ENV_VAR = "FFREPORT"
@@ -35,6 +42,280 @@ _MPEG4_QV_STEP = 2.9
 _MPEG4_QV_DEFAULT = 4
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CodecProfile:
+    """FFmpeg encoding configuration for a codec preset or name."""
+
+    ffmpeg_codec: str
+    pix_fmt_in: str = "rgb24"
+    pix_fmt_out: str = "yuv420p"
+    bit_depth: int = 8
+    needs_alpha: bool = False
+    extra_params: tuple[str, ...] = ()
+    macro_block_size: int = 16
+    container_ext: str = ".mp4"
+
+
+CODEC_PROFILES: dict[str, CodecProfile] = {
+    "libx264": CodecProfile(
+        ffmpeg_codec="libx264",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "h264": CodecProfile(
+        ffmpeg_codec="libx264",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "libx265": CodecProfile(
+        ffmpeg_codec="libx265",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "hevc": CodecProfile(
+        ffmpeg_codec="libx265",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "hevc_10bit": CodecProfile(
+        ffmpeg_codec="libx265",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv420p10le",
+        bit_depth=10,
+        extra_params=("-tag:v", "hvc1"),
+        macro_block_size=16,
+    ),
+    "libx265_10bit": CodecProfile(
+        ffmpeg_codec="libx265",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv420p10le",
+        bit_depth=10,
+        extra_params=("-tag:v", "hvc1"),
+        macro_block_size=16,
+    ),
+    "libaom-av1": CodecProfile(
+        ffmpeg_codec="libaom-av1",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "av1": CodecProfile(
+        ffmpeg_codec="libaom-av1",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "mpeg4": CodecProfile(
+        ffmpeg_codec="mpeg4",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+    ),
+    "prores_proxy": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "0", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores_lt": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "1", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores_422": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "2", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores_hq": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "3", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "3", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores_4444": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgba64le",
+        pix_fmt_out="yuva444p12le",
+        bit_depth=12,
+        needs_alpha=True,
+        extra_params=("-profile:v", "4", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "prores_xq": CodecProfile(
+        ffmpeg_codec="prores_ks",
+        pix_fmt_in="rgba64le",
+        pix_fmt_out="yuva444p12le",
+        bit_depth=12,
+        needs_alpha=True,
+        extra_params=("-profile:v", "5", "-vendor", "apl0"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "dnxhr_hq": CodecProfile(
+        ffmpeg_codec="dnxhd",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv422p",
+        bit_depth=8,
+        extra_params=("-profile:v", "dnxhr_hq"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "dnxhr_hqx": CodecProfile(
+        ffmpeg_codec="dnxhd",
+        pix_fmt_in="rgb48le",
+        pix_fmt_out="yuv422p10le",
+        bit_depth=10,
+        extra_params=("-profile:v", "dnxhr_hqx"),
+        macro_block_size=2,
+        container_ext=".mov",
+    ),
+    "h264_nvenc": CodecProfile(
+        ffmpeg_codec="h264_nvenc",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        extra_params=("-preset", "p4"),
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "hevc_nvenc": CodecProfile(
+        ffmpeg_codec="hevc_nvenc",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        extra_params=("-preset", "p4"),
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "h264_qsv": CodecProfile(
+        ffmpeg_codec="h264_qsv",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        extra_params=("-preset", "medium"),
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "hevc_qsv": CodecProfile(
+        ffmpeg_codec="hevc_qsv",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        extra_params=("-preset", "medium"),
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "h264_videotoolbox": CodecProfile(
+        ffmpeg_codec="h264_videotoolbox",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "hevc_videotoolbox": CodecProfile(
+        ffmpeg_codec="hevc_videotoolbox",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+    "h264_vaapi": CodecProfile(
+        ffmpeg_codec="h264_vaapi",
+        pix_fmt_in="rgb24",
+        pix_fmt_out="yuv420p",
+        bit_depth=8,
+        macro_block_size=16,
+        container_ext=".mp4",
+    ),
+}
+
+_LEGACY_CODEC_ALIASES: dict[str, str] = {
+    "avc1": "libx264",
+    "mp4v": "mpeg4",
+    "XVID": "mpeg4",
+}
+
+_FALLBACK_ELIGIBLE_CODECS = {
+    "libx264",
+    "h264",
+    "avc1",
+    "libx265",
+    "hevc",
+    "libaom-av1",
+    "av1",
+    "mpeg4",
+    "mp4v",
+    "XVID",
+    "h264_nvenc",
+    "hevc_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+    "h264_videotoolbox",
+    "hevc_videotoolbox",
+    "h264_vaapi",
+}
+
+
+def get_codec_profile(codec: str) -> CodecProfile:
+    """Resolve a RenderKit codec name or legacy alias to a CodecProfile.
+
+    Args:
+        codec: Codec identifier or alias (e.g., ``'libx264'``, ``'prores_422'``, ``'h264_nvenc'``).
+
+    Returns:
+        Matching :class:`CodecProfile` or a default profile wrapping ``codec``.
+    """
+    mapped = _LEGACY_CODEC_ALIASES.get(codec, codec)
+    if mapped in CODEC_PROFILES:
+        return CODEC_PROFILES[mapped]
+    lowered = mapped.lower()
+    if lowered in CODEC_PROFILES:
+        return CODEC_PROFILES[lowered]
+    return CodecProfile(ffmpeg_codec=mapped)
+
+
+def _resolve_codec_profile(codec: str) -> CodecProfile:
+    return get_codec_profile(codec)
 
 
 @dataclass(frozen=True)
@@ -72,9 +353,10 @@ def _last_nonempty_line(text: str) -> Optional[str]:
     return None
 
 
-def _probe_available_encoders() -> EncoderProbeResult:
+def _probe_available_encoders(ffmpeg_exe: Optional[str] = None) -> EncoderProbeResult:
+    exe = ffmpeg_exe or get_ffmpeg_exe()
     try:
-        cmd = [get_ffmpeg_exe(), "-hide_banner", "-encoders"]
+        cmd = [exe, "-hide_banner", "-encoders"]
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -92,19 +374,7 @@ def _probe_available_encoders() -> EncoderProbeResult:
             error = f"{error}: {output_tail}"
         return _probe_failure_result(error)
 
-    encoders: set[str] = set()
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("Encoders:") or line.startswith("-"):
-            continue
-        if not line[0].isalpha() or len(line) < 2:
-            continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        if parts[0].startswith("V"):
-            encoders.add(parts[1])
-    return EncoderProbeResult(frozenset(encoders))
+    return EncoderProbeResult(parse_ffmpeg_encoders(text))
 
 
 @lru_cache(maxsize=1)
@@ -112,15 +382,37 @@ def _cached_encoder_probe_result() -> EncoderProbeResult:
     return _probe_available_encoders()
 
 
+@lru_cache(maxsize=16)
+def _cached_encoder_probe_for_exe(ffmpeg_exe: str) -> EncoderProbeResult:
+    return _probe_available_encoders(ffmpeg_exe)
+
+
 def get_encoder_probe_result() -> EncoderProbeResult:
     return _cached_encoder_probe_result()
+
+
+_UNPATCHED_GET_ENCODER_PROBE_RESULT = get_encoder_probe_result
 
 
 def get_available_encoders() -> set[str]:
     return set(get_encoder_probe_result().encoders)
 
 
-def select_available_encoder(requested: str, available: set[str]) -> tuple[str, Optional[str]]:
+def select_available_encoder(
+    requested: str,
+    available: set[str],
+    logger: Any = None,
+) -> tuple[str, Optional[str]]:
+    """Select the requested encoder if available or a compatible software fallback.
+
+    Args:
+        requested: Requested FFmpeg encoder name.
+        available: Set of encoder names reported by FFmpeg.
+        logger: Optional logger instance to emit a warning when falling back.
+
+    Returns:
+        Tuple of ``(selected_encoder, warning_message_or_none)``.
+    """
     if not available or requested in available:
         return requested, None
 
@@ -129,14 +421,38 @@ def select_available_encoder(requested: str, available: set[str]) -> tuple[str, 
         "libx265": ["libaom-av1", "mpeg4"],
         "libaom-av1": ["libx265", "mpeg4"],
         "mpeg4": ["libx265", "libaom-av1"],
+        "hevc_nvenc": ["libx265", "libaom-av1", "mpeg4"],
+        "hevc_qsv": ["libx265", "libaom-av1", "mpeg4"],
+        "hevc_videotoolbox": ["libx265", "libaom-av1", "mpeg4"],
+        "h264_nvenc": ["libx264", "libx265", "libaom-av1", "mpeg4"],
+        "h264_qsv": ["libx264", "libx265", "libaom-av1", "mpeg4"],
+        "h264_videotoolbox": ["libx264", "libx265", "libaom-av1", "mpeg4"],
+        "h264_vaapi": ["libx264", "libx265", "libaom-av1", "mpeg4"],
     }
-    for candidate in fallback_map.get(requested, ["libx265", "libaom-av1", "mpeg4"]):
+    if requested in fallback_map:
+        candidates = fallback_map[requested]
+    elif requested.startswith("hevc_"):
+        candidates = ["libx265", "libaom-av1", "mpeg4"]
+    elif requested.startswith("h264_"):
+        candidates = ["libx264", "libx265", "libaom-av1", "mpeg4"]
+    else:
+        candidates = ["libx265", "libaom-av1", "mpeg4"]
+
+    for candidate in candidates:
         if candidate in available:
-            return candidate, (
+            warning_msg = (
                 f"Requested encoder '{requested}' is unavailable; falling back to '{candidate}'."
             )
+            if logger is not None:
+                logger.warning(warning_msg)
+            return candidate, warning_msg
 
     return requested, None
+
+
+def _build_partial_output_path(output_path: Path) -> Path:
+    """Return a hidden partial output path in the target directory."""
+    return output_path.with_name(f".{output_path.stem}.partial{output_path.suffix}")
 
 
 class _RawFfmpegPipeWriter:
@@ -152,11 +468,13 @@ class _RawFfmpegPipeWriter:
         ffmpeg_params: list[str],
         ffmpeg_log_level: str,
         bitrate: Optional[str],
+        env: Optional[dict[str, str]] = None,
+        ffmpeg_exe: Optional[str] = None,
     ) -> None:
-        ffmpeg_exe = get_ffmpeg_exe()
+        resolved_exe = ffmpeg_exe or get_ffmpeg_exe()
         size_str = f"{width}x{height}"
         self._cmd = [
-            ffmpeg_exe,
+            resolved_exe,
             "-y",
             "-f",
             "rawvideo",
@@ -182,13 +500,17 @@ class _RawFfmpegPipeWriter:
         self._cmd += ffmpeg_params
         self._cmd.append(str(output_path))
         self._cmd_str = " ".join(self._cmd)
+        self._env = env
+        popen_extra: dict[str, Any] = popen_kwargs(prevent_sigint=True)
+        if self._env is not None:
+            popen_extra["env"] = self._env
         try:
             self._process = subprocess.Popen(
                 self._cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=None,
-                **popen_kwargs(prevent_sigint=True),
+                **popen_extra,
             )
         except Exception as exc:
             raise RuntimeError(f"Failed to start FFmpeg: {exc}") from exc
@@ -198,6 +520,8 @@ class _RawFfmpegPipeWriter:
     def append_data(self, frame: np.ndarray) -> None:
         if self._process.poll() is not None:
             raise RuntimeError(f"FFmpeg exited early with code {self._process.returncode}.")
+        if self._process.stdin is None:
+            raise RuntimeError("FFmpeg stdin is not available for writing.")
         try:
             self._process.stdin.write(frame.tobytes())
         except Exception as exc:
@@ -205,16 +529,39 @@ class _RawFfmpegPipeWriter:
 
     def close(self) -> None:
         if self._process.poll() is None:
-            try:
-                self._process.stdin.close()
-            except Exception as exc:
-                logger.warning("Error closing FFmpeg stdin: %s", exc)
+            if self._process.stdin is not None:
+                try:
+                    self._process.stdin.close()
+                except Exception as exc:
+                    logger.warning("Error closing FFmpeg stdin: %s", exc)
             self._process.wait()
         if self._process.returncode:
             raise RuntimeError(
                 f"FFmpeg exited with code {self._process.returncode} while finalizing video."
                 f"\n\nFFMPEG COMMAND:\n{self._cmd_str}"
             )
+
+    def abort(self) -> None:
+        """Terminate an active FFmpeg process without waiting for finalization."""
+        if self._process.poll() is not None:
+            return
+        if self._process.stdin is not None:
+            try:
+                self._process.stdin.close()
+            except (OSError, ValueError):
+                pass
+        try:
+            self._process.terminate()
+        except OSError:
+            return
+        try:
+            self._process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                self._process.kill()
+                self._process.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
 
 class VideoEncoder:
@@ -227,39 +574,48 @@ class VideoEncoder:
         codec: str = "libx264",
         bitrate: Optional[int] = None,
         quality: Optional[int] = 10,
-        macro_block_size: int = 16,
+        macro_block_size: Optional[int] = None,
+        pixel_aspect: float = 1.0,
     ) -> None:
         """Initialize video encoder.
 
         Args:
-            output_path: Path to output video file
-            fps: Frame rate
-            codec: Video codec (FFmpeg name like 'libx264', 'libx265', 'libaom-av1')
-            bitrate: Video bitrate in kbps (optional)
-            quality: Video quality (0-10), 10 is best (optional, used only if bitrate is None)
-            macro_block_size: Macro block size for codec compatibility (default: 16)
-                             Frame dimensions will be rounded up to multiples of this value
+            output_path: Path to output video file.
+            fps: Frame rate.
+            codec: Video codec or profile name (e.g. 'libx264', 'hevc_10bit', 'prores_hq').
+            bitrate: Video bitrate in kbps (optional).
+            quality: Video quality (0-10), 10 is best (optional, used only if bitrate is None).
+            macro_block_size: Macro block size for codec compatibility (defaults to codec profile).
+                Frame dimensions will be rounded up to multiples of this value.
+            pixel_aspect: Sample/pixel aspect ratio (must be > 0).
         """
         if quality is not None and not 0 <= quality <= _QUALITY_MAX:
             raise ConfigurationError("Quality must be between 0 and 10")
+        if isinstance(pixel_aspect, bool) or pixel_aspect <= 0:
+            raise ConfigurationError("Pixel aspect ratio must be positive")
 
         self.output_path = output_path.absolute()
+        self._partial_output_path = _build_partial_output_path(self.output_path)
         self.fps = fps
         self.codec = codec
+        self._profile = _resolve_codec_profile(codec)
         self.bitrate = bitrate
         self.quality = quality
-        self.macro_block_size = macro_block_size
-        self._writer = None
+        self.macro_block_size = (
+            self._profile.macro_block_size if macro_block_size is None else macro_block_size
+        )
+        self.pixel_aspect = float(pixel_aspect)
+        self._writer: Optional[_RawFfmpegPipeWriter] = None
         self._width: Optional[int] = None
         self._height: Optional[int] = None
         self._adjusted_width: Optional[int] = None
         self._adjusted_height: Optional[int] = None
         self._ffmpeg_report_path: Optional[Path] = None
-        self._ffreport_prev: Optional[str] = None
-        self._ffreport_set: bool = False
+        self._ffmpeg_env: Optional[dict[str, str]] = None
 
     def _configure_ffmpeg_report(self) -> Optional[Path]:
         """Enable ffmpeg report logging (on by default)."""
+        self._ffmpeg_env = None
         value = os.environ.get("RENDERKIT_FFMPEG_LOG", "1")
         if value.lower() in {"0", "false", "no", "off"}:
             return None
@@ -270,25 +626,14 @@ class VideoEncoder:
             path = Path(value).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        if _FFREPORT_ENV_VAR in os.environ:
-            self._ffreport_prev = os.environ[_FFREPORT_ENV_VAR]
-        else:
-            self._ffreport_prev = None
         escaped_path = _escape_ffreport_path(path)
-        os.environ[_FFREPORT_ENV_VAR] = (
-            f"file={escaped_path}:level={_FFMPEG_REPORT_VERBOSITY_LEVEL}"
-        )
-        self._ffreport_set = True
+        env = os.environ.copy()
+        env[_FFREPORT_ENV_VAR] = f"file={escaped_path}:level={_FFMPEG_REPORT_VERBOSITY_LEVEL}"
+        self._ffmpeg_env = env
         return path
 
     def _restore_ffmpeg_report_env(self) -> None:
-        if not self._ffreport_set:
-            return
-        if self._ffreport_prev is None:
-            os.environ.pop(_FFREPORT_ENV_VAR, None)
-        else:
-            os.environ[_FFREPORT_ENV_VAR] = self._ffreport_prev
-        self._ffreport_set = False
+        self._ffmpeg_env = None
 
     def _read_ffmpeg_report_tail(
         self, max_lines: int = _FFMPEG_REPORT_MAX_TAIL_LINES
@@ -328,8 +673,16 @@ class VideoEncoder:
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - close video writer."""
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Context manager exit - abort on error, otherwise close video writer."""
+        if exc_type is not None:
+            self.abort()
+            return
         self.close()
 
     def initialize(self, width: int, height: int) -> None:
@@ -359,19 +712,37 @@ class VideoEncoder:
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Map UI/OpenCV-style codecs to FFmpeg codecs
-        codec_map = {
-            "avc1": "libx264",
-            "hevc": "libx265",
-            "mp4v": "mpeg4",
-            "XVID": "mpeg4",
-        }
-        ffmpeg_codec = codec_map.get(self.codec, self.codec)
+        # Resolve codec profile and verify FFmpeg encoder availability
+        profile = self._profile
+        ffmpeg_codec = profile.ffmpeg_codec
+        default_exe = get_ffmpeg_exe()
+        resolved_ffmpeg_exe = default_exe
         encoder_probe = get_encoder_probe_result()
+        _fallback_eligible = self.codec in _FALLBACK_ELIGIBLE_CODECS or (
+            profile.ffmpeg_codec in _FALLBACK_ELIGIBLE_CODECS
+            and profile.bit_depth == 8
+            and not profile.extra_params
+        )
+        if (
+            get_encoder_probe_result is _UNPATCHED_GET_ENCODER_PROBE_RESULT
+            and encoder_probe.succeeded
+            and ffmpeg_codec not in encoder_probe.encoders
+            and not _fallback_eligible
+        ):
+            candidate_exe = resolve_ffmpeg_for_encoder(default_exe, ffmpeg_codec)
+            if candidate_exe != default_exe:
+                resolved_ffmpeg_exe = candidate_exe
+                encoder_probe = _cached_encoder_probe_for_exe(resolved_ffmpeg_exe)
+
         available_encoders = set(encoder_probe.encoders)
-        ffmpeg_codec, fallback_warning = select_available_encoder(ffmpeg_codec, available_encoders)
-        if fallback_warning:
-            logger.warning(fallback_warning)
+        if _fallback_eligible:
+            ffmpeg_codec, fallback_warning = select_available_encoder(
+                ffmpeg_codec, available_encoders
+            )
+            if fallback_warning:
+                logger.warning(fallback_warning)
+                profile = _resolve_codec_profile(ffmpeg_codec)
+                self._profile = profile
         if encoder_probe.failed:
             logger.warning(
                 "Skipping FFmpeg encoder availability validation because probing failed: %s. "
@@ -407,6 +778,16 @@ class VideoEncoder:
             "-colorspace",
             "bt709",
         ]
+        if profile.extra_params:
+            ffmpeg_params.extend(profile.extra_params)
+        if abs(self.pixel_aspect - 1.0) > 1e-4:
+            if ffmpeg_supports_filter(resolved_ffmpeg_exe, "setsar") is False:
+                display_aspect = (self._adjusted_width * self.pixel_aspect) / max(
+                    1, self._adjusted_height
+                )
+                ffmpeg_params.extend(["-aspect", f"{display_aspect:.6f}"])
+            else:
+                ffmpeg_params.extend(["-vf", f"setsar={self.pixel_aspect:.6f}"])
 
         bitrate: Optional[str] = None
 
@@ -453,21 +834,60 @@ class VideoEncoder:
             ffmpeg_params.extend(["-q:v", f"{int(qv)}"])
             logger.debug(f"MPEG-4 tuning: q:v={int(qv)}")
 
+        elif ffmpeg_codec in ("h264_nvenc", "hevc_nvenc"):
+            cq = (
+                _X26X_CRF_BEST + (_QUALITY_MAX - self.quality) * _X26X_CRF_STEP
+                if self.quality is not None
+                else _X26X_CRF_DEFAULT
+            )
+            ffmpeg_params.extend(["-cq", f"{int(cq)}"])
+            logger.debug("%s tuning: cq=%s", ffmpeg_codec, int(cq))
+
+        elif ffmpeg_codec in ("h264_qsv", "hevc_qsv"):
+            gq = (
+                _X26X_CRF_BEST + (_QUALITY_MAX - self.quality) * _X26X_CRF_STEP
+                if self.quality is not None
+                else _X26X_CRF_DEFAULT
+            )
+            ffmpeg_params.extend(["-global_quality", f"{int(gq)}"])
+            logger.debug("%s tuning: global_quality=%s", ffmpeg_codec, int(gq))
+
+        elif ffmpeg_codec in ("h264_videotoolbox", "hevc_videotoolbox"):
+            qv_vt = 30 + (self.quality if self.quality is not None else 7) * 5
+            ffmpeg_params.extend(["-q:v", f"{int(qv_vt)}"])
+            logger.debug("%s tuning: q:v=%s", ffmpeg_codec, int(qv_vt))
+
+        elif ffmpeg_codec == "h264_vaapi":
+            qp = (
+                _X26X_CRF_BEST + (_QUALITY_MAX - self.quality) * _X26X_CRF_STEP
+                if self.quality is not None
+                else _X26X_CRF_DEFAULT
+            )
+            ffmpeg_params.extend(["-qp", f"{int(qp)}"])
+            logger.debug("%s tuning: qp=%s", ffmpeg_codec, int(qp))
+
         # Apply final FFmpeg parameters
         if self._ffmpeg_report_path is not None:
             ffmpeg_params.extend(["-report", "-loglevel", "info"])
+        self._partial_output_path.unlink(missing_ok=True)
         try:
+            writer_kwargs: dict[str, Any] = {}
+            if self._ffmpeg_env is not None:
+                writer_kwargs["env"] = self._ffmpeg_env
+            if resolved_ffmpeg_exe != default_exe:
+                writer_kwargs["ffmpeg_exe"] = resolved_ffmpeg_exe
             self._writer = _RawFfmpegPipeWriter(
-                self.output_path,
+                self._partial_output_path,
                 self._adjusted_width,
                 self._adjusted_height,
                 self.fps,
                 ffmpeg_codec,
-                "rgb24",
-                "yuv420p",
+                profile.pix_fmt_in,
+                profile.pix_fmt_out,
                 ffmpeg_params,
                 ffmpeg_log_level,
                 bitrate,
+                **writer_kwargs,
             )
             logger.debug(
                 f"Initialized FFmpeg pipe writer: {width}x{height} @ {self.fps}fps, "
@@ -476,6 +896,7 @@ class VideoEncoder:
             )
         except RuntimeError as e:
             msg = str(e)
+            self._partial_output_path.unlink(missing_ok=True)
             self._restore_ffmpeg_report_env()
             if "ffmpeg" in msg.lower():
                 raise VideoEncodingError(
@@ -483,12 +904,13 @@ class VideoEncoder:
                 ) from e
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
         except Exception as e:
+            self._partial_output_path.unlink(missing_ok=True)
             self._restore_ffmpeg_report_env()
             raise VideoEncodingError(f"Failed to initialize video encoder: {e}") from e
 
     def write_frame(self, buf: oiio.ImageBuf) -> None:
         """Write an ImageBuf frame to the video."""
-        if self._writer is None:
+        if self._writer is None or self._adjusted_width is None or self._adjusted_height is None:
             raise VideoEncodingError("Video encoder not initialized. Call initialize() first.")
 
         spec = buf.spec()
@@ -509,17 +931,42 @@ class VideoEncoder:
         else:
             frame = pixels
 
-        frame = float_pixels_to_uint8(frame)
+        if self._profile.bit_depth > 8:
+            frame = float_pixels_to_uint16(frame)
+            opaque_alpha = 65535
+        else:
+            frame = float_pixels_to_uint8(frame)
+            opaque_alpha = 255
 
-        # FFmpeg rawvideo expects RGB (standard)
-        # If RGBA, drop alpha channel
-        if len(frame.shape) == 3 and frame.shape[2] == 4:
-            frame = frame[:, :, :3]
-        elif len(frame.shape) == 3 and frame.shape[2] == 1:
-            frame = np.repeat(frame, 3, axis=2)
-        # If Grayscale, ensure 3D
-        elif len(frame.shape) == 2:
-            frame = np.stack([frame] * 3, axis=-1)
+        if self._profile.needs_alpha:
+            if frame.ndim == 2:
+                alpha = np.full(frame.shape, opaque_alpha, dtype=frame.dtype)
+                frame = np.stack([frame, frame, frame, alpha], axis=-1)
+            elif frame.ndim == 3 and frame.shape[2] == 1:
+                rgb = np.repeat(frame, 3, axis=2)
+                alpha = np.full(
+                    (frame.shape[0], frame.shape[1], 1), opaque_alpha, dtype=frame.dtype
+                )
+                frame = np.concatenate([rgb, alpha], axis=2)
+            elif frame.ndim == 3 and frame.shape[2] == 3:
+                alpha = np.full(
+                    (frame.shape[0], frame.shape[1], 1), opaque_alpha, dtype=frame.dtype
+                )
+                frame = np.concatenate([frame, alpha], axis=2)
+            elif frame.ndim == 3 and frame.shape[2] > 4:
+                frame = frame[:, :, :4]
+        else:
+            # FFmpeg rawvideo expects RGB (standard)
+            # If RGBA, drop alpha channel
+            if frame.ndim == 3 and frame.shape[2] >= 4:
+                frame = frame[:, :, :3]
+            elif frame.ndim == 3 and frame.shape[2] == 1:
+                frame = np.repeat(frame, 3, axis=2)
+            # If Grayscale, ensure 3D
+            elif frame.ndim == 2:
+                frame = np.stack([frame] * 3, axis=-1)
+
+        frame = np.ascontiguousarray(frame)
 
         try:
             self._writer.append_data(frame)
@@ -532,14 +979,17 @@ class VideoEncoder:
             raise VideoEncodingError(f"Failed to write frame to video: {e}") from e
 
     def close(self) -> None:
-        """Close the video writer."""
+        """Close the video writer and promote the partial file on success."""
         try:
             if self._writer is not None:
                 try:
                     self._writer.close()
+                    if self._partial_output_path.exists():
+                        self._partial_output_path.replace(self.output_path)
                     logger.info("Video encoding completed.")
                 except Exception as e:
                     logger.error(f"Error closing video writer: {e}")
+                    self._partial_output_path.unlink(missing_ok=True)
                     report_tail = self._read_ffmpeg_report_tail()
                     if report_tail:
                         raise VideoEncodingError(
@@ -548,6 +998,23 @@ class VideoEncoder:
                     raise VideoEncodingError(f"Failed to finalize video encoding: {e}") from e
                 finally:
                     self._writer = None
+        finally:
+            self._restore_ffmpeg_report_env()
+
+    def abort(self) -> None:
+        """Abort active encoding and discard any partial output file."""
+        try:
+            if self._writer is not None:
+                try:
+                    if hasattr(self._writer, "abort"):
+                        self._writer.abort()
+                    else:
+                        self._writer.close()
+                except Exception as e:
+                    logger.warning("Error aborting video writer: %s", e)
+                finally:
+                    self._writer = None
+            self._partial_output_path.unlink(missing_ok=True)
         finally:
             self._restore_ffmpeg_report_env()
 

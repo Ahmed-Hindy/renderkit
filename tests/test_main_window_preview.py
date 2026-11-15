@@ -4,8 +4,28 @@ from pathlib import Path
 
 import pytest
 
-from renderkit.processing.color_space import ColorSpacePreset
-from renderkit.ui.main_window_preview import build_burnin_config, build_preview_request
+from renderkit.core.config import (
+    VALID_BURNIN_ZONES,
+    BurnInConfig,
+    BurnInElement,
+    ConversionConfig,
+    SlateConfig,
+    WatermarkConfig,
+)
+from renderkit.core.presets import load_preset, save_preset
+from renderkit.exceptions import ConfigurationError
+from renderkit.processing.color_space import ColorSpacePreset, get_bundled_ocio_config_path
+from renderkit.ui.main_window_ocio import (
+    apply_preset_data_to_ui,
+    build_slate_config_from_ui,
+    build_watermark_config_from_ui,
+    container_extension_for_codec,
+)
+from renderkit.ui.main_window_preview import (
+    build_burnin_config,
+    build_preview_request,
+    load_preview_for_frame,
+)
 
 
 class _DummyValue:
@@ -161,3 +181,441 @@ def test_build_burnin_config_can_exclude_layer_template() -> None:
     assert config is not None
     templates = [element.text_template for element in config.elements]
     assert templates == ["Frame: {frame}", "FPS: {fps:.2f}"]
+
+
+class _DummyLineEdit:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def text(self) -> str:
+        return self._text
+
+
+class _DummyPreviewTarget:
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple, dict]] = []
+
+    def load_preview(self, *args, **kwargs) -> None:
+        self.calls.append((args, kwargs))
+
+
+def test_build_preview_request_and_load_forward_ocio_and_grade(tmp_path: Path) -> None:
+    """PreviewRequest and load_preview_for_frame should forward OCIO and grade settings."""
+    sample_path = tmp_path / "render.0001.exr"
+    ui = _DummyWindow(contact_sheet=False, burnin=False)
+    ui.ocio_config_edit = _DummyLineEdit("/path/to/config.ocio")
+    ui.ocio_display_combo = _DummyCombo("ACES")
+    ui.ocio_view_combo = _DummyCombo("sRGB")
+    ui.exposure_spin = _DummyValue(1.5)
+    ui.gamma_spin = _DummyValue(1.25)
+    ui.preview_widget = _DummyPreviewTarget()
+
+    request = load_preview_for_frame(
+        ui,
+        sample_path,
+        preset=ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        scrubbing=False,
+    )
+
+    assert request.ocio_config_path == "/path/to/config.ocio"
+    assert request.ocio_display == "ACES"
+    assert request.ocio_view == "sRGB"
+    assert request.exposure == pytest.approx(1.5)
+    assert request.gamma == pytest.approx(1.25)
+
+    _, kwargs = ui.preview_widget.calls[-1]
+    assert kwargs["ocio_config_path"] == "/path/to/config.ocio"
+    assert kwargs["ocio_display"] == "ACES"
+    assert kwargs["ocio_view"] == "sRGB"
+    assert kwargs["exposure"] == pytest.approx(1.5)
+    assert kwargs["gamma"] == pytest.approx(1.25)
+
+
+def test_build_preview_request_treats_auto_ocio_labels_as_none(tmp_path: Path) -> None:
+    """'(Auto)' OCIO display/view sentinel values should resolve to None."""
+    sample_path = tmp_path / "render.0001.exr"
+    ui = _DummyWindow(contact_sheet=False, burnin=False)
+    ui.ocio_config_edit = _DummyLineEdit("   ")
+    ui.ocio_display_combo = _DummyCombo("(Auto)")
+    ui.ocio_view_combo = _DummyCombo("(Auto)")
+
+    request = build_preview_request(
+        ui,
+        sample_path,
+        preset=ColorSpacePreset.OCIO_CONVERSION,
+        input_space="Linear",
+        scrubbing=False,
+    )
+
+    assert request.ocio_config_path is None
+    assert request.ocio_display is None
+    assert request.ocio_view is None
+
+
+def test_codec_change_switches_auto_output_extension_and_respects_user_edits(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """Auto-generated output paths should switch .mp4/.mov with codec unless user-edited."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    for i in range(1, 3):
+        (tmp_path / f"shot.{i:04d}.exr").touch()
+
+    monkeypatch.setattr("renderkit.ui.main_window.FileInfoWorker.start", lambda self: None)
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    libx264_idx = next(idx for idx, cid in window._codec_map.items() if cid == "libx264")
+    prores_idx = next(idx for idx, cid in window._codec_map.items() if cid == "prores_hq")
+    window.codec_combo.setCurrentIndex(libx264_idx)
+
+    pattern = str(tmp_path / "shot.%04d.exr")
+    window.input_pattern_combo.lineEdit().setText(pattern)
+    window.input_pattern_combo.lineEdit().editingFinished.emit()
+
+    expected_mp4 = str(tmp_path / "shot.mp4")
+    qtbot.waitUntil(lambda: window.output_path_edit.text() == expected_mp4, timeout=2000)
+
+    # Switching to ProRes should auto-switch extension to .mov
+    window.codec_combo.setCurrentIndex(prores_idx)
+    assert window.output_path_edit.text() == str(tmp_path / "shot.mov")
+
+    # Switching back to H.264 should auto-switch extension back to .mp4
+    window.codec_combo.setCurrentIndex(libx264_idx)
+    assert window.output_path_edit.text() == expected_mp4
+
+    # User-edited output path must not be overwritten when codec changes
+    custom_path = str(tmp_path / "custom_dailies.mp4")
+    window.output_path_edit.setText(custom_path)
+    window.codec_combo.setCurrentIndex(prores_idx)
+    assert window.output_path_edit.text() == custom_path
+
+
+def test_run_ui_prepopulates_startup_options(qtbot, qapp, tmp_path: Path, monkeypatch) -> None:
+    """run_ui should accept --open, --layer, --preset, and --ocio startup arguments."""
+    from renderkit.ui import main_window
+
+    for i in range(1, 3):
+        (tmp_path / f"comp.{i:04d}.exr").touch()
+
+    preset_file = tmp_path / "dailies.json"
+    preset_cfg = ConversionConfig(
+        input_pattern="x.%04d.exr",
+        output_path="x.mov",
+        codec="prores_422",
+        exposure=1.5,
+        gamma=1.15,
+    )
+    save_preset(preset_cfg, preset_file)
+    bundled_ocio = str(get_bundled_ocio_config_path())
+
+    class _DummySplash:
+        def show(self) -> None:
+            pass
+
+        def finish(self, _win) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    created_windows = []
+    original_init = main_window.ModernMainWindow.__init__
+
+    def spy_init(self) -> None:
+        original_init(self)
+        created_windows.append(self)
+
+    monkeypatch.setattr(main_window.ModernMainWindow, "__init__", spy_init)
+    monkeypatch.setattr(main_window, "ensure_ffmpeg_env", lambda: None)
+    monkeypatch.setattr(main_window, "create_splash_screen", lambda _v: _DummySplash())
+    monkeypatch.setattr(main_window, "wait_for_minimum_splash_duration", lambda **_kw: None)
+    monkeypatch.setattr(main_window.FileInfoWorker, "start", lambda self: None)
+    monkeypatch.setattr(main_window.ModernMainWindow, "show", lambda self: None)
+    monkeypatch.setattr(qapp, "exec", lambda: 0)
+
+    exit_code = main_window.run_ui(
+        open_path=str(tmp_path / "comp.0001.exr"),
+        layer="diffuse",
+        preset=str(preset_file),
+        ocio_path=bundled_ocio,
+    )
+
+    assert exit_code == 0
+    assert created_windows
+    win = created_windows[0]
+    qtbot.addWidget(win)
+    assert "comp.%04d.exr" in win.input_pattern_combo.currentText()
+    assert win._pending_layer == "diffuse"
+    assert win.ocio_config_edit.text() == bundled_ocio
+    assert win.exposure_spin.value() == pytest.approx(1.5)
+    assert win.gamma_spin.value() == pytest.approx(1.15)
+    assert win._selected_codec_id() == "prores_422"
+
+
+@pytest.mark.parametrize(
+    ("codec_id", "expected_ext"),
+    [
+        ("libx264", ".mp4"),
+        ("libx265", ".mp4"),
+        ("hevc_10bit", ".mp4"),
+        ("libaom-av1", ".mp4"),
+        ("mpeg4", ".mp4"),
+        ("prores_422", ".mov"),
+        ("prores_hq", ".mov"),
+        ("prores_4444", ".mov"),
+        ("dnxhr_hq", ".mov"),
+        ("dnxhr_hqx", ".mov"),
+        ("dnxhd", ".mov"),
+    ],
+)
+def test_container_extension_for_codec_uses_codec_profiles(
+    codec_id: str, expected_ext: str
+) -> None:
+    """Codec container extensions should match video_encoder profiles and dnxhd alias."""
+    assert container_extension_for_codec(codec_id) == expected_ext
+
+
+def test_build_slate_and_watermark_configs_from_ui(qtbot) -> None:
+    """Slate and watermark UI builders should respect enable flags and strict mode."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    assert window.slate_enable_check.isChecked() is False
+    assert window.watermark_enable_check.isChecked() is False
+    assert build_slate_config_from_ui(window) is None
+    assert build_watermark_config_from_ui(window) is None
+
+    window.slate_enable_check.setChecked(True)
+    window.slate_title_edit.setText("  Comp Review  ")
+    window.slate_show_edit.setText("SHOW_A")
+    window.slate_shot_edit.setText("SH010")
+    window.slate_artist_edit.setText("Alex")
+    window.slate_notes_edit.setText("Final grade check")
+
+    slate_cfg = build_slate_config_from_ui(window)
+    assert slate_cfg == SlateConfig(
+        enabled=True,
+        title="Comp Review",
+        show="SHOW_A",
+        shot="SH010",
+        artist="Alex",
+        notes="Final grade check",
+    )
+
+    window.watermark_enable_check.setChecked(True)
+    window.watermark_text_edit.setText("   ")
+    assert build_watermark_config_from_ui(window) is None
+    with pytest.raises(ConfigurationError, match="Watermark text must not be empty"):
+        build_watermark_config_from_ui(window, strict=True)
+
+    window.watermark_text_edit.setText("INTERNAL REVIEW")
+    window.watermark_opacity_spin.setValue(40)
+    window.watermark_tiled_check.setChecked(True)
+
+    watermark_cfg = build_watermark_config_from_ui(window, strict=True)
+    assert watermark_cfg == WatermarkConfig(
+        text="INTERNAL REVIEW",
+        opacity=40,
+        tiled=True,
+    )
+
+
+def test_slate_and_watermark_preset_round_trip_in_ui(qtbot, tmp_path: Path) -> None:
+    """Presets should round-trip slate_config and watermark_config through UI widgets."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    preset_file = tmp_path / "slate_watermark_preset.json"
+    slate_cfg = SlateConfig(
+        enabled=True,
+        title="Lighting Dailies",
+        show="PROJ",
+        shot="SQ02_SH04",
+        artist="Sam",
+        notes="Check rim light",
+    )
+    watermark_cfg = WatermarkConfig(text="CONFIDENTIAL", opacity=35, tiled=True)
+    cfg = ConversionConfig(
+        input_pattern="render.%04d.exr",
+        output_path="out.mp4",
+        slate_config=slate_cfg,
+        watermark_config=watermark_cfg,
+    )
+    save_preset(cfg, preset_file)
+
+    loaded = load_preset(preset_file)
+    apply_preset_data_to_ui(window, loaded)
+
+    assert window.slate_enable_check.isChecked() is True
+    assert window.slate_title_edit.text() == "Lighting Dailies"
+    assert window.slate_show_edit.text() == "PROJ"
+    assert window.slate_shot_edit.text() == "SQ02_SH04"
+    assert window.slate_artist_edit.text() == "Sam"
+    assert window.slate_notes_edit.text() == "Check rim light"
+
+    assert window.watermark_enable_check.isChecked() is True
+    assert window.watermark_text_edit.text() == "CONFIDENTIAL"
+    assert window.watermark_opacity_spin.value() == 35
+    assert window.watermark_tiled_check.isChecked() is True
+
+    built = window._build_conversion_config_from_ui(tmp_path / "out.mp4", "libx264")
+    assert built.slate_config == slate_cfg
+    assert built.watermark_config == watermark_cfg
+
+    # Applying None should uncheck and clear controls
+    apply_preset_data_to_ui(window, {"slate_config": None, "watermark_config": None})
+    assert window.slate_enable_check.isChecked() is False
+    assert window.slate_title_edit.text() == ""
+    assert window.slate_notes_edit.text() == ""
+    assert window.watermark_enable_check.isChecked() is False
+    assert window.watermark_text_edit.text() == ""
+    assert window.watermark_opacity_spin.value() == 25
+    assert window.watermark_tiled_check.isChecked() is False
+
+
+def test_burnin_zone_combo_preset_round_trip_and_multi_zone_preservation(
+    qtbot, tmp_path: Path
+) -> None:
+    """burnin_zone_combo should round-trip single-zone presets and preserve multi-zone presets."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+
+    combo_zones = {
+        window.burnin_zone_combo.itemData(i)
+        for i in range(window.burnin_zone_combo.count())
+        if window.burnin_zone_combo.itemData(i) is not None
+    }
+    assert window.burnin_zone_combo.itemText(0) == "(Auto)"
+    assert window.burnin_zone_combo.itemData(0) is None
+    assert combo_zones == VALID_BURNIN_ZONES
+
+    # Single-zone preset restores burnin_zone_combo and applies that zone on build.
+    single_zone_preset = tmp_path / "single_zone.json"
+    save_preset(
+        ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="out.mp4",
+            burnin_config=BurnInConfig(
+                elements=[
+                    BurnInElement("Frame: {frame}", zone="bottom_right"),
+                    BurnInElement("FPS: {fps:.2f}", zone="bottom_right"),
+                ],
+                background_opacity=40,
+            ),
+        ),
+        single_zone_preset,
+    )
+    apply_preset_data_to_ui(window, load_preset(single_zone_preset))
+    assert window.burnin_zone_combo.currentData() == "bottom_right"
+
+    built_single = build_burnin_config(window, include_layer=True)
+    assert built_single is not None
+    assert [el.zone for el in built_single.elements] == ["bottom_right", "bottom_right"]
+
+    # Multi-zone preset defaults combo to (Auto) while preserving per-element zones.
+    multi_zone_preset = tmp_path / "multi_zone.json"
+    save_preset(
+        ConversionConfig(
+            input_pattern="render.%04d.exr",
+            output_path="out.mp4",
+            burnin_config=BurnInConfig(
+                elements=[
+                    BurnInElement("Frame: {frame}", zone="top_left"),
+                    BurnInElement("Layer: {layer}", zone="top_center"),
+                    BurnInElement("FPS: {fps:.2f}", zone="bottom_right"),
+                ],
+                background_opacity=35,
+            ),
+        ),
+        multi_zone_preset,
+    )
+    apply_preset_data_to_ui(window, load_preset(multi_zone_preset))
+    assert window.burnin_zone_combo.currentData() is None
+
+    built_multi = window._build_conversion_config_from_ui(tmp_path / "out.mp4", "libx264")
+    assert built_multi.burnin_config is not None
+    assert [el.zone for el in built_multi.burnin_config.elements] == [
+        "top_left",
+        "top_center",
+        "bottom_right",
+    ]
+
+    # User changing burnin_zone_combo overrides preserved preset zones.
+    bottom_left_idx = window.burnin_zone_combo.findData("bottom_left")
+    assert bottom_left_idx > 0
+    window.burnin_zone_combo.setCurrentIndex(bottom_left_idx)
+    built_override = build_burnin_config(window, include_layer=True)
+    assert built_override is not None
+    assert [el.zone for el in built_override.elements] == [
+        "bottom_left",
+        "bottom_left",
+        "bottom_left",
+    ]
+
+    # Applying burnin_config=None clears zone selection back to (Auto).
+    apply_preset_data_to_ui(window, {"burnin_config": None})
+    assert window.burnin_enable_check.isChecked() is False
+    assert window.burnin_zone_combo.currentData() is None
+
+
+def test_preview_request_and_load_forward_watermark_slate_and_zone(qtbot, tmp_path: Path) -> None:
+    """ModernMainWindow preview dispatch should forward watermark, slate preview, and burn-in zone."""
+    from renderkit.ui.main_window import ModernMainWindow
+
+    window = ModernMainWindow()
+    qtbot.addWidget(window)
+    target = _DummyPreviewTarget()
+    window.preview_widget = target
+
+    window.burnin_enable_check.setChecked(True)
+    window.burnin_frame_check.setChecked(True)
+    window.burnin_layer_check.setChecked(True)
+    window.burnin_fps_check.setChecked(True)
+    window.burnin_zone_combo.setCurrentIndex(window.burnin_zone_combo.findData("top_right"))
+
+    window.watermark_enable_check.setChecked(True)
+    window.watermark_text_edit.setText("CONFIDENTIAL")
+    window.watermark_opacity_spin.setValue(45)
+    window.watermark_tiled_check.setChecked(True)
+
+    window.slate_enable_check.setChecked(True)
+    assert window.slate_preview_check.isChecked() is False
+    window.slate_preview_check.setChecked(True)
+    window.slate_title_edit.setText("Dailies Card")
+
+    sample_path = tmp_path / "shot.0001.exr"
+    request = load_preview_for_frame(
+        window,
+        sample_path,
+        preset=ColorSpacePreset.OCIO_CONVERSION,
+        input_space="ACEScg",
+        scrubbing=False,
+    )
+
+    assert request.watermark_config == WatermarkConfig(
+        text="CONFIDENTIAL",
+        opacity=45,
+        tiled=True,
+    )
+    assert request.slate_config == SlateConfig(enabled=True, title="Dailies Card")
+    assert request.preview_slate is True
+    assert request.burnin_config is not None
+    assert [el.zone for el in request.burnin_config.elements] == [
+        "top_right",
+        "top_right",
+        "top_right",
+    ]
+
+    _, kwargs = target.calls[-1]
+    assert kwargs["watermark_config"] == request.watermark_config
+    assert kwargs["slate_config"] == request.slate_config
+    assert kwargs["preview_slate"] is True

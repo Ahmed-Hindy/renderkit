@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import shutil
@@ -56,29 +57,47 @@ class SequenceReplacementResult:
         }
 
 
-def verify_mp4_readable(mp4_path: Path) -> None:
-    """Verify that an MP4 exists and can be read by FFprobe.
+def verify_mp4_readable(mp4_path: Path, expected_frames: Optional[int] = None) -> None:
+    """Verify that an MP4 exists, can be read by FFprobe, and optionally matches frame count.
 
     Args:
         mp4_path: MP4 file to verify.
+        expected_frames: Optional expected video frame count to validate via FFprobe.
 
     Raises:
-        SequenceReplacementError: If the MP4 does not exist or FFprobe cannot read it.
+        SequenceReplacementError: If the MP4 does not exist, FFprobe cannot read it,
+            or the decoded frame count does not match ``expected_frames``.
     """
     if not mp4_path.is_file():
         raise SequenceReplacementError(f"Replacement MP4 does not exist: {mp4_path}")
 
     ffprobe_exe = get_ffprobe_exe()
-    command = [
-        ffprobe_exe,
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        str(mp4_path),
-    ]
+    if expected_frames is None:
+        command = [
+            ffprobe_exe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(mp4_path),
+        ]
+    else:
+        command = [
+            ffprobe_exe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames,nb_frames:format=duration",
+            "-of",
+            "json",
+            str(mp4_path),
+        ]
+
     try:
         # FFprobe receives fixed arguments and the MP4 path as a single argv item.
         result = subprocess.run(  # NOSONAR
@@ -95,6 +114,44 @@ def verify_mp4_readable(mp4_path: Path) -> None:
     if result.returncode != 0:
         details = result.stderr.strip() or result.stdout.strip() or "ffprobe returned an error"
         raise SequenceReplacementError(f"Replacement MP4 is not readable: {mp4_path} ({details})")
+
+    if expected_frames is not None:
+        _validate_ffprobe_frame_count(mp4_path, result.stdout, expected_frames)
+
+
+def _validate_ffprobe_frame_count(
+    mp4_path: Path,
+    ffprobe_stdout: str,
+    expected_frames: int,
+) -> None:
+    try:
+        payload = json.loads(ffprobe_stdout)
+    except ValueError as exc:
+        raise SequenceReplacementError(
+            f"Could not parse ffprobe output for {mp4_path}: {exc}"
+        ) from exc
+
+    streams = payload.get("streams") if isinstance(payload, dict) else None
+    if not isinstance(streams, list) or not streams or not isinstance(streams[0], dict):
+        raise SequenceReplacementError(f"Replacement MP4 has no readable video stream: {mp4_path}")
+
+    raw_frames = streams[0].get("nb_read_frames") or streams[0].get("nb_frames")
+    if raw_frames is None or isinstance(raw_frames, (bool, float)):
+        raise SequenceReplacementError(
+            f"Replacement MP4 frame count is missing or invalid: {mp4_path} ({raw_frames!r})"
+        )
+    try:
+        actual_frames = int(raw_frames)
+    except (TypeError, ValueError) as exc:
+        raise SequenceReplacementError(
+            f"Replacement MP4 frame count is not an integer: {mp4_path} ({raw_frames!r})"
+        ) from exc
+
+    if actual_frames != expected_frames:
+        raise SequenceReplacementError(
+            f"Replacement MP4 frame count mismatch for {mp4_path}: "
+            f"expected {expected_frames}, got {actual_frames}"
+        )
 
 
 def replace_sequence_with_mp4(
@@ -133,19 +190,24 @@ def replace_sequence_with_mp4(
     destination_mp4 = sequence.base_path / output_mp4.name
     report_path = audit_report or (sequence.base_path / _DEFAULT_AUDIT_FILENAME)
     _prepare_audit_report(report_path)
+    effective_verifier = (
+        functools.partial(verify_mp4_readable, expected_frames=len(source_frames))
+        if verifier is verify_mp4_readable
+        else verifier
+    )
     verified = _verify_source_mp4_if_needed(
         source_mp4,
         delete_source=delete_source,
         verify=verify,
         dry_run=dry_run,
-        verifier=verifier,
+        verifier=effective_verifier,
     )
     copied, destination_verified = _copy_replacement_mp4(
         source_mp4,
         destination_mp4,
         delete_source=delete_source,
         dry_run=dry_run,
-        verifier=verifier,
+        verifier=effective_verifier,
     )
     verified = verified or destination_verified
     deleted_frames, reclaimed_bytes = _delete_or_plan_frames(

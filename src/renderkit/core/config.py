@@ -6,6 +6,17 @@ from typing import Optional
 from renderkit.exceptions import ConfigurationError
 from renderkit.processing.color_space import ColorSpacePreset
 
+VALID_BURNIN_ZONES = frozenset(
+    {
+        "top_left",
+        "top_center",
+        "top_right",
+        "bottom_left",
+        "bottom_center",
+        "bottom_right",
+    }
+)
+
 
 @dataclass
 class BurnInElement:
@@ -18,6 +29,49 @@ class BurnInElement:
     font_size: int = 24
     color: tuple[float, float, float] = (1.0, 1.0, 1.0)
     alignment: str = "left"  # left, center, right
+    zone: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Validate burn-in element configuration."""
+        if self.zone is not None and self.zone not in VALID_BURNIN_ZONES:
+            raise ConfigurationError(
+                f"Invalid burn-in zone '{self.zone}'. Must be one of {sorted(VALID_BURNIN_ZONES)}."
+            )
+
+
+@dataclass(frozen=True)
+class SlateConfig:
+    """Configuration for an intro slate frame prepended to the output video."""
+
+    enabled: bool = True
+    title: str = ""
+    show: str = ""
+    shot: str = ""
+    artist: str = ""
+    notes: str = ""
+    background_color: tuple[float, float, float, float] = (0.06, 0.06, 0.08, 1.0)
+
+
+@dataclass(frozen=True)
+class WatermarkConfig:
+    """Configuration for confidential or tiled text watermark overlay."""
+
+    text: str
+    opacity: int = 25
+    font_size: int = 36
+    tiled: bool = False
+    spacing: int = 240
+
+    def __post_init__(self) -> None:
+        """Validate watermark configuration."""
+        if not self.text or not self.text.strip():
+            raise ConfigurationError("Watermark text must not be empty")
+        if not 0 <= self.opacity <= 100:
+            raise ConfigurationError("Watermark opacity must be between 0 and 100")
+        if self.font_size <= 0:
+            raise ConfigurationError("Watermark font_size must be greater than 0")
+        if self.spacing <= 0:
+            raise ConfigurationError("Watermark spacing must be greater than 0")
 
 
 @dataclass
@@ -159,6 +213,14 @@ class ConversionConfig:
     burnin_config: Optional[BurnInConfig] = None
     contact_sheet_mode: bool = False
     contact_sheet_config: Optional[ContactSheetConfig] = None
+    ocio_config_path: Optional[str] = None
+    ocio_display: Optional[str] = None
+    ocio_view: Optional[str] = None
+    ocio_output_space: Optional[str] = None
+    exposure: float = 0.0
+    gamma: float = 1.0
+    slate_config: Optional[SlateConfig] = None
+    watermark_config: Optional[WatermarkConfig] = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -174,6 +236,8 @@ class ConversionConfig:
             raise ConfigurationError("Bitrate must be greater than 0")
         if not 0 <= self.quality <= 10:
             raise ConfigurationError("Quality must be between 0 and 10")
+        if self.gamma <= 0:
+            raise ConfigurationError("Gamma must be greater than 0")
         if self.start_frame is not None and self.end_frame is not None:
             if self.start_frame > self.end_frame:
                 raise ConfigurationError("Start frame must be <= end frame")
@@ -205,6 +269,14 @@ class ConversionConfigBuilder:
         self._burnin_config: Optional[BurnInConfig] = None
         self._contact_sheet_mode: bool = False
         self._contact_sheet_config: Optional[ContactSheetConfig] = None
+        self._ocio_config_path: Optional[str] = None
+        self._ocio_display: Optional[str] = None
+        self._ocio_view: Optional[str] = None
+        self._ocio_output_space: Optional[str] = None
+        self._exposure: float = 0.0
+        self._gamma: float = 1.0
+        self._slate_config: Optional[SlateConfig] = None
+        self._watermark_config: Optional[WatermarkConfig] = None
 
     def with_input_pattern(self, pattern: str) -> "ConversionConfigBuilder":
         """Set the input file pattern."""
@@ -283,6 +355,49 @@ class ConversionConfigBuilder:
         self._contact_sheet_config = config
         return self
 
+    def with_ocio(
+        self,
+        config_path: Optional[str] = None,
+        input_space: Optional[str] = None,
+        display: Optional[str] = None,
+        view: Optional[str] = None,
+        output_space: Optional[str] = None,
+    ) -> "ConversionConfigBuilder":
+        """Set OpenColorIO configuration options."""
+        if config_path is not None:
+            self._ocio_config_path = config_path
+        if input_space is not None:
+            self._explicit_input_color_space = input_space
+        if display is not None:
+            self._ocio_display = display
+        if view is not None:
+            self._ocio_view = view
+        if output_space is not None:
+            self._ocio_output_space = output_space
+        if any(value is not None for value in (config_path, display, view, output_space)):
+            self._color_space_preset = ColorSpacePreset.OCIO_CONVERSION
+        return self
+
+    def with_grade(self, exposure: float = 0.0, gamma: float = 1.0) -> "ConversionConfigBuilder":
+        """Set exposure and gamma adjustments."""
+        if gamma <= 0:
+            raise ConfigurationError("Gamma must be greater than 0")
+        self._exposure = exposure
+        self._gamma = gamma
+        return self
+
+    def with_slate(self, slate_config: SlateConfig) -> "ConversionConfigBuilder":
+        """Set the intro slate configuration."""
+        self._slate_config = slate_config
+        return self
+
+    def with_watermark(
+        self, watermark_config: Optional[WatermarkConfig]
+    ) -> "ConversionConfigBuilder":
+        """Set the watermark overlay configuration."""
+        self._watermark_config = watermark_config
+        return self
+
     def build(self) -> ConversionConfig:
         """Build the ConversionConfig object."""
         if self._input_pattern is None:
@@ -308,4 +423,12 @@ class ConversionConfigBuilder:
             burnin_config=self._burnin_config,
             contact_sheet_mode=self._contact_sheet_mode,
             contact_sheet_config=self._contact_sheet_config,
+            ocio_config_path=self._ocio_config_path,
+            ocio_display=self._ocio_display,
+            ocio_view=self._ocio_view,
+            ocio_output_space=self._ocio_output_space,
+            exposure=self._exposure,
+            gamma=self._gamma,
+            slate_config=self._slate_config,
+            watermark_config=self._watermark_config,
         )

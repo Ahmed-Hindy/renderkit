@@ -2,18 +2,25 @@
 
 import logging
 import os
+from pathlib import Path
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 from renderkit.processing.color_space import (
+    _OIIO_COLOR_SPACE_MAP_CACHE,
     ColorSpaceConverter,
     ColorSpaceError,
     ColorSpacePreset,
     NoConversionStrategy,
     OCIOColorSpaceStrategy,
+    _apply_exposure_buf,
+    _apply_gamma_buf,
     get_bundled_ocio_config_path,
+    get_ocio_displays,
+    get_ocio_views,
+    resolve_ocio_config_path,
 )
 
 try:
@@ -200,6 +207,234 @@ class TestOCIOColorSpaceStrategyDiagnostics:
         assert "colorspaces_sample=['unavailable: colorspaces unavailable']" in caplog.text
         assert "roles=['unavailable: roles unavailable']" in caplog.text
         assert "default_display=unavailable: display unavailable" in caplog.text
+
+
+_MINIMAL_OCIO_CONFIG = """ocio_profile_version: 2
+
+roles:
+  default: raw
+  scene_linear: lin_test
+
+displays:
+  TestDisplay:
+    - !<View> {name: RawView, colorspace: raw}
+    - !<View> {name: DoubleGamma, colorspace: gamma2}
+  SecondaryDisplay:
+    - !<View> {name: AltView, colorspace: raw}
+
+active_displays: [TestDisplay, SecondaryDisplay]
+active_views: [RawView, DoubleGamma, AltView]
+
+colorspaces:
+  - !<ColorSpace>
+    name: raw
+    isdata: true
+
+  - !<ColorSpace>
+    name: lin_test
+    isdata: false
+
+  - !<ColorSpace>
+    name: gamma2
+    isdata: false
+    from_reference: !<ExponentTransform> {value: [0.5, 0.5, 0.5, 1.0]}
+"""
+
+
+def _write_custom_ocio_config(tmp_path: Path, name: str = "custom.ocio") -> Path:
+    cfg_path = tmp_path / name
+    cfg_path.write_text(_MINIMAL_OCIO_CONFIG, encoding="utf-8")
+    return cfg_path
+
+
+class TestOCIOConfigResolutionAndInspection:
+    """Tests for OCIO config resolution and display/view discovery."""
+
+    def test_resolve_ocio_config_path_defaults_to_bundled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return bundled config when neither explicit path nor OCIO env var is set."""
+        monkeypatch.delenv("OCIO", raising=False)
+        assert resolve_ocio_config_path() == get_bundled_ocio_config_path()
+
+    def test_resolve_ocio_config_path_invalid_explicit_raises(self, tmp_path: Path) -> None:
+        """Raise ColorSpaceError when explicit config path is missing or invalid."""
+        missing = tmp_path / "missing.ocio"
+        with pytest.raises(ColorSpaceError):
+            resolve_ocio_config_path(missing)
+
+        bad_file = tmp_path / "invalid.ocio"
+        bad_file.write_text("not: a valid: ocio: config: [", encoding="utf-8")
+        with pytest.raises(ColorSpaceError):
+            resolve_ocio_config_path(bad_file)
+
+    def test_resolve_ocio_config_path_valid_explicit_and_env_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Support valid explicit/env configs and warn+fallback on invalid env config."""
+        custom_cfg = _write_custom_ocio_config(tmp_path)
+        assert resolve_ocio_config_path(custom_cfg) == custom_cfg.resolve()
+
+        monkeypatch.setenv("OCIO", str(custom_cfg))
+        assert resolve_ocio_config_path() == custom_cfg.resolve()
+
+        missing_env = str(tmp_path / "does_not_exist.ocio")
+        monkeypatch.setenv("OCIO", missing_env)
+        with caplog.at_level(logging.WARNING, logger="renderkit.processing.color_space"):
+            resolved = resolve_ocio_config_path()
+        assert resolved == get_bundled_ocio_config_path()
+        assert os.environ["OCIO"] == missing_env
+        assert "falling back to bundled config" in caplog.text
+
+    def test_get_ocio_displays_and_views(self, tmp_path: Path) -> None:
+        """Discover displays and views from both bundled and custom OCIO configs."""
+        bundled_displays = get_ocio_displays()
+        assert len(bundled_displays) >= 1
+        first_display = bundled_displays[0]
+        bundled_views = get_ocio_views(first_display)
+        assert len(bundled_views) >= 1
+
+        custom_cfg = _write_custom_ocio_config(tmp_path)
+        assert get_ocio_displays(custom_cfg) == ["TestDisplay", "SecondaryDisplay"]
+        assert get_ocio_views("TestDisplay", custom_cfg) == ["RawView", "DoubleGamma"]
+        assert get_ocio_views("SecondaryDisplay", custom_cfg) == ["AltView"]
+
+        with pytest.raises(ColorSpaceError):
+            get_ocio_displays(tmp_path / "nope.ocio")
+
+
+class TestOCIODisplayViewAndGrade:
+    """Tests for OCIO display/view transforms and exposure/gamma math."""
+
+    def test_exposure_buf_math_and_alpha_preservation(self) -> None:
+        """Scale RGB by 2**exposure while leaving alpha unchanged."""
+        pixels = np.array([[[0.25, 0.5, 0.125, 0.75]]], dtype=np.float32)
+        buf = _make_buf(pixels)
+
+        unchanged = _apply_exposure_buf(buf, 0.0)
+        assert unchanged is buf
+
+        brighter = _buf_to_array(_apply_exposure_buf(buf, 1.0))
+        np.testing.assert_allclose(brighter, [[[0.5, 1.0, 0.25, 0.75]]], atol=1e-6)
+
+        darker = _buf_to_array(_apply_exposure_buf(buf, -1.0))
+        np.testing.assert_allclose(darker, [[[0.125, 0.25, 0.0625, 0.75]]], atol=1e-6)
+
+        rgb_pixels = np.array([[[0.25, 0.5, 0.125]]], dtype=np.float32)
+        rgb_brighter = _buf_to_array(_apply_exposure_buf(_make_buf(rgb_pixels), 2.0))
+        np.testing.assert_allclose(rgb_brighter, [[[1.0, 2.0, 0.5]]], atol=1e-6)
+
+    def test_gamma_buf_math_clamps_negatives_and_preserves_alpha(self) -> None:
+        """Clamp negatives to 0, apply 1/gamma exponent to RGB, and preserve alpha."""
+        pixels = np.array([[[-0.5, 0.25, 1.0, 0.4]]], dtype=np.float32)
+        buf = _make_buf(pixels)
+
+        unchanged = _apply_gamma_buf(buf, 1.0)
+        assert unchanged is buf
+
+        gamma_applied = _buf_to_array(_apply_gamma_buf(buf, 2.0))
+        np.testing.assert_allclose(gamma_applied, [[[0.0, 0.5, 1.0, 0.4]]], atol=1e-6)
+
+        with pytest.raises(ColorSpaceError):
+            _apply_gamma_buf(buf, 0.0)
+        with pytest.raises(ColorSpaceError):
+            _apply_gamma_buf(buf, -1.5)
+
+    def test_converter_exposure_gamma_for_non_ocio_presets(self) -> None:
+        """Apply exposure before and gamma after non-OCIO strategy conversion."""
+        with pytest.raises(ColorSpaceError):
+            ColorSpaceConverter(ColorSpacePreset.LINEAR_TO_SRGB, gamma=0.0)
+
+        converter = ColorSpaceConverter(
+            ColorSpacePreset.NO_CONVERSION,
+            exposure=1.0,
+            gamma=2.0,
+        )
+        # 0.125 * (2**1) = 0.25 -> 0.25**(1/2) = 0.5; alpha preserved
+        pixels = np.array([[[0.125, 0.5, 0.0, 0.6]]], dtype=np.float32)
+        result = _buf_to_array(converter.convert_buf(_make_buf(pixels)))
+        np.testing.assert_allclose(result, [[[0.5, 1.0, 0.0, 0.6]]], atol=1e-6)
+
+        base_srgb = ColorSpaceConverter(ColorSpacePreset.LINEAR_TO_SRGB)
+        graded_srgb = ColorSpaceConverter(
+            ColorSpacePreset.LINEAR_TO_SRGB,
+            exposure=1.0,
+            gamma=1.2,
+        )
+        lin = np.array([[[0.18, 0.18, 0.18]]], dtype=np.float32)
+        base_out = _buf_to_array(base_srgb.convert_buf(_make_buf(lin)))
+        graded_out = _buf_to_array(graded_srgb.convert_buf(_make_buf(lin)))
+        assert np.all(graded_out > base_out)
+
+    def test_ocio_strategy_display_view_and_custom_config(self, tmp_path: Path) -> None:
+        """Verify display/view validation, conversion, and per-config cache isolation."""
+        custom_cfg = _write_custom_ocio_config(tmp_path)
+
+        with pytest.raises(ColorSpaceError, match="Available displays"):
+            OCIOColorSpaceStrategy(config_path=custom_cfg, display="NoSuchDisplay")
+
+        with pytest.raises(ColorSpaceError, match="Available views"):
+            OCIOColorSpaceStrategy(config_path=custom_cfg, display="TestDisplay", view="NoSuchView")
+
+        with pytest.raises(ColorSpaceError):
+            OCIOColorSpaceStrategy(config_path=custom_cfg, gamma=0.0)
+
+        # Omitted view resolves to default view ("RawView"), which passes linear RGB through.
+        raw_strategy = OCIOColorSpaceStrategy(
+            input_space="lin_test",
+            config_path=custom_cfg,
+            display="TestDisplay",
+        )
+        assert raw_strategy._resolved_display == "TestDisplay"
+        assert raw_strategy._resolved_view == "RawView"
+
+        # DoubleGamma view raises RGB to 0.5 (sqrt); exposure=+2 multiplies 0.0625 -> 0.25 -> sqrt=0.5.
+        # Post-OCIO gamma=2.0 applies another sqrt -> 0.5**0.5 = 0.70710677.
+        graded_strategy = OCIOColorSpaceStrategy(
+            input_space="lin_test",
+            config_path=custom_cfg,
+            display="TestDisplay",
+            view="DoubleGamma",
+            exposure=2.0,
+            gamma=2.0,
+        )
+        src = np.array([[[0.0625, 0.0625, 0.0625]]], dtype=np.float32)
+        out = _buf_to_array(graded_strategy.convert_buf(_make_buf(src)))
+        np.testing.assert_allclose(out, [[[0.70710677, 0.70710677, 0.70710677]]], atol=1e-4)
+
+        # ColorSpaceConverter routes to OCIOColorSpaceStrategy when OCIO kwargs are provided.
+        converter = ColorSpaceConverter(
+            ocio_config_path=custom_cfg,
+            ocio_output_space="gamma2",
+        )
+        assert isinstance(converter.strategy, OCIOColorSpaceStrategy)
+        out_cc = _buf_to_array(
+            converter.convert_buf(
+                _make_buf(np.array([[[0.25, 0.25, 0.25]]], dtype=np.float32)),
+                input_space="lin_test",
+            )
+        )
+        np.testing.assert_allclose(out_cc, [[[0.5, 0.5, 0.5]]], atol=1e-4)
+        assert str(custom_cfg.resolve()) in _OIIO_COLOR_SPACE_MAP_CACHE
+
+    def test_ocio_display_view_cpu_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fall back to PyOpenColorIO CPUProcessor when OIIO ociodisplay fails."""
+        if oiio is None:
+            pytest.skip("OpenImageIO not available")
+        custom_cfg = _write_custom_ocio_config(tmp_path)
+        strategy = OCIOColorSpaceStrategy(
+            input_space="lin_test",
+            config_path=custom_cfg,
+            display="TestDisplay",
+            view="DoubleGamma",
+        )
+        monkeypatch.setattr(oiio.ImageBufAlgo, "ociodisplay", lambda *args, **kwargs: False)
+
+        pixels = np.array([[[0.25, 0.25, 0.25, 0.8]]], dtype=np.float32)
+        out = _buf_to_array(strategy.convert_buf(_make_buf(pixels)))
+        np.testing.assert_allclose(out, [[[0.5, 0.5, 0.5, 0.8]]], atol=1e-4)
 
 
 def _has_oiio_colorspace_candidates(candidates: list[str]) -> bool:

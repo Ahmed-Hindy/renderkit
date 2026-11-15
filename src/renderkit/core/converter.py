@@ -4,6 +4,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Optional
@@ -28,6 +29,7 @@ from renderkit.processing.contact_sheet import (
 from renderkit.processing.frame_pipeline import FramePreparationOptions, prepare_frame_buffer
 from renderkit.processing.scaler import ImageScaler
 from renderkit.processing.video_encoder import VideoEncoder
+from renderkit.processing.watermark import WatermarkProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +118,12 @@ class SequenceConverter:
         self.color_converter: Optional[ColorSpaceConverter] = None
         self.encoder: Optional[VideoEncoder] = None
         self.burnin_processor = BurnInProcessor()
+        self.watermark_processor: Optional[WatermarkProcessor] = (
+            WatermarkProcessor() if config.watermark_config is not None else None
+        )
         self.contact_sheet_generator: Optional[ContactSheetGenerator] = None
         self._layer_map: Optional[dict[str, LayerMapEntry]] = None
+        self._resolved_color_preset: Optional[ColorSpacePreset] = None
 
     def convert(
         self,
@@ -152,7 +158,13 @@ class SequenceConverter:
         )
         output_width, output_height = self._resolve_output_resolution(file_info, width, height)
         input_space = self._configure_color_converter(detected_color_space)
-        self._initialize_encoder(output_width, output_height)
+        raw_pixel_aspect = getattr(file_info, "pixel_aspect", 1.0)
+        pixel_aspect = (
+            float(raw_pixel_aspect)
+            if isinstance(raw_pixel_aspect, (int, float)) and not isinstance(raw_pixel_aspect, bool)
+            else 1.0
+        )
+        self._initialize_encoder(output_width, output_height, pixel_aspect=pixel_aspect)
 
         self._process_frames(
             frame_numbers,
@@ -272,9 +284,32 @@ class SequenceConverter:
 
         return output_width, output_height
 
+    def _effective_color_preset(self) -> ColorSpacePreset:
+        """Resolve the base color preset considering explicit OCIO overrides."""
+        if (
+            self.config.ocio_config_path
+            or self.config.ocio_display
+            or self.config.ocio_view
+            or self.config.ocio_output_space
+        ):
+            return ColorSpacePreset.OCIO_CONVERSION
+        return self.config.color_space_preset
+
+    def _create_color_converter(self, preset: ColorSpacePreset) -> ColorSpaceConverter:
+        """Construct a ColorSpaceConverter with configured OCIO and grade settings."""
+        return ColorSpaceConverter(
+            preset,
+            ocio_config_path=self.config.ocio_config_path,
+            ocio_display=self.config.ocio_display,
+            ocio_view=self.config.ocio_view,
+            ocio_output_space=self.config.ocio_output_space,
+            exposure=self.config.exposure,
+            gamma=self.config.gamma,
+        )
+
     def _configure_color_converter(self, detected_color_space: Optional[str]) -> Optional[str]:
         """Initialize color conversion and return resolved input space."""
-        preset = self.config.color_space_preset
+        preset = self._effective_color_preset()
         input_space = self.config.explicit_input_color_space
 
         if not input_space and detected_color_space:
@@ -286,19 +321,26 @@ class SequenceConverter:
                     preset = ColorSpacePreset.OCIO_CONVERSION
                     input_space = detected_color_space
 
-        self.color_converter = ColorSpaceConverter(preset)
+        self._resolved_color_preset = preset
+        self.color_converter = self._create_color_converter(preset)
         return input_space
 
-    def _initialize_encoder(self, output_width: int, output_height: int) -> None:
+    def _initialize_encoder(
+        self, output_width: int, output_height: int, pixel_aspect: float = 1.0
+    ) -> None:
         """Initialize the video encoder for output."""
         if self.config.fps is None:
             raise ValueError("FPS must be resolved before initializing the encoder.")
+        encoder_kwargs: dict[str, Any] = {}
+        if abs(pixel_aspect - 1.0) > 1e-4:
+            encoder_kwargs["pixel_aspect"] = pixel_aspect
         self.encoder = VideoEncoder(
             Path(self.config.output_path),
             self.config.fps,
             self.config.codec,
             self.config.bitrate,
             self.config.quality,
+            **encoder_kwargs,
         )
         self.encoder.initialize(output_width, output_height)
 
@@ -347,6 +389,25 @@ class SequenceConverter:
 
                 pbar = tqdm(total=plan.total_frames, desc="Converting frames")
 
+            if self.config.slate_config is not None and self.config.slate_config.enabled:
+                from renderkit.processing.slate import SlateGenerator
+
+                slate_meta: dict[str, Any] = {
+                    "frame_range": f"{plan.start_frame}-{plan.end_frame}",
+                    "fps": f"{self.config.fps:.2f}" if self.config.fps is not None else "",
+                    "resolution": f"{output_width}x{output_height}",
+                    "colorspace": input_space or self.config.color_space_preset.value,
+                    "codec": self.config.codec,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "layer": self.config.layer or "beauty",
+                }
+                slate_buf = SlateGenerator(self.config.slate_config).generate_slate_buf(
+                    output_width, output_height, slate_meta
+                )
+                if self.encoder is None:
+                    raise VideoEncodingError("Video encoder is not initialized.")
+                self.encoder.write_frame(slate_buf)
+
             if self._should_prefetch_frames():
                 success_count = self._process_prefetched_frame_plan(
                     plan,
@@ -372,6 +433,7 @@ class SequenceConverter:
                     input_space,
                     self.contact_sheet_generator if contact_sheet_enabled else None,
                     _tick_progress,
+                    file_info=file_info,
                 )
 
             if progress_callback:
@@ -391,6 +453,11 @@ class SequenceConverter:
             if self.encoder:
                 if sys.exception() is None:
                     self.encoder.close()
+                elif hasattr(self.encoder, "abort"):
+                    try:
+                        self.encoder.abort()
+                    except (OSError, RuntimeError, VideoEncodingError):
+                        logger.exception("Video encoder abort failed during cleanup.")
                 else:
                     try:
                         self.encoder.close()
@@ -441,6 +508,7 @@ class SequenceConverter:
         tick_progress: Callable[[int], None],
     ) -> int:
         """Process a frame plan using worker-thread preparation and main-thread writes."""
+        frame_range = f"{plan.start_frame}-{plan.end_frame}"
         prefetch_frame = self._create_prefetch_frame_fn(
             output_width,
             output_height,
@@ -450,6 +518,7 @@ class SequenceConverter:
             input_space,
             file_info,
             contact_sheet_config,
+            frame_range=frame_range,
         )
 
         prefetch_workers = max(1, self.config.prefetch_workers)
@@ -466,6 +535,7 @@ class SequenceConverter:
         input_space: Optional[str],
         file_info: FileInfo,
         contact_sheet_config: Optional[ContactSheetConfig],
+        frame_range: Optional[str] = None,
     ) -> Callable[[int], Any]:
         """Create a worker-thread frame preparation callback."""
         if self.sequence is None:
@@ -495,6 +565,9 @@ class SequenceConverter:
                 resources.color_converter,
                 getattr(resources, "burnin_processor", None),
                 contact_sheet_generator=getattr(resources, "contact_sheet_generator", None),
+                watermark_processor=getattr(resources, "watermark_processor", None),
+                frame_range=frame_range,
+                file_info=file_info,
             )
 
         return _prefetch_frame
@@ -515,10 +588,16 @@ class SequenceConverter:
             thread_state.reader = reader
 
         if not hasattr(thread_state, "color_converter"):
-            thread_state.color_converter = ColorSpaceConverter(self.config.color_space_preset)
+            preset = getattr(self, "_resolved_color_preset", None) or self._effective_color_preset()
+            thread_state.color_converter = self._create_color_converter(preset)
 
         if self.config.burnin_config and not hasattr(thread_state, "burnin_processor"):
             thread_state.burnin_processor = BurnInProcessor()
+
+        if self.config.watermark_config is not None and not hasattr(
+            thread_state, "watermark_processor"
+        ):
+            thread_state.watermark_processor = WatermarkProcessor()
 
         if contact_sheet_config is not None and not hasattr(
             thread_state, "contact_sheet_generator"
@@ -565,10 +644,12 @@ class SequenceConverter:
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator],
         tick_progress: Callable[[int], None],
+        file_info: Optional[FileInfo] = None,
     ) -> int:
         """Process a frame plan in frame order on the current thread."""
         success_count = 0
         last_valid_buf: Any = None
+        frame_range = f"{plan.start_frame}-{plan.end_frame}"
         for index, frame_num in enumerate(plan.all_frames):
             tick_progress(index)
             if frame_num in plan.existing_frames:
@@ -581,6 +662,8 @@ class SequenceConverter:
                     scaler,
                     input_space,
                     contact_sheet_generator,
+                    frame_range=frame_range,
+                    file_info=file_info,
                 )
                 last_valid_buf = result
                 success_count += 1
@@ -602,11 +685,24 @@ class SequenceConverter:
         color_converter: ColorSpaceConverter,
         burnin_processor: Optional[BurnInProcessor],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
+        watermark_processor: Optional[WatermarkProcessor] = None,
+        frame_range: Optional[str] = None,
+        file_info: Optional[FileInfo] = None,
+        burnin_metadata: Optional[dict[str, Any]] = None,
     ) -> Any:
         """Prepare a single frame buffer without writing it to the encoder."""
         if self.sequence is None:
             raise RuntimeError("Sequence must be detected before preparing frames.")
         frame_path = self.sequence.get_file_path(frame_num)
+        resolved_metadata: Optional[dict[str, Any]] = (
+            dict(burnin_metadata) if burnin_metadata is not None else None
+        )
+        if frame_range is not None:
+            if resolved_metadata is None:
+                resolved_metadata = {"frame_range": frame_range}
+            elif "frame_range" not in resolved_metadata:
+                resolved_metadata["frame_range"] = frame_range
+
         return prepare_frame_buffer(
             FramePreparationOptions(
                 frame_path=frame_path,
@@ -621,10 +717,14 @@ class SequenceConverter:
                 color_converter=color_converter,
                 burnin_processor=burnin_processor,
                 burnin_config=self.config.burnin_config,
+                burnin_metadata=resolved_metadata,
                 contact_sheet_generator=contact_sheet_generator,
                 layer=self.config.layer,
                 layer_map=self._layer_map,
                 fps=self.config.fps,
+                file_info=file_info,
+                watermark_processor=watermark_processor,
+                watermark_config=self.config.watermark_config,
             )
         ).buf
 
@@ -678,12 +778,20 @@ class SequenceConverter:
         scaler: "ImageScaler",
         input_space: Optional[str],
         contact_sheet_generator: Optional[ContactSheetGenerator] = None,
+        frame_range: Optional[str] = None,
+        file_info: Optional[FileInfo] = None,
     ) -> Any:
         """Process a single frame using ImageBuf-first operations."""
         if self.reader is None:
             raise RuntimeError("Reader must be initialized before processing frames.")
         if self.color_converter is None:
             raise RuntimeError("Color converter must be initialized before processing frames.")
+        watermark_processor: Optional[WatermarkProcessor] = None
+        if self.config.watermark_config is not None:
+            watermark_processor = getattr(self, "watermark_processor", None)
+            if watermark_processor is None:
+                watermark_processor = WatermarkProcessor()
+                self.watermark_processor = watermark_processor
         buf = self._prepare_frame_buf(
             frame_num,
             output_width,
@@ -696,6 +804,9 @@ class SequenceConverter:
             self.color_converter,
             self.burnin_processor,
             contact_sheet_generator=contact_sheet_generator,
+            watermark_processor=watermark_processor,
+            frame_range=frame_range,
+            file_info=file_info,
         )
 
         self._write_frame_buf(frame_num, buf)

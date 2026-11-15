@@ -5,7 +5,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypeGuard, cast
 
 from renderkit import constants
 from renderkit.exceptions import ImageReadError
@@ -34,7 +34,7 @@ def _is_default_part(part_name: Optional[str]) -> bool:
     return part_name.lower() in _DEFAULT_PART_NAMES
 
 
-def _extract_fps_from_spec(spec) -> Optional[float]:
+def _extract_fps_from_spec(spec: Any) -> Optional[float]:
     for key in constants.FPS_METADATA_KEYS:
         val = spec.getattribute(key)
         if val is None:
@@ -54,7 +54,7 @@ def _extract_fps_from_spec(spec) -> Optional[float]:
     return None
 
 
-def _extract_color_space_from_spec(spec) -> Optional[str]:
+def _extract_color_space_from_spec(spec: Any) -> Optional[str]:
     for key in constants.COLOR_SPACE_METADATA_KEYS:
         val = spec.getattribute(key)
         if val is None:
@@ -65,7 +65,64 @@ def _extract_color_space_from_spec(spec) -> Optional[str]:
     return None
 
 
-def _extract_layers_from_spec(sub_spec, layers: set[str]) -> None:
+def _is_valid_int(val: Any) -> TypeGuard[int]:
+    return isinstance(val, int) and not isinstance(val, bool)
+
+
+def _extract_pixel_aspect_from_spec(spec: Any) -> float:
+    for key in ("PixelAspectRatio", "pixelAspectRatio"):
+        val = spec.getattribute(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+            return float(val)
+    return 1.0
+
+
+def _extract_windows_from_spec(
+    spec: Any,
+) -> tuple[Optional[tuple[int, int, int, int]], Optional[tuple[int, int, int, int]]]:
+    dx = getattr(spec, "x", None)
+    dy = getattr(spec, "y", None)
+    dw = getattr(spec, "width", None)
+    dh = getattr(spec, "height", None)
+    data_window: Optional[tuple[int, int, int, int]] = None
+    if _is_valid_int(dx) and _is_valid_int(dy) and _is_valid_int(dw) and _is_valid_int(dh):
+        data_window = (int(dx), int(dy), int(dw), int(dh))
+
+    fx = getattr(spec, "full_x", None)
+    fy = getattr(spec, "full_y", None)
+    fw = getattr(spec, "full_width", None)
+    fh = getattr(spec, "full_height", None)
+    display_window: Optional[tuple[int, int, int, int]] = data_window
+    if (
+        _is_valid_int(fx)
+        and _is_valid_int(fy)
+        and _is_valid_int(fw)
+        and _is_valid_int(fh)
+        and fw > 0
+        and fh > 0
+    ):
+        display_window = (int(fx), int(fy), int(fw), int(fh))
+
+    return data_window, display_window
+
+
+def _extract_attributes_from_spec(spec: Any) -> dict[str, object]:
+    extra_attribs = getattr(spec, "extra_attribs", ())
+    try:
+        iterator = iter(extra_attribs)
+    except TypeError:
+        return {}
+
+    attributes: dict[str, object] = {}
+    for param in iterator:
+        name = getattr(param, "name", None)
+        value = getattr(param, "value", None)
+        if isinstance(name, str) and isinstance(value, (str, int, float, bool)):
+            attributes[name] = value
+    return attributes
+
+
+def _extract_layers_from_spec(sub_spec: Any, layers: set[str]) -> None:
     part_name = _normalize_part_name(sub_spec.getattribute("name"))
     if part_name:
         if not _is_default_part(part_name):
@@ -149,7 +206,7 @@ class OIIOReader(ImageReader):
         self._layer_map_cache: dict[tuple[str, float], dict[str, LayerMapEntry]] = {}
         self._image_cache = image_cache
 
-    def _get_image_cache(self):
+    def _get_image_cache(self) -> Any:
         if self._image_cache is None:
             self._image_cache = get_shared_image_cache()
         return self._image_cache
@@ -169,7 +226,7 @@ class OIIOReader(ImageReader):
 
     def _update_layer_map_from_spec(
         self,
-        sub_spec,
+        sub_spec: Any,
         subimage_index: int,
         layer_map: dict[str, LayerMapEntry],
         default_entry: Optional[LayerMapEntry],
@@ -251,9 +308,15 @@ class OIIOReader(ImageReader):
 
             fps = _extract_fps_from_spec(spec)
             color_space = _extract_color_space_from_spec(spec)
+            pixel_aspect = _extract_pixel_aspect_from_spec(spec)
+            data_window, display_window = _extract_windows_from_spec(spec)
+            attributes = _extract_attributes_from_spec(spec)
+
+            if display_window is not None and display_window[2] > 0 and display_window[3] > 0:
+                width, height = display_window[2], display_window[3]
 
             # Extract layers from all subimages
-            layers = set()
+            layers: set[str] = set()
             for i in range(subimages):
                 if i == 0:
                     sub_spec = spec
@@ -281,6 +344,10 @@ class OIIOReader(ImageReader):
                 fps=fps,
                 color_space=color_space,
                 subimages=subimages,
+                pixel_aspect=pixel_aspect,
+                display_window=display_window,
+                data_window=data_window,
+                attributes=attributes,
             )
 
             self._file_info_cache[cache_key] = file_info
@@ -347,7 +414,7 @@ class OIIOReader(ImageReader):
         path: Path,
         layer: Optional[str] = None,
         layer_map: Optional[dict[str, LayerMapEntry]] = None,
-    ):
+    ) -> Any:
         """Read an image using OIIO ImageBuf and return the ImageBuf."""
         oiio = require_oiio(ImageReadError)
 
@@ -375,12 +442,13 @@ class OIIOReader(ImageReader):
                 path,
             )
 
-            return ensure_float_imagebuf(
+            buf = ensure_float_imagebuf(
                 oiio,
                 buf,
                 error_type=ImageReadError,
                 error_message=f"Failed to convert {path} to float32",
             )
+            return self._normalize_to_display_window(buf)
 
         except ImageReadError:
             raise
@@ -392,7 +460,7 @@ class OIIOReader(ImageReader):
         path: Path,
         layer: Optional[str],
         layer_map: Optional[dict[str, LayerMapEntry]],
-        oiio,
+        oiio: Any,
     ) -> tuple[int, Optional[tuple[int, ...]], bool]:
         subimage_index = 0
         channel_indices: Optional[tuple[int, ...]] = None
@@ -411,7 +479,7 @@ class OIIOReader(ImageReader):
 
         return subimage_index, channel_indices, use_layer_map
 
-    def _scan_subimage_index(self, path: Path, layer: str, oiio) -> int:
+    def _scan_subimage_index(self, path: Path, layer: str, oiio: Any) -> int:
         temp_buf = oiio.ImageBuf(str(path))
         for i in range(temp_buf.nsubimages):
             sub_buf = oiio.ImageBuf(str(path), i, 0)
@@ -427,14 +495,14 @@ class OIIOReader(ImageReader):
 
     def _slice_layer_from_buf(
         self,
-        buf,
+        buf: Any,
         layer: Optional[str],
         subimage_index: int,
         use_layer_map: bool,
         channel_indices: Optional[tuple[int, ...]],
-        oiio,
+        oiio: Any,
         path: Path,
-    ):
+    ) -> Any:
         if use_layer_map and channel_indices:
             buf = oiio.ImageBufAlgo.channels(buf, channel_indices)
             if buf.has_error:
@@ -471,7 +539,56 @@ class OIIOReader(ImageReader):
 
         return buf
 
-    def read_subimagebuf(self, path: Path, subimage_index: int):
+    @staticmethod
+    def _normalize_to_display_window(buf: Any) -> Any:
+        """Crop or pad an ImageBuf to match its display window when needed."""
+        spec = buf.spec()
+        full_x = getattr(spec, "full_x", None)
+        full_y = getattr(spec, "full_y", None)
+        full_width = getattr(spec, "full_width", None)
+        full_height = getattr(spec, "full_height", None)
+        x = getattr(spec, "x", None)
+        y = getattr(spec, "y", None)
+        width = getattr(spec, "width", None)
+        height = getattr(spec, "height", None)
+        nchannels = getattr(spec, "nchannels", None)
+
+        if not (_is_valid_int(full_width) and _is_valid_int(full_height)):
+            return buf
+        if full_width <= 0 or full_height <= 0:
+            return buf
+        if not (
+            _is_valid_int(full_x)
+            and _is_valid_int(full_y)
+            and _is_valid_int(x)
+            and _is_valid_int(y)
+            and _is_valid_int(width)
+            and _is_valid_int(height)
+            and _is_valid_int(nchannels)
+        ):
+            return buf
+
+        if x != full_x or y != full_y or width != full_width or height != full_height:
+            oiio = require_oiio(ImageReadError)
+            roi = oiio.ROI(
+                full_x,
+                full_x + full_width,
+                full_y,
+                full_y + full_height,
+                0,
+                1,
+                0,
+                nchannels,
+            )
+            cut_buf = oiio.ImageBufAlgo.cut(buf, roi)
+            if cut_buf.has_error:
+                raise ImageReadError(
+                    f"Failed to normalize image to display window: {cut_buf.geterror()}"
+                )
+            return cut_buf
+        return buf
+
+    def read_subimagebuf(self, path: Path, subimage_index: int) -> Any:
         """Read a specific subimage as an OIIO ImageBuf."""
         oiio = require_oiio(ImageReadError)
 
@@ -482,11 +599,13 @@ class OIIOReader(ImageReader):
             cache = self._get_image_cache()
             spec = self._get_cached_spec(cache, path, subimage_index)
             if spec is not None and cache is not None:
+                x = spec.x if _is_valid_int(getattr(spec, "x", None)) else 0
+                y = spec.y if _is_valid_int(getattr(spec, "y", None)) else 0
                 roi = oiio.ROI(
-                    0,
-                    spec.width,
-                    0,
-                    spec.height,
+                    x,
+                    x + spec.width,
+                    y,
+                    y + spec.height,
                     0,
                     1,
                     0,
@@ -500,9 +619,19 @@ class OIIOReader(ImageReader):
                         spec.nchannels,
                         oiio.FLOAT,
                     )
+                    float_spec.x = x
+                    float_spec.y = y
+                    if _is_valid_int(getattr(spec, "full_x", None)):
+                        float_spec.full_x = spec.full_x
+                    if _is_valid_int(getattr(spec, "full_y", None)):
+                        float_spec.full_y = spec.full_y
+                    if _is_valid_int(getattr(spec, "full_width", None)):
+                        float_spec.full_width = spec.full_width
+                    if _is_valid_int(getattr(spec, "full_height", None)):
+                        float_spec.full_height = spec.full_height
                     buf = oiio.ImageBuf(float_spec)
                     if buf.set_pixels(roi, pixels):
-                        return buf
+                        return self._normalize_to_display_window(buf)
 
             buf = oiio.ImageBuf(str(path), subimage_index, 0)
             if buf.has_error:
@@ -510,12 +639,13 @@ class OIIOReader(ImageReader):
                     f"OIIO failed to read {path} (part {subimage_index}): {buf.geterror()}"
                 )
 
-            return ensure_float_imagebuf(
+            buf = ensure_float_imagebuf(
                 oiio,
                 buf,
                 error_type=ImageReadError,
                 error_message=f"Failed to convert {path} to float32",
             )
+            return self._normalize_to_display_window(buf)
 
         except ImageReadError:
             raise
@@ -580,7 +710,7 @@ class ImageReaderFactory:
         extension = FileUtils.get_file_extension(path)
         reader_class = cls._readers.get(extension, OIIOReader)
         try:
-            return reader_class(image_cache=image_cache)
+            return cast(ImageReader, cast(Any, reader_class)(image_cache=image_cache))
         except TypeError:
             return reader_class()
 
