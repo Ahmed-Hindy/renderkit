@@ -1,0 +1,28 @@
+<RCC>
+  <qresource prefix="/">
+    <file>icons/ban.svg</file>
+    <file>icons/check.svg</file>
+    <file>icons/circle-alert.svg</file>
+    <file>icons/circle-pause.svg</file>
+    <file>icons/circle-play.svg</file>
+    <file>icons/eye.svg</file>
+    <file>icons/file-image.svg</file>
+    <file>icons/file-question-mark.svg</file>
+    <file>icons/file-video-camera.svg</file>
+    <file>icons/folder-open.svg</file>
+    <file>icons/info.svg</file>
+    <file>icons/link-2-off.svg</file>
+    <file>icons/link-2.svg</file>
+    <file>icons/loader.svg</file>
+    <file>icons/pause.svg</file>
+    <file>icons/play.svg</file>
+    <file>icons/scan.svg</file>
+    <file>icons/search.svg</file>
+    <file>icons/settings.svg</file>
+    <file>icons/square-pause.svg</file>
+    <file>icons/triangle-alert.svg</file>
+    <file>icons/wrench.svg</file>
+    <file>icons/x.svg</file>
+    <file>stylesheets/matcha.qss</file>
+  </qresource>
+</RCC>

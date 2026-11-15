@@ -1,0 +1,136 @@
+name: Native rewrite (experimental)
+
+on:
+  push:
+    branches: [rewrite/cpp-qt]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-17
+      - name: Check native formatting
+        run: |
+          find src/core src/io src/processing src/ui tests/cpp -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 | xargs -0 clang-format-17 --dry-run --Werror
+          clang-format-17 --dry-run --Werror src/main.cpp
+      - name: Check FFmpeg staging script
+        run: shellcheck scripts/stage_portable_ffmpeg.sh scripts/renderkit-linux.sh
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_MAX_CONCURRENCY: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Windows FFmpeg
+        if: runner.os == 'Windows'
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg/windows
+          key: cpp-ffmpeg-windows-8.0.1-${{ hashFiles('scripts/build_ffmpeg_windows_msys2.sh') }}
+      - name: Set up MSYS2 for FFmpeg
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel git mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-yasm
+            mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-x264
+            mingw-w64-ucrt-x86_64-x265 mingw-w64-ucrt-x86_64-aom
+      - name: Build Windows FFmpeg
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: ./scripts/build_ffmpeg_windows_msys2.sh
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config xvfb ffmpeg fonts-dejavu-core \
+            autoconf autoconf-archive automake libtool \
+            libgl1-mesa-dev libx11-dev libx11-xcb-dev libxext-dev libxfixes-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-glx0-dev libxcb-randr0-dev libxcb-image0-dev libxcb-shm0-dev \
+            libxcb-keysyms1-dev libxcb-icccm4-dev libxcb-xfixes0-dev libxcb-shape0-dev \
+            libxcb-xkb-dev libxcb-cursor-dev libxcb-util-dev libxcb-render-util0-dev \
+            libxcb-sync-dev libxcb-xinput-dev libxrender-dev
+      - name: Initialize MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Stage Linux FFmpeg
+        if: runner.os == 'Linux'
+        run: bash scripts/stage_portable_ffmpeg.sh
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@latest
+      - name: Set up pinned vcpkg and binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 2ec0f1747d8186a5c9babe276e2ad57cd2b12d2a
+          vcpkgJsonGlob: vcpkg.json
+          vcpkgConfigurationJsonGlob: vcpkg-configuration.json
+      - name: Configure on Windows
+        if: runner.os == 'Windows'
+        run: cmake --preset default
+      - name: Configure on Linux
+        if: runner.os == 'Linux'
+        run: cmake --preset linux
+      - name: Build on Windows
+        if: runner.os == 'Windows'
+        run: cmake --build --preset default --parallel 4
+      - name: Build on Linux
+        if: runner.os == 'Linux'
+        run: cmake --build --preset linux --parallel 4
+      - name: Test on Windows
+        if: runner.os == 'Windows'
+        run: ctest --preset default --output-on-failure --timeout 120
+      - name: Test on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --preset linux --output-on-failure --timeout 120
+      - name: Stage and check Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --install build/cpp-release --prefix dist/RenderKit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/smoke_native_ffmpeg.ps1 -PackageDirectory dist/RenderKit
+          Compress-Archive -Path dist/RenderKit -DestinationPath dist/RenderKit-windows.zip
+      - name: Upload Windows package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenderKit-native-windows
+          path: dist/RenderKit-windows.zip
+      - name: Stage and check Linux package
+        if: runner.os == 'Linux'
+        run: |
+          cmake --install build/cpp-linux --config Release --prefix dist/RenderKit
+          pwsh -File scripts/smoke_native_ffmpeg.ps1 -PackageDirectory dist/RenderKit
+          set +e
+          timeout --kill-after=5s 10s xvfb-run -a ./dist/RenderKit/renderkit >dist/gui-smoke.log 2>&1
+          status=$?
+          set -e
+          cat dist/gui-smoke.log
+          if [ "$status" -ne 124 ]; then
+            echo "Packaged GUI exited unexpectedly (status $status)." >&2
+            exit 1
+          fi
+          echo "Packaged GUI remained running under Xvfb."
+          cd dist
+          zip -qry -y RenderKit-linux.zip RenderKit
+      - name: Upload Linux package
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenderKit-native-linux
+          path: dist/RenderKit-linux.zip

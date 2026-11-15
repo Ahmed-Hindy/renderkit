@@ -96,3 +96,6 @@ ui_test_errors.txt
 # Bundled FFmpeg (local build)
 /vendor/ffmpeg/
 /_ffmpeg_build/
+
+# Native dependency installations
+/vcpkg_installed/
